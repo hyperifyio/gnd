@@ -1,0 +1,40 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Gendo Project Structure and Bootstrapping
+
+## Overview
+Gendo is a local-first programming system where code, prompts, and artifacts are version-controlled and modular. The project is bootstrapped in Go, with a focus on plain text artifacts and deterministic, auditable builds.
+
+## Directory and File Conventions
+- **Units of code** are identified by their path and base-name. Dots in names stand for directory slashes, and case is ignored.
+- **Headers**: `.llm` files describe the operation, dependencies, and constraints in free prose.
+- **Prompt files**: `.gnd.llm` files are generated from headers and outline the implementation pipeline.
+- **Implementations**: `.gnd` files contain the actual code, as a sequence of single-line instructions.
+- **Compiled output**: `.obj` files are dense byte-streams produced by the interpreter.
+- **Tests**: `.test` files are executable assertions; `.test.llm` files are model questions.
+- **Fragments**: Numbered fragments (e.g., `010-Abs.gnd`) are concatenated in numeric order before parsing; unnumbered fragments come last.
+
+## Interpreter and Primitives
+- The interpreter is a Go binary that loads `.gnd` or `.obj` files, resolves mnemonics to opcodes, and executes instructions deterministically.
+- **Seed vocabulary**: The Go kernel provides 20 primitives, each with a one-line Gendo wrapper (e.g., `prim-file-read.gnd`).
+- Primitives include file operations, string/list/dict operations, control flow, error handling, and LLM/model bridging.
+
+## Bootstrapping Stages
+1. **Stage Zero**: Deliver the interpreter and 20 Go primitives with wrappers.
+2. **Stage One**: Write arithmetic, list, and string utilities in `.gnd`.
+3. **Stage Two**: Implement compiler passes in `.gnd`.
+4. **Stage Three**: Self-hosting: recompile and compare hashes.
+5. **Stage Four**: Rewrite as many primitives as possible in Gendo.
+
+## Development Workflow
+- Create a `.llm` header for each new operation.
+- Write or generate a `.gnd.llm` prompt.
+- Compile to produce `.gnd`, `.md`, and `.json` artifacts.
+- Run tests; if they fail, edit and retry.
+- All artifacts are plain text and version-controlled.
+
+## References
+- See [README.md](mdc:README.md) for a detailed description of the system, file conventions, and bootstrapping process.
