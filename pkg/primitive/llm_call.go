@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 )
 
@@ -34,8 +36,21 @@ type ChatResponse struct {
 	} `json:"choices"`
 }
 
-// LLMCall sends a prompt to the OpenAI API and receives a response
+// LLMCall sends a prompt to the local BitNet server and receives a response
 func LLMCall(apiKey string, prompt string) (string, error) {
+	// Validate inputs
+	if strings.TrimSpace(apiKey) == "" {
+		return "", fmt.Errorf("empty API key")
+	}
+	if strings.TrimSpace(prompt) == "" {
+		return "", fmt.Errorf("empty prompt")
+	}
+
+	// Skip actual API call in test environment
+	if os.Getenv("GO_TEST") == "1" {
+		return "", fmt.Errorf("API call skipped in test environment")
+	}
+
 	client := &http.Client{
 		Timeout: 30 * time.Second,
 	}
@@ -45,7 +60,7 @@ func LLMCall(apiKey string, prompt string) (string, error) {
 	}
 
 	reqBody := ChatRequest{
-		Model:       "gpt-3.5-turbo",
+		Model:       "bitnet", // Using bitnet as the model name
 		Messages:    messages,
 		Temperature: 0.7,
 		MaxTokens:   1000,
@@ -56,7 +71,12 @@ func LLMCall(apiKey string, prompt string) (string, error) {
 		return "", fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", "https://api.openai.com/v1/chat/completions", bytes.NewBuffer(jsonBody))
+	baseURL := os.Getenv("OPENAI_BASE_URL")
+	if baseURL == "" {
+		baseURL = "http://localhost:18080/v1"
+	}
+
+	req, err := http.NewRequest("POST", baseURL+"/chat/completions", bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
@@ -89,4 +109,4 @@ func LLMCall(apiKey string, prompt string) (string, error) {
 	}
 
 	return chatResp.Choices[0].Message.Content, nil
-} 
+}

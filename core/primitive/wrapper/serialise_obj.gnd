@@ -1,0 +1,4 @@
+# Pack opcodes and operands into bytes
+# Input: opcodes_array operands_array
+# Output: byte_array
+serialise_obj byte_array opcodes_array operands_array 

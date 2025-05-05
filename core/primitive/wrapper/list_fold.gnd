@@ -1,0 +1,4 @@
+# Reduce an array to a single value
+# Input: function_token initial_value array
+# Output: reduced_value
+list_fold reduced_value function_token initial_value array 

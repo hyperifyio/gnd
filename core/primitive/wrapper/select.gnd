@@ -1,0 +1,4 @@
+# Choose between two values
+# Input: condition then_value else_value
+# Output: chosen_value
+select chosen_value condition then_value else_value 

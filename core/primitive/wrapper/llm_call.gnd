@@ -1,0 +1,4 @@
+# Call the local LLM model
+# Input: api_key prompt
+# Output: response
+llm_call response api_key prompt 

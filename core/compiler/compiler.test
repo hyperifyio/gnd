@@ -1,0 +1,76 @@
+# Test the gather pass
+test_gather:
+  input: "core/arithmetic/abs.gnd"
+  expect: {
+    "abs": "load x\nabs x y\nreturn y"
+  }
+
+# Test the tokenise pass
+test_tokenise:
+  input: "load x\nabs x y\nreturn y"
+  expect: [
+    {"type": "opcode", "value": "load"},
+    {"type": "identifier", "value": "x"},
+    {"type": "opcode", "value": "abs"},
+    {"type": "identifier", "value": "x"},
+    {"type": "identifier", "value": "y"},
+    {"type": "opcode", "value": "return"},
+    {"type": "identifier", "value": "y"}
+  ]
+
+# Test the parse pass
+test_parse:
+  input: [
+    {"type": "opcode", "value": "load"},
+    {"type": "identifier", "value": "x"},
+    {"type": "opcode", "value": "abs"},
+    {"type": "identifier", "value": "x"},
+    {"type": "identifier", "value": "y"},
+    {"type": "opcode", "value": "return"},
+    {"type": "identifier", "value": "y"}
+  ]
+  expect: [
+    {"opcode": "load", "dest": "x", "args": []},
+    {"opcode": "abs", "dest": "y", "args": ["x"]},
+    {"opcode": "return", "dest": "_", "args": ["y"]}
+  ]
+
+# Test the verify pass
+test_verify:
+  input: [
+    {"opcode": "load", "dest": "x", "args": []},
+    {"opcode": "abs", "dest": "y", "args": ["x"]},
+    {"opcode": "return", "dest": "_", "args": ["y"]}
+  ]
+  expect: [
+    {"opcode": "load", "dest": "x", "args": []},
+    {"opcode": "abs", "dest": "y", "args": ["x"]},
+    {"opcode": "return", "dest": "_", "args": ["y"]}
+  ]
+
+# Test the resolve pass
+test_resolve:
+  input: [
+    {"opcode": "load", "dest": "x", "args": []},
+    {"opcode": "abs", "dest": "y", "args": ["x"]},
+    {"opcode": "return", "dest": "_", "args": ["y"]}
+  ]
+  expect: [
+    {"opcode": 1, "dest": 0, "args": []},
+    {"opcode": 2, "dest": 1, "args": [0]},
+    {"opcode": 3, "dest": 2, "args": [1]}
+  ]
+
+# Test the serialise pass
+test_serialise:
+  input: [
+    {"opcode": 1, "dest": 0, "args": []},
+    {"opcode": 2, "dest": 1, "args": [0]},
+    {"opcode": 3, "dest": 2, "args": [1]}
+  ]
+  expect: [0x01, 0x00, 0x02, 0x01, 0x00, 0x03, 0x02, 0x01]
+
+# Test the full compiler pipeline
+test_compile:
+  input: "core/arithmetic/abs.gnd"
+  expect: [0x01, 0x00, 0x02, 0x01, 0x00, 0x03, 0x02, 0x01] 

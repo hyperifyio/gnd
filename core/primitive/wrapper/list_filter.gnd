@@ -1,0 +1,4 @@
+# Filter elements in an array
+# Input: predicate_token array
+# Output: filtered_array
+list_filter filtered_array predicate_token array 

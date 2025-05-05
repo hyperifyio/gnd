@@ -1,0 +1,4 @@
+# Iterate over a list with a function
+# Input: function_token accumulator iterable step_limit
+# Output: final_accumulator
+iterate final_accumulator function_token accumulator iterable step_limit 

@@ -1,0 +1,4 @@
+# Split a string by delimiter
+# Input: string delimiter
+# Output: substrings_array
+string_split substrings_array string delimiter 

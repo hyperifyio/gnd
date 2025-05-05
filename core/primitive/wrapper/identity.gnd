@@ -1,0 +1,4 @@
+# Return the input value unchanged
+# Input: value
+# Output: value
+identity value value 

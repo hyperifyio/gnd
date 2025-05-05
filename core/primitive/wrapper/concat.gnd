@@ -1,0 +1,4 @@
+# Concatenate two strings or arrays
+# Input: first second
+# Output: concatenated
+concat concatenated first second 
