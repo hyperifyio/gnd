@@ -1,0 +1,79 @@
+# Test tokenise primitive
+# Empty string
+prim-tokenise ""
+
+# Verify no tokens
+assert-equals len(tokens) 0
+
+# Simple identifier
+prim-tokenise "hello"
+
+# Verify token
+assert-equals tokens[0].type "identifier"
+assert-equals tokens[0].value "hello"
+
+# Identifier with underscore
+prim-tokenise "hello_world"
+
+# Verify token
+assert-equals tokens[0].type "identifier"
+assert-equals tokens[0].value "hello_world"
+
+# Number literal
+prim-tokenise "123"
+
+# Verify token
+assert-equals tokens[0].type "literal"
+assert-equals tokens[0].value "123"
+
+# String literal
+prim-tokenise "\"hello\""
+
+# Verify token
+assert-equals tokens[0].type "literal"
+assert-equals tokens[0].value "\"hello\""
+
+# String literal with escape
+prim-tokenise "\"hello\\nworld\""
+
+# Verify token
+assert-equals tokens[0].type "literal"
+assert-equals tokens[0].value "\"hello\\nworld\""
+
+# Comment
+prim-tokenise "# This is a comment"
+
+# Verify token
+assert-equals tokens[0].type "comment"
+assert-equals tokens[0].value "# This is a comment"
+
+# Operator
+prim-tokenise "+"
+
+# Verify token
+assert-equals tokens[0].type "operator"
+assert-equals tokens[0].value "+"
+
+# Delimiter
+prim-tokenise "("
+
+# Verify token
+assert-equals tokens[0].type "delimiter"
+assert-equals tokens[0].value "("
+
+# Complex expression
+prim-tokenise "x = 123 + \"hello\" # comment"
+
+# Verify tokens
+assert-equals tokens[0].type "identifier"
+assert-equals tokens[0].value "x"
+assert-equals tokens[1].type "operator"
+assert-equals tokens[1].value "="
+assert-equals tokens[2].type "literal"
+assert-equals tokens[2].value "123"
+assert-equals tokens[3].type "operator"
+assert-equals tokens[3].value "+"
+assert-equals tokens[4].type "literal"
+assert-equals tokens[4].value "\"hello\""
+assert-equals tokens[5].type "comment"
+assert-equals tokens[5].value "# comment" 

@@ -1,0 +1,23 @@
+# Test file list primitive
+# Create test directory and files
+mkdir test-dir
+emit-file test-dir/a.txt "test"
+emit-file test-dir/b.txt "test"
+emit-file test-dir/c.txt "test"
+
+# List the directory
+prim-file-list world test-dir
+
+# Verify we got all files
+assert-equals names[0] "a.txt"
+assert-equals names[1] "b.txt"
+assert-equals names[2] "c.txt"
+
+# Verify world token changed
+assert-not-equals new-world world
+
+# Clean up
+delete-file test-dir/a.txt
+delete-file test-dir/b.txt
+delete-file test-dir/c.txt
+rmdir test-dir 

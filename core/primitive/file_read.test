@@ -1,0 +1,15 @@
+# Test file read primitive
+# Create test file
+emit-file test.txt "Hello, Gendo!"
+
+# Read the file
+prim-file-read world test.txt
+
+# Verify content
+assert-equals content "Hello, Gendo!"
+
+# Verify world token changed
+assert-not-equals new-world world
+
+# Clean up
+delete-file test.txt 

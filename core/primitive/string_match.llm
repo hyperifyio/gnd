@@ -1,0 +1,12 @@
+Purpose: Apply a regular expression to a string
+Dependencies: None
+Constraints:
+- Takes a string and pattern as input
+- Returns array of match objects
+- Each match object has start, end, and text fields
+- Must handle invalid patterns
+- Must handle no matches
+- Must be deterministic
+- Must not modify input strings
+- Must support standard regex syntax
+- Must be safe against regex DoS 

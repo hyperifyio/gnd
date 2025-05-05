@@ -1,0 +1,11 @@
+Purpose: Filter a list using a predicate function
+Dependencies: None
+Constraints:
+- Takes a list and predicate function token as input
+- Returns new list containing only elements that satisfy the predicate
+- Must handle empty list
+- Must handle invalid function token
+- Must be deterministic
+- Must not modify input list
+- Must preserve element order
+- Must handle function errors 

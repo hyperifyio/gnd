@@ -1,0 +1,10 @@
+Purpose: Read contents of a file from the filesystem
+Dependencies: None
+Constraints:
+- Takes a world token and path string as input
+- Returns file contents and new world token
+- Must handle file not found errors
+- Must handle permission errors
+- Must handle read errors
+- Must be deterministic
+- Must be sandboxed 

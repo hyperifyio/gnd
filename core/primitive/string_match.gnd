@@ -1,0 +1,3 @@
+# String match primitive
+# Takes string and pattern, returns array of match objects
+prim-string-match string pattern 

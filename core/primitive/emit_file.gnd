@@ -1,0 +1,3 @@
+# Emit file primitive
+# Takes world token, path and content, returns new world token
+prim-emit-file world path content 

@@ -1,0 +1,30 @@
+# Test list fold primitive
+# Empty list
+prim-list-fold [] 0 "add"
+
+# Verify result
+assert-equals result 0
+
+# Sum integers
+prim-list-fold [1 2 3 4 5] 0 "add"
+
+# Verify result
+assert-equals result 15
+
+# Concatenate strings
+prim-list-fold ["a" "b" "c"] "" "concat"
+
+# Verify result
+assert-equals result "abc"
+
+# Invalid input type
+prim-list-fold "not a list" 0 "add"
+
+# Verify error
+assert-error "input is not a list"
+
+# Invalid function token
+prim-list-fold [1 2 3] 0 "nonexistent"
+
+# Verify error
+assert-error "invalid function token" 

@@ -1,0 +1,11 @@
+Purpose: Apply a function to each element of a list
+Dependencies: None
+Constraints:
+- Takes a list and function token as input
+- Returns new list with function applied to each element
+- Must handle empty list
+- Must handle invalid function token
+- Must be deterministic
+- Must not modify input list
+- Must preserve list length
+- Must handle function errors 

@@ -1,0 +1,36 @@
+# Test string split primitive
+# Split by comma
+prim-string-split "a,b,c" ","
+
+# Verify parts
+assert-equals parts[0] "a"
+assert-equals parts[1] "b"
+assert-equals parts[2] "c"
+
+# Split with empty fields
+prim-string-split "a,,c" ","
+
+# Verify parts
+assert-equals parts[0] "a"
+assert-equals parts[1] ""
+assert-equals parts[2] "c"
+
+# Split empty string
+prim-string-split "" ","
+
+# Verify parts
+assert-equals parts[0] ""
+
+# Split by empty delimiter
+prim-string-split "abc" ""
+
+# Verify parts
+assert-equals parts[0] "a"
+assert-equals parts[1] "b"
+assert-equals parts[2] "c"
+
+# Split with delimiter not found
+prim-string-split "abc" ","
+
+# Verify parts
+assert-equals parts[0] "abc" 

@@ -1,0 +1,11 @@
+Purpose: Fold a list using a binary function
+Dependencies: None
+Constraints:
+- Takes a list, initial value, and binary function token as input
+- Returns final accumulated value
+- Must handle empty list
+- Must handle invalid function token
+- Must be deterministic
+- Must not modify input list
+- Must handle function errors
+- Must support left-to-right folding 
