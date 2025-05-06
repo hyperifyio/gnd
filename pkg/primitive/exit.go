@@ -2,7 +2,6 @@ package primitive
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 )
 
@@ -21,8 +20,10 @@ func (e *Exit) Execute(args []interface{}) (interface{}, error) {
 
 	// If no arguments provided, exit with code 1
 	if len(args) == 0 {
-		os.Exit(exitCode)
-		return nil, nil
+		return map[string]interface{}{
+			"exit": true,
+			"code": exitCode,
+		}, nil
 	}
 
 	// If one argument provided, it must be an integer
@@ -40,8 +41,10 @@ func (e *Exit) Execute(args []interface{}) (interface{}, error) {
 		default:
 			return nil, fmt.Errorf("exit code must be an integer, got %T", v)
 		}
-		os.Exit(exitCode)
-		return nil, nil
+		return map[string]interface{}{
+			"exit": true,
+			"code": exitCode,
+		}, nil
 	}
 
 	// If more than one argument, first argument must be a destination
@@ -60,8 +63,10 @@ func (e *Exit) Execute(args []interface{}) (interface{}, error) {
 		default:
 			return nil, fmt.Errorf("exit code must be an integer, got %T", v)
 		}
-		os.Exit(exitCode)
-		return nil, nil
+		return map[string]interface{}{
+			"exit": true,
+			"code": exitCode,
+		}, nil
 	}
 
 	return nil, nil

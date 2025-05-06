@@ -271,6 +271,21 @@ func ParseInstruction(line string, scriptDir string) (*Instruction, error) {
 		dest = "_"
 	}
 
+	// For return primitive, join unquoted strings with spaces
+	if opcode == "return" {
+		// Check if all arguments are unquoted strings
+		allUnquoted := true
+		for _, arg := range args {
+			if len(arg) >= 2 && arg[0] == '"' && arg[len(arg)-1] == '"' {
+				allUnquoted = false
+				break
+			}
+		}
+		if allUnquoted && len(args) > 0 {
+			args = []string{strings.Join(args, " ")}
+		}
+	}
+
 	// Check if this is a subroutine call
 	isSubroutine := false
 	subroutinePath := ""
@@ -411,9 +426,33 @@ func (i *Interpreter) ExecuteInstruction(op *Instruction, idx int) error {
 		}
 	}
 
+	// For return primitive, handle unquoted strings
+	if op.Opcode == "/gnd/return" {
+		// Check if all arguments are unquoted strings
+		allUnquoted := true
+		for _, arg := range op.Arguments {
+			if len(arg) >= 2 && arg[0] == '"' && arg[len(arg)-1] == '"' {
+				allUnquoted = false
+				break
+			}
+		}
+		if allUnquoted && len(op.Arguments) > 0 {
+			i.logDebug("Joining unquoted strings with spaces: %v", op.Arguments)
+			resolvedArgs = []interface{}{strings.Join(op.Arguments, " ")}
+		}
+	}
+
 	prim, ok := primitive.Get(op.Opcode)
 	if !ok {
 		return fmt.Errorf("unknown opcode: %s", op.Opcode)
+	}
+
+	// Set destination and subroutine flag for return primitive
+	if op.Opcode == "/gnd/return" {
+		if ret, ok := prim.(*primitive.Return); ok {
+			ret.IsSubroutine = op.IsSubroutine
+			ret.Destination = op.Destination
+		}
 	}
 
 	result, err := prim.Execute(resolvedArgs)
@@ -428,15 +467,37 @@ func (i *Interpreter) ExecuteInstruction(op *Instruction, idx int) error {
 		i.logDebug("result is a map: %v", resultMap)
 		if exit, ok := resultMap["exit"].(bool); ok && exit {
 			i.logDebug("exit signal detected")
+			// Get the exit code if provided
+			exitCode := 0
+			if code, ok := resultMap["code"].(int); ok {
+				exitCode = code
+			}
 			// Store the value in the destination slot before exiting
 			if val, ok := resultMap["value"]; ok {
-				i.logDebug("storing value %v in destination %s", val, op.Destination)
-				i.Slots[op.Destination] = val
-				i.logDebug("after storing, destination %s contains: %v", op.Destination, i.Slots[op.Destination])
-				return &ExitError{code: 0}
+				dest := op.Destination
+				if d, ok := resultMap["destination"].(string); ok {
+					dest = d
+				}
+				i.logDebug("storing value %v (type: %T) in destination %s", val, val, dest)
+				i.Slots[dest] = val
+				i.logDebug("after storing, destination %s contains: %v (type: %T)", dest, i.Slots[dest], i.Slots[dest])
+				// Print all values
+				switch v := val.(type) {
+				case []interface{}:
+					i.logDebug("printing array of values: %v (type: %T)", v, v)
+					for _, item := range v {
+						i.logDebug("printing array item: %v (type: %T)", item, item)
+						fmt.Print(item)
+					}
+				default:
+					i.logDebug("printing single value: %v (type: %T)", v, v)
+					fmt.Print(val)
+				}
+				os.Stdout.Sync()
+				return &ExitError{code: exitCode}
 			} else {
 				i.logDebug("no value found in result map")
-				return &ExitError{code: 0}
+				return &ExitError{code: exitCode}
 			}
 		}
 	}
