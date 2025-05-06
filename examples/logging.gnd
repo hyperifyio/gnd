@@ -1,6 +1,5 @@
 let args
-debug _ "Our input is:" args
-return
+log _ info "Our input is:" args
 let persona "You are a helpful assistant.\n---\n"
 let instruction "\n---\nIs the previous input acceptable? Reply 'true' or 'false'."
 concat fullPrompt persona args instruction
@@ -8,4 +7,4 @@ prompt _ fullPrompt
 normalize
 let isValid
 select validationMessage isValid "Input is acceptable." "Input is not acceptable."
-let _ validationMessage
+log _ info validationMessage

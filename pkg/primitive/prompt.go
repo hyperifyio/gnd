@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/hyperifyio/gnd/pkg/log"
 )
 
 // Message represents a chat message
@@ -124,13 +126,13 @@ func LLMImpl(client LLMClient, config LLMConfig, apiKey string, prompt string) (
 		return "", fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	// Log request details
-	fmt.Fprintf(os.Stderr, "[DEBUG] LLM Request:\n")
-	fmt.Fprintf(os.Stderr, "[DEBUG] URL: %s\n", config.BaseURL+"/chat/completions")
-	fmt.Fprintf(os.Stderr, "[DEBUG] Model: %s\n", config.Model)
-	fmt.Fprintf(os.Stderr, "[DEBUG] Temperature: %f\n", config.Temperature)
-	fmt.Fprintf(os.Stderr, "[DEBUG] MaxTokens: %d\n", config.MaxTokens)
-	fmt.Fprintf(os.Stderr, "[DEBUG] Messages: %+v\n", messages)
+	// Log the request details
+	log.Printf(log.Debug, "LLM Request:")
+	log.Printf(log.Debug, "URL: %s", config.BaseURL+"/chat/completions")
+	log.Printf(log.Debug, "Model: %s", config.Model)
+	log.Printf(log.Debug, "Temperature: %f", config.Temperature)
+	log.Printf(log.Debug, "MaxTokens: %d", config.MaxTokens)
+	log.Printf(log.Debug, "Messages: %+v", messages)
 
 	req, err := http.NewRequest("POST", config.BaseURL+"/chat/completions", bytes.NewBuffer(jsonBody))
 	if err != nil {
@@ -151,10 +153,10 @@ func LLMImpl(client LLMClient, config LLMConfig, apiKey string, prompt string) (
 		return "", fmt.Errorf("failed to read response: %w", err)
 	}
 
-	// Log response details
-	fmt.Fprintf(os.Stderr, "[DEBUG] LLM Response:\n")
-	fmt.Fprintf(os.Stderr, "[DEBUG] Status: %s\n", resp.Status)
-	fmt.Fprintf(os.Stderr, "[DEBUG] Body: %s\n", string(body))
+	// Log the response details
+	log.Printf(log.Debug, "LLM Response:")
+	log.Printf(log.Debug, "Status: %s", resp.Status)
+	log.Printf(log.Debug, "Body: %s", string(body))
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("API error: %s", body)
@@ -170,7 +172,7 @@ func LLMImpl(client LLMClient, config LLMConfig, apiKey string, prompt string) (
 	}
 
 	// Log the final response content
-	fmt.Fprintf(os.Stderr, "[DEBUG] Response Content: %s\n", chatResp.Choices[0].Message.Content)
+	log.Printf(log.Debug, "Response Content: %s", chatResp.Choices[0].Message.Content)
 
 	return chatResp.Choices[0].Message.Content, nil
 }

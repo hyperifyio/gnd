@@ -44,8 +44,10 @@ func (c *Concat) concatArrays(args []interface{}) (interface{}, error) {
 	for _, arg := range args {
 		if arr, ok := arg.([]interface{}); ok {
 			result = append(result, arr...)
+		} else if str, ok := arg.(string); ok {
+			result = append(result, str)
 		} else {
-			result = append(result, arg)
+			result = append(result, fmt.Sprintf("%v", arg))
 		}
 	}
 

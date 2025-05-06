@@ -5,26 +5,15 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 
+	"github.com/hyperifyio/gnd/pkg/log"
 	"github.com/hyperifyio/gnd/pkg/primitive"
+	"github.com/hyperifyio/gnd/pkg/units"
 )
-
-// Log levels
-const (
-	LogError = iota
-	LogInfo
-	LogDebug
-)
-
-var logLevel = LogError
-
-func logf(level int, format string, args ...interface{}) {
-	if level <= logLevel {
-		fmt.Fprintf(os.Stderr, format+"\n", args...)
-	}
-}
 
 // Default opcode mapping
 var defaultOpcodeMap = map[string]string{
@@ -35,22 +24,144 @@ var defaultOpcodeMap = map[string]string{
 	"lowercase": "/gnd/lowercase",
 	"uppercase": "/gnd/uppercase",
 	"trim":      "/gnd/trim",
+	"print":     "/gnd/print",
+	"log":       "/gnd/log",
+	"error":     "/gnd/error",
+	"warn":      "/gnd/warn",
+	"info":      "/gnd/info",
+	"debug":     "/gnd/debug",
+	"exit":      "/gnd/exit",
+	"return":    "/gnd/return",
 }
 
 // Instruction represents a parsed GND instruction
 type Instruction struct {
-	Opcode      string
-	Destination string
-	Arguments   []string
+	Opcode         string
+	Destination    string
+	Arguments      []string
+	IsSubroutine   bool
+	SubroutinePath string
 }
 
 // Interpreter represents the execution environment
 type Interpreter struct {
-	Slots map[string]interface{}
+	Slots       map[string]interface{}
+	Subroutines map[string][]*Instruction
+	ScriptDir   string // Directory of the currently executing script
+	LogIndent   int    // Current log indentation level
+	UnitsFS     fs.FS  // Embedded filesystem containing GND units
+}
+
+// NewInterpreter creates a new interpreter instance
+func NewInterpreter(scriptDir string) *Interpreter {
+	return &Interpreter{
+		Slots:       make(map[string]interface{}),
+		Subroutines: make(map[string][]*Instruction),
+		ScriptDir:   scriptDir,
+		LogIndent:   0,
+		UnitsFS:     units.GetUnitsFS(),
+	}
+}
+
+// getLogPrefix returns the current log prefix based on indentation
+func (i *Interpreter) getLogPrefix() string {
+	if i.LogIndent == 0 {
+		return ""
+	}
+	return strings.Repeat("  ", i.LogIndent)
+}
+
+// logDebug logs a debug message with proper indentation
+func (i *Interpreter) logDebug(format string, args ...interface{}) {
+	prefix := i.getLogPrefix()
+	log.Printf(log.Debug, prefix+format, args...)
+}
+
+// LoadSubroutine loads a subroutine from a file
+func (i *Interpreter) LoadSubroutine(name string) error {
+	// Check if subroutine is already loaded
+	if _, ok := i.Subroutines[name]; ok {
+		return nil
+	}
+
+	// First try to find the subroutine in the script's directory
+	subroutinePath := filepath.Join(i.ScriptDir, name+".gnd")
+	contentBytes, err := os.ReadFile(subroutinePath)
+	if err != nil {
+		// If not found in script directory, try embedded units
+		contentBytes, err = fs.ReadFile(i.UnitsFS, name+".gnd")
+		if err != nil {
+			return fmt.Errorf("subroutine not found: %s", name)
+		}
+	}
+
+	// Parse the subroutine file
+	instructions, err := ParseFile(string(contentBytes), i.ScriptDir)
+	if err != nil {
+		return fmt.Errorf("error parsing subroutine %s: %w", name, err)
+	}
+
+	// Store the subroutine
+	i.Subroutines[name] = instructions
+	return nil
+}
+
+// ExecuteSubroutine executes a subroutine with its own context
+func (i *Interpreter) ExecuteSubroutine(name string) error {
+	// Load the subroutine if not already loaded
+	if err := i.LoadSubroutine(name); err != nil {
+		return err
+	}
+
+	// Create a new interpreter for the subroutine with increased indentation
+	subInterpreter := NewInterpreter(i.ScriptDir)
+	subInterpreter.LogIndent = i.LogIndent + 1
+
+	// Copy the current value of _ to the subroutine's args
+	if val, ok := i.Slots["_"]; ok {
+		i.logDebug("Copying value %v from main _ to subroutine args and _", val)
+		subInterpreter.Slots["args"] = val
+		subInterpreter.Slots["_"] = val
+	} else {
+		i.logDebug("No value in main _ to copy to subroutine")
+	}
+
+	// Log subroutine entry with current value
+	i.logDebug("[ENTER SUBROUTINE] %s with input: %v", name, subInterpreter.Slots["args"])
+
+	// Execute each instruction in the subroutine
+	for _, op := range i.Subroutines[name] {
+		err := subInterpreter.ExecuteInstruction(op, 0)
+		if err != nil {
+			return fmt.Errorf("error in subroutine %s: %w", name, err)
+		}
+	}
+
+	// Copy the result back to the main interpreter's _
+	if val, ok := subInterpreter.Slots["_"]; ok {
+		i.logDebug("Copying value %v from subroutine _ back to main _", val)
+		i.Slots["_"] = val
+	} else {
+		i.logDebug("No value in subroutine _ to copy back to main")
+	}
+
+	// Log subroutine exit with result
+	i.logDebug("[EXIT SUBROUTINE] %s with output: %v", name, i.Slots["_"])
+
+	return nil
+}
+
+// ExitError is a special error type that signals a normal program exit
+type ExitError struct {
+	code int
+}
+
+func (e *ExitError) Error() string {
+	return fmt.Sprintf("exit with code %d", e.code)
 }
 
 // ParseInstruction parses a single GND instruction
-func ParseInstruction(line string) (*Instruction, error) {
+func ParseInstruction(line string, scriptDir string) (*Instruction, error) {
 	line = strings.TrimSpace(line)
 	if line == "" || strings.HasPrefix(line, "#") {
 		return nil, nil
@@ -60,6 +171,7 @@ func ParseInstruction(line string) (*Instruction, error) {
 	var current strings.Builder
 	inString := false
 	escape := false
+	inArray := false
 
 	for i := 0; i < len(line); i++ {
 		c := line[i]
@@ -112,7 +224,25 @@ func ParseInstruction(line string) (*Instruction, error) {
 			continue
 		}
 
-		if !inString && (c == ' ' || c == '\t') {
+		if c == '[' && !inString {
+			if current.Len() > 0 {
+				tokens = append(tokens, current.String())
+				current.Reset()
+			}
+			current.WriteByte('[')
+			inArray = true
+			continue
+		}
+
+		if c == ']' && !inString && inArray {
+			current.WriteByte(']')
+			tokens = append(tokens, current.String())
+			current.Reset()
+			inArray = false
+			continue
+		}
+
+		if !inString && !inArray && (c == ' ' || c == '\t') {
 			if current.Len() > 0 {
 				tokens = append(tokens, current.String())
 				current.Reset()
@@ -132,11 +262,6 @@ func ParseInstruction(line string) (*Instruction, error) {
 	}
 
 	opcode := tokens[0]
-	// Map to full path if in defaultOpcodeMap
-	if mapped, ok := defaultOpcodeMap[opcode]; ok {
-		opcode = mapped
-	}
-
 	var dest string
 	var args []string
 	if len(tokens) > 1 {
@@ -146,10 +271,28 @@ func ParseInstruction(line string) (*Instruction, error) {
 		dest = "_"
 	}
 
+	// Check if this is a subroutine call
+	isSubroutine := false
+	subroutinePath := ""
+	if _, err := os.Stat(filepath.Join(scriptDir, opcode+".gnd")); err == nil {
+		isSubroutine = true
+		subroutinePath = opcode + ".gnd"
+		// For subroutines, we keep the original opcode
+	} else if _, err := fs.Stat(units.GetUnitsFS(), opcode+".gnd"); err == nil {
+		isSubroutine = true
+		subroutinePath = opcode + ".gnd"
+		// For subroutines, we keep the original opcode
+	} else if mapped, ok := defaultOpcodeMap[opcode]; ok {
+		// Only map to full path if it's not a subroutine
+		opcode = mapped
+	}
+
 	return &Instruction{
-		Opcode:      opcode,
-		Destination: dest,
-		Arguments:   args,
+		Opcode:         opcode,
+		Destination:    dest,
+		Arguments:      args,
+		IsSubroutine:   isSubroutine,
+		SubroutinePath: subroutinePath,
 	}, nil
 }
 
@@ -187,7 +330,55 @@ func (i *Interpreter) ExecuteInstruction(op *Instruction, idx int) error {
 		return nil
 	}
 
-	logf(LogDebug, "[DEBUG] %s %s %v", op.Opcode, op.Destination, op.Arguments)
+	// Handle subroutine calls
+	if op.IsSubroutine {
+		// Extract the base name without .gnd extension
+		baseName := strings.TrimSuffix(op.SubroutinePath, ".gnd")
+		i.logDebug("%s %s %v", op.Opcode, op.Destination, op.Arguments)
+
+		// Resolve arguments
+		resolvedArgs := make([]interface{}, len(op.Arguments))
+		for j, arg := range op.Arguments {
+			// If the argument is a string literal (starts and ends with quotes)
+			if len(arg) >= 2 && arg[0] == '"' && arg[len(arg)-1] == '"' {
+				// Remove the quotes and unescape
+				unescaped := unescapeString(arg[1 : len(arg)-1])
+				resolvedArgs[j] = unescaped
+			} else if arg == "[]" {
+				// Special case for empty array
+				resolvedArgs[j] = []interface{}{}
+			} else if val, ok := i.Slots[arg]; ok {
+				// If it's a defined variable, use its value
+				resolvedArgs[j] = val
+			} else {
+				// Otherwise use the literal value
+				resolvedArgs[j] = arg
+			}
+		}
+
+		// Store the resolved arguments in _
+		i.logDebug("Storing resolved args %v in _ before subroutine call", resolvedArgs)
+		i.Slots["_"] = resolvedArgs
+
+		// Execute the subroutine
+		err := i.ExecuteSubroutine(baseName)
+		if err != nil {
+			return err
+		}
+
+		// Store the result in the destination slot
+		if val, ok := i.Slots["_"]; ok {
+			i.logDebug("Storing subroutine result %v in destination %s", val, op.Destination)
+			i.Slots[op.Destination] = val
+		} else {
+			i.logDebug("No result in _ to store in destination %s", op.Destination)
+		}
+
+		return nil
+	}
+
+	// Log regular instruction
+	i.logDebug("%s %s %v", op.Opcode, op.Destination, op.Arguments)
 
 	// Resolve arguments
 	resolvedArgs := make([]interface{}, len(op.Arguments))
@@ -197,6 +388,9 @@ func (i *Interpreter) ExecuteInstruction(op *Instruction, idx int) error {
 			// Remove the quotes and unescape
 			unescaped := unescapeString(arg[1 : len(arg)-1])
 			resolvedArgs[j] = unescaped
+		} else if arg == "[]" {
+			// Special case for empty array
+			resolvedArgs[j] = []interface{}{}
 		} else if val, ok := i.Slots[arg]; ok {
 			// If it's a defined variable, use its value
 			resolvedArgs[j] = val
@@ -209,8 +403,10 @@ func (i *Interpreter) ExecuteInstruction(op *Instruction, idx int) error {
 	// If no arguments provided, use current value of _
 	if len(resolvedArgs) == 0 {
 		if val, ok := i.Slots["_"]; ok {
+			i.logDebug("Using current value of _ (%v) as argument", val)
 			resolvedArgs = []interface{}{val}
 		} else {
+			i.logDebug("No value in _, using empty string as argument")
 			resolvedArgs = []interface{}{""}
 		}
 	}
@@ -225,18 +421,39 @@ func (i *Interpreter) ExecuteInstruction(op *Instruction, idx int) error {
 		return fmt.Errorf("%s: %v", op.Opcode, err)
 	}
 
+	i.logDebug("primitive result: %v", result)
+
+	// Check if this is a return with exit signal
+	if resultMap, ok := result.(map[string]interface{}); ok {
+		i.logDebug("result is a map: %v", resultMap)
+		if exit, ok := resultMap["exit"].(bool); ok && exit {
+			i.logDebug("exit signal detected")
+			// Store the value in the destination slot before exiting
+			if val, ok := resultMap["value"]; ok {
+				i.logDebug("storing value %v in destination %s", val, op.Destination)
+				i.Slots[op.Destination] = val
+				i.logDebug("after storing, destination %s contains: %v", op.Destination, i.Slots[op.Destination])
+				return &ExitError{code: 0}
+			} else {
+				i.logDebug("no value found in result map")
+				return &ExitError{code: 0}
+			}
+		}
+	}
+
 	// For debug output, escape newlines to make them visible
 	debugResult := fmt.Sprintf("%v", result)
 	debugResult = strings.ReplaceAll(debugResult, "\n", "\\n")
-	logf(LogDebug, "[DEBUG] %s = %s", op.Destination, debugResult)
+	i.logDebug("%s = %s", op.Destination, debugResult)
 
 	// Store the result in the destination slot
+	i.logDebug("storing result %v in destination %s", result, op.Destination)
 	i.Slots[op.Destination] = result
 	return nil
 }
 
 // ParseFile parses all instructions from a file
-func ParseFile(content string) ([]*Instruction, error) {
+func ParseFile(content string, scriptDir string) ([]*Instruction, error) {
 	var instructions []*Instruction
 	scanner := bufio.NewScanner(strings.NewReader(content))
 	lineNum := 0
@@ -245,7 +462,7 @@ func ParseFile(content string) ([]*Instruction, error) {
 		lineNum++
 		line := scanner.Text()
 
-		op, err := ParseInstruction(line)
+		op, err := ParseInstruction(line, scriptDir)
 		if err != nil {
 			return nil, fmt.Errorf("error on line %d: %w", lineNum, err)
 		}
@@ -265,11 +482,13 @@ func ParseFile(content string) ([]*Instruction, error) {
 func parseLogLevel(level string) int {
 	switch strings.ToLower(level) {
 	case "debug":
-		return LogDebug
+		return log.Debug
 	case "info":
-		return LogInfo
+		return log.Info
+	case "warn":
+		return log.Warn
 	default:
-		return LogError
+		return log.Error
 	}
 }
 
@@ -279,7 +498,7 @@ func main() {
 	inputFlag := flag.String("input", "", "Input for the script")
 	flag.Parse()
 
-	logLevel = parseLogLevel(*logLevelFlag)
+	log.Level = parseLogLevel(*logLevelFlag)
 
 	args := flag.Args()
 	if len(args) < 1 {
@@ -287,31 +506,34 @@ func main() {
 		os.Exit(1)
 	}
 
-	contentBytes, err := os.ReadFile(args[0])
+	scriptPath := args[0]
+	scriptDir := filepath.Dir(scriptPath)
+
+	contentBytes, err := os.ReadFile(scriptPath)
 	if err != nil {
-		logf(LogError, "[ERROR] Error reading file: %v", err)
+		log.Printf(log.Error, "[ERROR] Error reading file: %v", err)
 		os.Exit(1)
 	}
 	content := string(contentBytes)
 
-	instructions, err := ParseFile(content)
+	instructions, err := ParseFile(content, scriptDir)
 	if err != nil {
-		logf(LogError, "[ERROR] Error parsing file: %v", err)
+		log.Printf(log.Error, "[ERROR] Error parsing file: %v", err)
 		os.Exit(1)
 	}
 
-	interpreter := &Interpreter{Slots: make(map[string]interface{})}
+	interpreter := NewInterpreter(scriptDir)
 
 	// Handle interactive mode
 	if *interactiveFlag {
 		if *inputFlag != "" {
-			logf(LogError, "[ERROR] Cannot use --input with --interactive mode")
+			log.Printf(log.Error, "[ERROR] Cannot use --input with --interactive mode")
 			os.Exit(1)
 		}
 		reader := bufio.NewReader(os.Stdin)
 		input, err := reader.ReadString('\n')
 		if err != nil {
-			logf(LogError, "[ERROR] Error reading input: %v", err)
+			log.Printf(log.Error, "[ERROR] Error reading input: %v", err)
 			os.Exit(1)
 		}
 		interpreter.Slots["_"] = strings.TrimSpace(input)
@@ -326,7 +548,7 @@ func main() {
 				stdinBytes, _ := io.ReadAll(os.Stdin)
 				interpreter.Slots["_"] = strings.TrimRight(string(stdinBytes), "\n")
 			} else {
-				logf(LogError, "[ERROR] Input is required. Either provide it through stdin or use --input parameter")
+				log.Printf(log.Error, "[ERROR] Input is required. Either provide it through stdin or use --input parameter")
 				os.Exit(1)
 			}
 		}
@@ -337,7 +559,31 @@ func main() {
 	for i, op := range instructions {
 		err = interpreter.ExecuteInstruction(op, i)
 		if err != nil {
-			logf(LogError, "[ERROR] Error executing instruction %d: %v", i+1, err)
+			interpreter.logDebug("got error from ExecuteInstruction: %v (%T)", err, err)
+			if exitErr, ok := err.(*ExitError); ok {
+				interpreter.logDebug("error is an ExitError")
+				// Print the last result before exiting
+				if op != nil {
+					interpreter.logDebug("handling exit signal, destination=%s", op.Destination)
+					if val, ok := interpreter.Slots[op.Destination]; ok {
+						interpreter.logDebug("found value %v in destination %s, printing it", val, op.Destination)
+						fmt.Print(val)
+						os.Stdout.Sync()
+					} else {
+						interpreter.logDebug("no value found in destination %s", op.Destination)
+						// Try to print from _ as a fallback
+						if val, ok := interpreter.Slots["_"]; ok {
+							interpreter.logDebug("found value %v in _, printing it", val)
+							fmt.Print(val)
+							os.Stdout.Sync()
+						}
+					}
+				}
+				os.Exit(exitErr.code)
+			} else {
+				interpreter.logDebug("error is not an ExitError")
+			}
+			log.Printf(log.Error, "[ERROR] Error executing instruction %d: %v", i+1, err)
 			os.Exit(1)
 		}
 		if op != nil {

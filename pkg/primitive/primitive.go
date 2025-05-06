@@ -28,11 +28,15 @@ func Register(p Primitive) {
 }
 
 func init() {
-	Register(&Let{})
 	Register(&Prompt{})
+	Register(&Let{})
 	Register(&Select{})
 	Register(&Concat{})
 	Register(&Lowercase{})
 	Register(&Uppercase{})
 	Register(&Trim{})
+	Register(&Print{})
+	Register(&Log{})
+	Register(&Exit{})
+	Register(&Return{})
 }

@@ -1,0 +1,3 @@
+let args
+concat _ [] "debug" args
+log
