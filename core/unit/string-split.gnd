@@ -1,0 +1,4 @@
+# Split a string by a delimiter
+# Input: string delimiter
+# Output: substrings-array
+/gnd/string-split substrings-array string delimiter

@@ -1,0 +1,11 @@
+# Test concatenation of two strings
+/gnd/concat _ hello world
+/gnd/string-eq _ helloworld _
+
+# Test concatenation of empty strings
+/gnd/concat _ "" ""
+/gnd/string-eq _ "" _
+
+# Test concatenation with numbers
+/gnd/concat _ number: 42
+/gnd/string-eq _ number:42 _ 

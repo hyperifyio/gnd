@@ -1,4 +1,0 @@
-# Format a string with arguments
-# Input: template arguments_array
-# Output: formatted_string
-format formatted_string template arguments_array 

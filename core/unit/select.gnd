@@ -1,0 +1,4 @@
+# Select chooses between two values based on a condition
+# Input: condition then_value else_value
+# Output: chosen_value
+/gnd/select chosen-value condition then-value else-value

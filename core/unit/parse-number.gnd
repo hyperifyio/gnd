@@ -1,0 +1,4 @@
+# Parse a string into a number
+# Input: string
+# Output: number
+/gnd/parse-number number string 

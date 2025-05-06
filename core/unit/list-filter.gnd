@@ -1,0 +1,4 @@
+# Filter an array with a predicate
+# Input: predicate-token array
+# Output: filtered-array
+/gnd/list-filter filtered-array predicate-token array 

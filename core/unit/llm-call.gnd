@@ -1,0 +1,4 @@
+# Call an LLM API
+# Input: api-key prompt
+# Output: response
+/gnd/llm-call response api-key prompt 

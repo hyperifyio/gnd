@@ -1,4 +1,0 @@
-# Write content to a file
-# Input: world_token path_string content_string
-# Output: new_world_token
-emit_file new_world_token world_token path_string content_string 

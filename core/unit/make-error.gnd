@@ -1,0 +1,4 @@
+# Create an error with a message
+# Input: message
+# Output: error
+/gnd/make-error error message 

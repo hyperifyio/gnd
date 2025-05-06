@@ -1,3 +1,0 @@
-# List filter primitive
-# Takes list and predicate function token, returns filtered list
-prim-list-filter list pred 

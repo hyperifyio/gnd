@@ -1,3 +1,0 @@
-# File read primitive
-# Takes world token and path, returns content and new world token
-prim-file-read world path 

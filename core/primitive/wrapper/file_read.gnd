@@ -1,4 +1,0 @@
-# Read a file's contents and return a new world token
-# Input: world_token path_string
-# Output: content_string new_world_token
-file_read content_string world_token path_string new_world_token 

@@ -1,0 +1,4 @@
+# Tokenize a string into an array
+# Input: string
+# Output: tokens-array
+/gnd/tokenize tokens-array string

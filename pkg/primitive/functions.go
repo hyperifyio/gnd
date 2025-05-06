@@ -5,64 +5,107 @@ import (
 	"reflect"
 )
 
-// getFunction returns a function from a token
+// getFunction returns a function from the registry
 func getFunction(token string) (reflect.Value, error) {
-	switch token {
-	case "identity":
-		return reflect.ValueOf(func(x interface{}) (interface{}, error) {
-			return x, nil
-		}), nil
-	case "is_even":
-		return reflect.ValueOf(func(x interface{}) (bool, error) {
-			v := reflect.ValueOf(x)
-			if v.Kind() != reflect.Int && v.Kind() != reflect.Int64 {
-				return false, fmt.Errorf("expected int, got %v", v.Kind())
-			}
-			return v.Int()%2 == 0, nil
-		}), nil
-	case "is_long":
-		return reflect.ValueOf(func(x interface{}) (bool, error) {
-			v := reflect.ValueOf(x)
-			if v.Kind() != reflect.String {
-				return false, fmt.Errorf("expected string, got %v", v.Kind())
-			}
-			return len(v.String()) > 2, nil
-		}), nil
-	case "add":
-		return reflect.ValueOf(func(x, y interface{}) (interface{}, error) {
-			vx := reflect.ValueOf(x)
-			vy := reflect.ValueOf(y)
-			if (vx.Kind() != reflect.Int && vx.Kind() != reflect.Int64) || (vy.Kind() != reflect.Int && vy.Kind() != reflect.Int64) {
-				return nil, fmt.Errorf("expected ints, got %v and %v", vx.Kind(), vy.Kind())
-			}
-			return int(vx.Int() + vy.Int()), nil
-		}), nil
-	case "concat":
-		return reflect.ValueOf(func(x, y interface{}) (interface{}, error) {
-			vx := reflect.ValueOf(x)
-			vy := reflect.ValueOf(y)
-			if vx.Kind() != reflect.String || vy.Kind() != reflect.String {
-				return nil, fmt.Errorf("expected strings, got %v and %v", vx.Kind(), vy.Kind())
-			}
-			return vx.String() + vy.String(), nil
-		}), nil
-	case "inc":
-		return reflect.ValueOf(func(acc, x interface{}) (interface{}, error) {
-			vacc := reflect.ValueOf(acc)
-			if vacc.Kind() != reflect.Int && vacc.Kind() != reflect.Int64 {
-				return nil, fmt.Errorf("expected int accumulator, got %v", vacc.Kind())
-			}
-			return int(vacc.Int() + 1), nil
-		}), nil
-	case "double":
-		return reflect.ValueOf(func(acc, x interface{}) (interface{}, error) {
-			vacc := reflect.ValueOf(acc)
-			if vacc.Kind() != reflect.Int && vacc.Kind() != reflect.Int64 {
-				return nil, fmt.Errorf("expected int accumulator, got %v", vacc.Kind())
-			}
-			return int(vacc.Int() * 2), nil
-		}), nil
-	default:
+	fn, exists := Get(token)
+	if !exists {
 		return reflect.Value{}, fmt.Errorf("unknown function token: %s", token)
 	}
-} 
+	return reflect.ValueOf(fn.Execute), nil
+}
+
+// IsEven checks if a number is even
+type IsEven struct{}
+
+func (i *IsEven) Name() string {
+	return "/gnd/is_even"
+}
+
+func (i *IsEven) Execute(args []string) (interface{}, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("is_even expects 1 argument, got %d", len(args))
+	}
+	num, err := ParseNumber(args[0])
+	if err != nil {
+		return false, fmt.Errorf("expected number, got %v", err)
+	}
+	switch v := num.(type) {
+	case int64:
+		return v%2 == 0, nil
+	case float64:
+		return int64(v)%2 == 0, nil
+	default:
+		return false, fmt.Errorf("expected number, got %T", v)
+	}
+}
+
+// IsLong checks if a string is longer than 2 characters
+type IsLong struct{}
+
+func (i *IsLong) Name() string {
+	return "/gnd/is_long"
+}
+
+func (i *IsLong) Execute(args []string) (interface{}, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("is_long expects 1 argument, got %d", len(args))
+	}
+	return len(args[0]) > 2, nil
+}
+
+// Inc increments a number by 1
+type Inc struct{}
+
+func (i *Inc) Name() string {
+	return "/gnd/inc"
+}
+
+func (i *Inc) Execute(args []string) (interface{}, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("inc expects 1 argument, got %d", len(args))
+	}
+	num, err := ParseNumber(args[0])
+	if err != nil {
+		return nil, fmt.Errorf("expected number, got %v", err)
+	}
+	switch v := num.(type) {
+	case int64:
+		return v + 1, nil
+	case float64:
+		return v + 1, nil
+	default:
+		return nil, fmt.Errorf("expected number, got %T", v)
+	}
+}
+
+// Double multiplies a number by 2
+type Double struct{}
+
+func (d *Double) Name() string {
+	return "/gnd/double"
+}
+
+func (d *Double) Execute(args []string) (interface{}, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("double expects 1 argument, got %d", len(args))
+	}
+	num, err := ParseNumber(args[0])
+	if err != nil {
+		return nil, fmt.Errorf("expected number, got %v", err)
+	}
+	switch v := num.(type) {
+	case int64:
+		return v * 2, nil
+	case float64:
+		return v * 2, nil
+	default:
+		return nil, fmt.Errorf("expected number, got %T", v)
+	}
+}
+
+func init() {
+	RegisterPrimitive(&IsEven{})
+	RegisterPrimitive(&IsLong{})
+	RegisterPrimitive(&Inc{})
+	RegisterPrimitive(&Double{})
+}

@@ -1,51 +1,65 @@
 package primitive
 
 import (
+	"encoding/json"
 	"fmt"
-	"reflect"
 )
 
-// Iterate walks a list calling a function token
-func Iterate(fnToken string, acc interface{}, list interface{}, limit int) (interface{}, error) {
-	v := reflect.ValueOf(list)
-	if v.Kind() != reflect.Slice && v.Kind() != reflect.Array {
-		return nil, fmt.Errorf("input is not a list: %v", v.Kind())
+type controlPrimitive struct{}
+
+func (p *controlPrimitive) Name() string {
+	return "/gnd/control"
+}
+
+func (p *controlPrimitive) Execute(args []string) (interface{}, error) {
+	if len(args) != 3 {
+		return nil, fmt.Errorf("control expects 3 arguments")
+	}
+	return ControlValue(args[0], args[1], args[2])
+}
+
+// ControlValue executes a function based on a condition
+func ControlValue(cond, then, elseFn string) (interface{}, error) {
+	// Parse the condition
+	var b bool
+	if err := json.Unmarshal([]byte(cond), &b); err != nil {
+		return nil, fmt.Errorf("invalid condition: %v", err)
 	}
 
-	fn, err := getFunction(fnToken)
-	if err != nil {
-		return nil, fmt.Errorf("invalid function token %q: %w", fnToken, err)
-	}
-
-	result := acc
-	for i := 0; i < v.Len() && i < limit; i++ {
-		args := []reflect.Value{reflect.ValueOf(result), v.Index(i)}
-		results := fn.Call(args)
-
-		if len(results) > 1 && !results[1].IsNil() {
-			return nil, results[1].Interface().(error)
+	// Execute the appropriate branch
+	if b {
+		// Parse the then branch
+		var thenFn string
+		if err := json.Unmarshal([]byte(then), &thenFn); err != nil {
+			return nil, fmt.Errorf("invalid then branch: %v", err)
 		}
 
-		result = results[0].Interface()
+		// Call the then function
+		prim, ok := Get(thenFn)
+		if !ok {
+			return nil, fmt.Errorf("unknown function: %s", thenFn)
+		}
+
+		// Execute the function
+		return prim.Execute([]string{})
 	}
 
-	return result, nil
-}
-
-// Select chooses between two values based on a condition
-func Select(cond bool, thenVal, elseVal interface{}) interface{} {
-	if cond {
-		return thenVal
+	// Parse the else branch
+	var elseFnStr string
+	if err := json.Unmarshal([]byte(elseFn), &elseFnStr); err != nil {
+		return nil, fmt.Errorf("invalid else branch: %v", err)
 	}
-	return elseVal
+
+	// Call the else function
+	prim, ok := Get(elseFnStr)
+	if !ok {
+		return nil, fmt.Errorf("unknown function: %s", elseFnStr)
+	}
+
+	// Execute the function
+	return prim.Execute([]string{})
 }
 
-// Identity returns its input unchanged
-func Identity(x interface{}) interface{} {
-	return x
+func init() {
+	RegisterPrimitive(&controlPrimitive{})
 }
-
-// MakeError creates an error with the given message
-func MakeError(msg string) error {
-	return fmt.Errorf(msg)
-} 

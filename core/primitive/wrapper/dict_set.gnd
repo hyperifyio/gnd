@@ -1,4 +1,0 @@
-# Set a value in a dictionary
-# Input: dictionary key value
-# Output: new_dictionary
-dict_set new_dictionary dictionary key value 

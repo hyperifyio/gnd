@@ -1,4 +1,0 @@
-# Create an error with a message
-# Input: message
-# Output: error
-make_error error message 

@@ -1,0 +1,4 @@
+# Write content to a file
+# Input: path-string content-string
+# Output: success-boolean
+/gnd/emit-file success-boolean path-string content-string 

@@ -1,3 +1,0 @@
-# List fold primitive
-# Takes list, initial value and binary function token, returns final value
-prim-list-fold list init fn 

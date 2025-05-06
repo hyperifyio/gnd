@@ -1,0 +1,4 @@
+# Pack opcodes and operands into bytes
+# Input: opcodes-array operands-array
+# Output: byte-array
+/gnd/serialize-obj byte-array opcodes-array operands-array 

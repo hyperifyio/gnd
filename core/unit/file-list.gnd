@@ -1,0 +1,4 @@
+# List files in a directory
+# Input: path-string
+# Output: file-names-array
+/gnd/file-list file-names-array path-string

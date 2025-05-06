@@ -1,15 +1,23 @@
-.PHONY: all test clean
+.PHONY: all test clean build-gnd build-gndc build-gndtest
 
 all: build
 
-build:
-	go build -o bin/gendo cmd/gendo/main.go
+build: build-gnd build-gndc build-gndtest
+
+build-gnd:
+	go build -o bin/gnd cmd/gnd/main.go
+
+build-gndc:
+	go build -o bin/gndc cmd/gndc/main.go
+
+build-gndtest:
+	go build -o bin/gndtest cmd/gndtest/main.go
 
 test:
 	go test ./... -v
 
 clean:
-	rm -rf bin/
+	rm -f bin/gnd bin/gndc bin/gndtest
 	go clean
 
 # Development helpers

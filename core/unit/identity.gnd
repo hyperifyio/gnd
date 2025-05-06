@@ -1,0 +1,4 @@
+# Return the input value unchanged
+# Input: _
+# Output: _
+/gnd/identity _ _

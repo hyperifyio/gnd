@@ -1,0 +1,4 @@
+# Fold an array with a function
+# Input: function-token initial-value array
+# Output: reduced-value
+/gnd/list-fold reduced-value function-token initial-value array 

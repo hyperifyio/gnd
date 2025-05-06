@@ -1,0 +1,55 @@
+# GND Tokenizer Implementation
+# Input: _ (array of input variables)
+# Output: tokens-array
+
+# Split the line into tokens by whitespace
+/gnd/string-split raw-tokens _[0] " "
+
+# Filter out empty tokens and process each token
+/gnd/list-filter non-empty-tokens raw-tokens "token" "token != ''"
+/gnd/list-map tokens non-empty-tokens "token" "classify-token(token)"
+
+# Return the classified tokens
+tokens
+
+# Helper function to classify a token
+/gnd/function classify-token
+# Input: _ (array of input variables)
+# Output: token-object
+
+# Check if it's an identifier
+/gnd/string-match identifier-match _[0] "^[a-zA-Z][a-zA-Z0-9-]*$"
+/gnd/select token-type identifier-match "identifier" "check-literal(_[0])"
+
+# Check if it's a literal
+/gnd/function check-literal
+# Input: _ (array of input variables)
+# Output: token-type
+
+# Check decimal integer
+/gnd/string-match decimal-match _[0] "^-?[0-9]+$"
+/gnd/select decimal-type decimal-match "decimal" "check-hex(_[0])"
+
+# Check hex integer
+/gnd/function check-hex
+# Input: _ (array of input variables)
+# Output: token-type
+
+/gnd/string-match hex-match _[0] "^-?0x[0-9A-Fa-f]+$"
+/gnd/select hex-type hex-match "hex" "check-float(_[0])"
+
+# Check float
+/gnd/function check-float
+# Input: _ (array of input variables)
+# Output: token-type
+
+/gnd/string-match float-match _[0] "^-?(?:[0-9]+\\.[0-9]*|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?$"
+/gnd/select float-type float-match "check-string(_[0])"
+
+# Check string
+/gnd/function check-string
+# Input: _ (array of input variables)
+# Output: token-type
+
+/gnd/string-match string-match _[0] "^\"(?:[^\"\\]|\\[\"\\nt]|\\u[0-9A-Fa-f]{4})*\"$"
+/gnd/select string-type string-match "error"

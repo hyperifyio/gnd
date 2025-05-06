@@ -5,6 +5,19 @@ import (
 	"reflect"
 )
 
+type concatPrimitive struct{}
+
+func (p *concatPrimitive) Name() string {
+	return "/gnd/concat"
+}
+
+func (p *concatPrimitive) Execute(args []string) (interface{}, error) {
+	if len(args) != 2 {
+		return nil, fmt.Errorf("concat expects 2 arguments: two strings to concatenate")
+	}
+	return Concat(args[0], args[1])
+}
+
 // Concat concatenates two strings or two arrays
 func Concat(a, b interface{}) (interface{}, error) {
 	va := reflect.ValueOf(a)
@@ -31,4 +44,8 @@ func Concat(a, b interface{}) (interface{}, error) {
 	default:
 		return nil, fmt.Errorf("cannot concat type: %v", va.Kind())
 	}
-} 
+}
+
+func init() {
+	RegisterPrimitive(&concatPrimitive{})
+}

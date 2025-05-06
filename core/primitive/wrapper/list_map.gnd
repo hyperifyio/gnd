@@ -1,4 +1,0 @@
-# Transform each element in an array
-# Input: function_token array
-# Output: new_array
-list_map new_array function_token array 

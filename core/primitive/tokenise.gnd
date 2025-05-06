@@ -1,3 +1,0 @@
-# Tokenise primitive
-# Takes string, returns array of tokens
-prim-tokenise string 

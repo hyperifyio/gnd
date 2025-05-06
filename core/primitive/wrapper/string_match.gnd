@@ -1,4 +1,0 @@
-# Match a string against a pattern
-# Input: string pattern
-# Output: matches_array
-string_match matches_array string pattern 

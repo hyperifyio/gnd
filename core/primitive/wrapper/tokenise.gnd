@@ -1,4 +1,0 @@
-# Convert a string into tokens
-# Input: string
-# Output: tokens_array
-tokenise tokens_array string 

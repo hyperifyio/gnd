@@ -1,3 +1,0 @@
-# List map primitive
-# Takes list and function token, returns new list
-prim-list-map list fn 

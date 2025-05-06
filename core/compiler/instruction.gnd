@@ -1,0 +1,62 @@
+# GND Instruction Parser
+# Input: _ (array of input variables)
+# Output: instruction-object
+
+# Validate minimum token count
+/gnd/list-length token-count _
+/gnd/select valid-count token-count "error" "parse-opcode(_)"
+
+# Parse opcode
+/gnd/function parse-opcode
+# Input: _ (array of input variables)
+# Output: instruction-object
+
+# Get opcode and validate it's an identifier
+/gnd/list-get opcode _ 0
+/gnd/string-match valid-opcode opcode "^[a-zA-Z][a-zA-Z0-9-]*$"
+/gnd/select opcode-valid valid-opcode "parse-destination(_)" "error"
+
+# Parse destination
+/gnd/function parse-destination
+# Input: _ (array of input variables)
+# Output: instruction-object
+
+# Check if we have more tokens
+/gnd/list-length remaining-count _
+/gnd/select has-more remaining-count "parse-args(_, '_')" "parse-dest-token(_)"
+
+# Parse destination token
+/gnd/function parse-dest-token
+# Input: _ (array of input variables)
+# Output: instruction-object
+
+# Get destination token
+/gnd/list-get dest _ 1
+/gnd/string-match is-underscore dest "^_$"
+/gnd/select dest-valid is-underscore "parse-args(_, dest)" "check-identifier(dest, _)"
+
+# Check if destination is valid identifier
+/gnd/function check-identifier
+# Input: _ (array of input variables)
+# Output: instruction-object
+
+/gnd/string-match valid-id _[0] "^[a-zA-Z][a-zA-Z0-9-]*$"
+/gnd/select id-valid valid-id "parse-args(_[1], _[0])" "error"
+
+# Parse arguments
+/gnd/function parse-args
+# Input: _ (array of input variables)
+# Output: instruction-object
+
+# Get remaining tokens after opcode and destination
+/gnd/list-slice args _[0] 2
+/gnd/list-map validated-args args "arg" "validate-arg(arg)"
+
+# Create instruction object
+/gnd/dict-create instruction
+/gnd/dict-set instruction "opcode" _[0]
+/gnd/dict-set instruction "destination" _[1]
+/gnd/dict-set instruction "arguments" validated-args
+
+# Return the instruction
+instruction 

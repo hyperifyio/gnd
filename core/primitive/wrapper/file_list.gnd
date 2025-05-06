@@ -1,4 +1,0 @@
-# List files in a directory
-# Input: path_string
-# Output: file_names_array
-file_list file_names_array path_string 
