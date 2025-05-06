@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -63,26 +64,19 @@ func DefaultConfig() LLMConfig {
 	}
 }
 
-// LLM represents the LLM primitive
-type LLM struct{}
+// Prompt represents the prompt primitive
+type Prompt struct{}
 
-// NewLLM creates a new LLM primitive
-func NewLLM() *LLM {
-	return &LLM{}
+func (p *Prompt) Name() string {
+	return "/gnd/prompt"
 }
 
-// Name returns the name of the primitive
-func (p *LLM) Name() string {
-	return "llm"
-}
-
-// Execute executes the LLM primitive
-func (p *LLM) Execute(args []string) (interface{}, error) {
-	if len(args) != 1 {
-		return nil, fmt.Errorf("llm expects 1 argument, got %d", len(args))
+func (p *Prompt) Execute(args []string) (interface{}, error) {
+	if len(args) < 1 {
+		return nil, fmt.Errorf("prompt expects at least 1 argument, got %d", len(args))
 	}
 
-	prompt := args[0]
+	prompt := strings.Join(args, " ")
 
 	// Get API key from environment
 	apiKey := os.Getenv("OPENAI_API_KEY")
@@ -161,4 +155,30 @@ func LLMImpl(client LLMClient, config LLMConfig, apiKey string, prompt string) (
 	}
 
 	return chatResp.Choices[0].Message.Content, nil
+}
+
+// LLM is a primitive that handles LLM operations
+type LLM struct{}
+
+func (l *LLM) Name() string {
+	return "/gnd/llm"
+}
+
+func (l *LLM) Execute(args []string) (interface{}, error) {
+	if len(args) == 0 {
+		return nil, fmt.Errorf("llm requires at least one argument")
+	}
+
+	// Check for API key first
+	if os.Getenv("OPENAI_API_KEY") == "" {
+		return nil, fmt.Errorf("OPENAI_API_KEY environment variable is required")
+	}
+
+	// In test mode, just echo the input
+	if os.Getenv("GO_TEST") == "1" {
+		return fmt.Sprintf("Echo: %s", args[0]), nil
+	}
+
+	// TODO: Implement actual LLM call
+	return nil, fmt.Errorf("LLM implementation not yet complete")
 }

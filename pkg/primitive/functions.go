@@ -15,7 +15,7 @@ func getFunction(token string) (reflect.Value, error) {
 }
 
 func init() {
-	// Only register identity and llm primitives
-	RegisterPrimitive(&Identity{})
-	RegisterPrimitive(&LLM{})
+	// Register let and prompt primitives
+	RegisterPrimitive(&Let{})
+	RegisterPrimitive(&Prompt{})
 }

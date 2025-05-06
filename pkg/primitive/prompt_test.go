@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestLLM(t *testing.T) {
+func TestPrompt(t *testing.T) {
 	// Set up test environment
 	os.Setenv("OPENAI_API_KEY", "test-key")
 	os.Setenv("GO_TEST", "1")
@@ -34,28 +34,28 @@ func TestLLM(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := &LLM{}
+			p := &Prompt{}
 			got, err := p.Execute(tt.args)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("LLM.Execute() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("Prompt.Execute() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !tt.wantErr && got != tt.want {
-				t.Errorf("LLM.Execute() = %v, want %v", got, tt.want)
+				t.Errorf("Prompt.Execute() = %v, want %v", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestLLMNoAPIKey(t *testing.T) {
+func TestPromptNoAPIKey(t *testing.T) {
 	// Ensure API key is not set
 	os.Unsetenv("OPENAI_API_KEY")
 	os.Setenv("GO_TEST", "1")
 	defer os.Unsetenv("GO_TEST")
 
-	p := &LLM{}
+	p := &Prompt{}
 	_, err := p.Execute([]string{"test prompt"})
 	if err == nil {
-		t.Error("LLM.Execute() expected error with no API key, got nil")
+		t.Error("Prompt.Execute() expected error with no API key, got nil")
 	}
 }
