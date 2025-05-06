@@ -34,6 +34,11 @@ func ParseInstruction(line string) (*Instruction, error) {
 	}
 
 	opcode := tokens[0]
+	if !strings.HasPrefix(opcode, "/gnd/") {
+		return nil, fmt.Errorf("invalid opcode prefix: %s (must start with /gnd/)", opcode)
+	}
+
+	// Parse destination
 	var dest string
 	var args []string
 	if len(tokens) > 1 {
