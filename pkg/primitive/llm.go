@@ -63,31 +63,43 @@ func DefaultConfig() LLMConfig {
 	}
 }
 
-// LLM is a primitive that sends a prompt to the LLM server
+// LLM represents the LLM primitive
 type LLM struct{}
 
-func (l *LLM) Name() string {
-	return "/gnd/llm"
+// NewLLM creates a new LLM primitive
+func NewLLM() *LLM {
+	return &LLM{}
 }
 
-func (l *LLM) Execute(args []string) (interface{}, error) {
+// Name returns the name of the primitive
+func (p *LLM) Name() string {
+	return "llm"
+}
+
+// Execute executes the LLM primitive
+func (p *LLM) Execute(args []string) (interface{}, error) {
 	if len(args) != 1 {
 		return nil, fmt.Errorf("llm expects 1 argument, got %d", len(args))
 	}
 
+	prompt := args[0]
+
 	// Get API key from environment
-	apiKey := os.Getenv("LLM_API_KEY")
+	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
-		return nil, fmt.Errorf("LLM_API_KEY environment variable not set")
+		return nil, fmt.Errorf("OPENAI_API_KEY environment variable not set")
 	}
 
-	// Create HTTP client
+	// Skip actual API call in test environment
+	if os.Getenv("GO_TEST") == "1" {
+		return fmt.Sprintf("Echo: %s", prompt), nil
+	}
+
 	client := &http.Client{
 		Timeout: DefaultConfig().Timeout,
 	}
 
-	// Call LLM
-	return LLMImpl(client, DefaultConfig(), apiKey, args[0])
+	return LLMImpl(client, DefaultConfig(), apiKey, prompt)
 }
 
 // LLMImpl sends a prompt to the LLM server and receives a response
@@ -98,11 +110,6 @@ func LLMImpl(client LLMClient, config LLMConfig, apiKey string, prompt string) (
 	}
 	if prompt == "" {
 		return "", fmt.Errorf("empty prompt")
-	}
-
-	// Skip actual API call in test environment
-	if os.Getenv("GO_TEST") == "1" {
-		return "", fmt.Errorf("API call skipped in test environment")
 	}
 
 	messages := []Message{

@@ -13,14 +13,23 @@ Gendo is a local-first programming system where code, prompts, and artifacts are
 - **Headers**: `.llm` files describe the operation, dependencies, and constraints in free prose.
 - **Prompt files**: `.gnd.llm` files are generated from headers and outline the implementation pipeline.
 - **Implementations**: `.gnd` files contain the actual code, as a sequence of single-line instructions.
-- **Compiled output**: `.obj` files are dense byte-streams produced by the interpreter.
-- **Tests**: `.test` files are executable assertions; `.test.llm` files are model questions.
+- **Compiled output**: `.gnc` files are dense byte-streams produced by the interpreter.
+- **Tests**: `.test.gnd` files are executable assertions; `.test.llm` files are model questions.
 - **Fragments**: Numbered fragments (e.g., `010-Abs.gnd`) are concatenated in numeric order before parsing; unnumbered fragments come last.
 
 ## Interpreter and Primitives
-- The interpreter is a Go binary that loads `.gnd` or `.obj` files, resolves mnemonics to opcodes, and executes instructions deterministically.
-- **Seed vocabulary**: The Go kernel provides 20 primitives, each with a one-line Gendo wrapper (e.g., `prim-file-read.gnd`).
-- Primitives include file operations, string/list/dict operations, control flow, error handling, and LLM/model bridging.
+- The interpreter is a Go binary that loads `.gnd` or `.gnc` files, resolves mnemonics to opcodes, and executes instructions deterministically.
+- **Minimal vocabulary**: Only the LLM and identity primitives are provided by default. All other operations must be implemented in `.gnd` or via LLM.
+- Primitives:
+  - `llm`: Calls the language model with a prompt.
+  - `identity`: Passes data through unchanged.
+
+## Instruction Format
+- Each non-comment, non-blank line in a `.gnd` file is a single instruction.
+- Format: `opcode [destination] [argument ...] [# comment]`
+- The first token is always the opcode. If only the opcode is present, destination is `_` by default. Otherwise, the destination (an identifier or `_`) appears second, followed by zero or more arguments.
+- Data flows through `_`, which is the implicit input and output slot.
+- Identifiers are single-assignment and case-insensitive.
 
 ## Bootstrapping Stages
 1. **Stage Zero**: Deliver the interpreter and 20 Go primitives with wrappers.
@@ -32,9 +41,9 @@ Gendo is a local-first programming system where code, prompts, and artifacts are
 ## Development Workflow
 - Create a `.llm` header for each new operation.
 - Write or generate a `.gnd.llm` prompt.
-- Compile to produce `.gnd`, `.md`, and `.json` artifacts.
+- Compile to produce `.gnd` and other artifacts.
 - Run tests; if they fail, edit and retry.
 - All artifacts are plain text and version-controlled.
 
 ## References
-- See [README.md](mdc:README.md) for a detailed description of the system, file conventions, and bootstrapping process.
+- See [README.md](mdc:README.md) and [docs/gnd-syntex.md](mdc:docs/gnd-syntex.md) for a detailed description of the system, file conventions, and syntax.
