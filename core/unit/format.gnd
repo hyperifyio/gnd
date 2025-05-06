@@ -1,4 +1,0 @@
-# Format a string with arguments
-# Input: template arguments-array
-# Output: formatted-string
-/gnd/format formatted-string template arguments-array

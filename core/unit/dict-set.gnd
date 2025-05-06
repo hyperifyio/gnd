@@ -1,4 +1,0 @@
-# Set a value in a dictionary
-# Input: dictionary key value
-# Output: new-dictionary
-/gnd/dict-set new-dictionary dictionary key value 

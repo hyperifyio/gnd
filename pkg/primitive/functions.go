@@ -14,6 +14,12 @@ func getFunction(token string) (reflect.Value, error) {
 	return reflect.ValueOf(fn.Execute), nil
 }
 
+func init() {
+	// Only register identity and llm primitives
+	RegisterPrimitive(&Identity{})
+	RegisterPrimitive(&LLM{})
+}
+
 // IsEven checks if a number is even
 type IsEven struct{}
 
@@ -101,11 +107,4 @@ func (d *Double) Execute(args []string) (interface{}, error) {
 	default:
 		return nil, fmt.Errorf("expected number, got %T", v)
 	}
-}
-
-func init() {
-	RegisterPrimitive(&IsEven{})
-	RegisterPrimitive(&IsLong{})
-	RegisterPrimitive(&Inc{})
-	RegisterPrimitive(&Double{})
 }

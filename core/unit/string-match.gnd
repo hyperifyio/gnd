@@ -1,4 +1,0 @@
-# Match a string against a pattern
-# Input: string pattern
-# Output: matches-array
-/gnd/string-match matches-array string pattern 

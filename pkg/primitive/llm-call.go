@@ -63,8 +63,35 @@ func DefaultConfig() LLMConfig {
 	}
 }
 
-// LLMCall sends a prompt to the LLM server and receives a response
-func LLMCall(client LLMClient, config LLMConfig, apiKey string, prompt string) (string, error) {
+// LLM is a primitive that sends a prompt to the LLM server
+type LLM struct{}
+
+func (l *LLM) Name() string {
+	return "/gnd/llm"
+}
+
+func (l *LLM) Execute(args []string) (interface{}, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("llm expects 1 argument, got %d", len(args))
+	}
+
+	// Get API key from environment
+	apiKey := os.Getenv("LLM_API_KEY")
+	if apiKey == "" {
+		return nil, fmt.Errorf("LLM_API_KEY environment variable not set")
+	}
+
+	// Create HTTP client
+	client := &http.Client{
+		Timeout: DefaultConfig().Timeout,
+	}
+
+	// Call LLM
+	return LLMImpl(client, DefaultConfig(), apiKey, args[0])
+}
+
+// LLMImpl sends a prompt to the LLM server and receives a response
+func LLMImpl(client LLMClient, config LLMConfig, apiKey string, prompt string) (string, error) {
 	// Validate inputs
 	if apiKey == "" {
 		return "", fmt.Errorf("empty API key")

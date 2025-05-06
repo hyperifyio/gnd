@@ -1,4 +1,0 @@
-# Map a function over an array
-# Input: function-token array
-# Output: mapped-array
-/gnd/list-map mapped-array function-token array

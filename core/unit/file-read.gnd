@@ -1,4 +1,0 @@
-# Read a file's contents
-# Input: path-string
-# Output: content-string
-/gnd/file-read content-string path-string 

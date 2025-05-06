@@ -1,4 +1,0 @@
-# Iterate over a list with a function
-# Input: function-token accumulator iterable step-limit
-# Output: final-accumulator
-/gnd/iterate final-accumulator function-token accumulator iterable step-limit

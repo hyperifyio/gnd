@@ -69,7 +69,7 @@ func main() {
 
 		// TODO: Process prompt content into actual instructions
 		// For now, just add a placeholder instruction
-		instructions = append(instructions, "llm-call _ _")
+		instructions = append(instructions, "llm _ _")
 
 		output := strings.Join(instructions, "\n")
 		if err := os.WriteFile(outputFile, []byte(output), 0644); err != nil {
