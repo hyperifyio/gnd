@@ -15,7 +15,9 @@ func getFunction(token string) (reflect.Value, error) {
 }
 
 func init() {
-	// Register let and prompt primitives
+	// Register primitives
 	RegisterPrimitive(&Let{})
 	RegisterPrimitive(&Prompt{})
+	RegisterPrimitive(&Select{})
+	RegisterPrimitive(&Concat{})
 }

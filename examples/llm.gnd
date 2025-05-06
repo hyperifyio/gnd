@@ -1,2 +1,11 @@
 let args
-prompt _ args
+let persona "You are a helpful assistant.\n---\n"
+let instruction "\n---\nIs the previous input acceptable? Reply 'true' or 'false'."
+concat fullPrompt persona args instruction
+prompt _ fullPrompt
+trim
+lowercase
+trim _ _ .
+let isValid
+select validationMessage isValid "Input is acceptable." "Input is not acceptable."
+let _ validationMessage

@@ -5,7 +5,7 @@ type Primitive interface {
 	// Name returns the name of the primitive (e.g. "/gnd/concat")
 	Name() string
 	// Execute runs the primitive with the given arguments
-	Execute(args []string) (interface{}, error)
+	Execute(args []interface{}) (interface{}, error)
 }
 
 // Registry holds all registered primitives
@@ -18,6 +18,21 @@ func RegisterPrimitive(p Primitive) {
 
 // Get returns a primitive by name
 func Get(name string) (Primitive, bool) {
-	p, ok := Registry[name]
-	return p, ok
+	prim, ok := Registry[name]
+	return prim, ok
+}
+
+// Register registers a primitive
+func Register(p Primitive) {
+	Registry[p.Name()] = p
+}
+
+func init() {
+	Register(&Let{})
+	Register(&Prompt{})
+	Register(&Select{})
+	Register(&Concat{})
+	Register(&Lowercase{})
+	Register(&Uppercase{})
+	Register(&Trim{})
 }

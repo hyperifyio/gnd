@@ -1,39 +1,76 @@
 package primitive
 
 import (
+	"reflect"
 	"testing"
 )
 
 func TestLet(t *testing.T) {
 	tests := []struct {
 		name     string
-		args     []string
+		args     []interface{}
 		expected interface{}
 		wantErr  bool
 	}{
 		{
-			name:     "let x y",
-			args:     []string{"x", "y"},
-			expected: "y",
-			wantErr:  false,
-		},
-		{
-			name:     "let x",
-			args:     []string{"x"},
-			expected: "x",
-			wantErr:  false,
-		},
-		{
-			name:     "let",
-			args:     []string{},
+			name:     "empty args",
+			args:     []interface{}{},
 			expected: "",
 			wantErr:  false,
 		},
 		{
-			name:     "too many args",
-			args:     []string{"x", "y", "z"},
-			expected: nil,
-			wantErr:  true,
+			name:     "single value",
+			args:     []interface{}{"value"},
+			expected: "value",
+			wantErr:  false,
+		},
+		{
+			name:     "string with newline",
+			args:     []interface{}{"Hello\nWorld"},
+			expected: "Hello\nWorld",
+			wantErr:  false,
+		},
+		{
+			name:     "string with escaped quotes",
+			args:     []interface{}{"Hello \"World\""},
+			expected: "Hello \"World\"",
+			wantErr:  false,
+		},
+		{
+			name:     "string with mixed escapes",
+			args:     []interface{}{"Hello\n\"World\"\t!"},
+			expected: "Hello\n\"World\"\t!",
+			wantErr:  false,
+		},
+		{
+			name:     "simple array",
+			args:     []interface{}{[]interface{}{1, 2, 3}},
+			expected: []interface{}{1, 2, 3},
+			wantErr:  false,
+		},
+		{
+			name:     "nested array",
+			args:     []interface{}{[]interface{}{1, []interface{}{2, 3}, 4}},
+			expected: []interface{}{1, []interface{}{2, 3}, 4},
+			wantErr:  false,
+		},
+		{
+			name:     "deeply nested array",
+			args:     []interface{}{[]interface{}{1, []interface{}{2, []interface{}{3, 4}}, 5}},
+			expected: []interface{}{1, []interface{}{2, []interface{}{3, 4}}, 5},
+			wantErr:  false,
+		},
+		{
+			name:     "mixed type array",
+			args:     []interface{}{[]interface{}{1, "two", true, []interface{}{3, 4}}},
+			expected: []interface{}{1, "two", true, []interface{}{3, 4}},
+			wantErr:  false,
+		},
+		{
+			name:     "empty array",
+			args:     []interface{}{[]interface{}{}},
+			expected: []interface{}{},
+			wantErr:  false,
 		},
 	}
 
@@ -46,7 +83,7 @@ func TestLet(t *testing.T) {
 				t.Errorf("Let.Execute() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if got != tt.expected {
+			if !reflect.DeepEqual(got, tt.expected) {
 				t.Errorf("Let.Execute() = %v, want %v", got, tt.expected)
 			}
 		})

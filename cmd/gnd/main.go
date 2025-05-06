@@ -28,8 +28,13 @@ func logf(level int, format string, args ...interface{}) {
 
 // Default opcode mapping
 var defaultOpcodeMap = map[string]string{
-	"prompt": "/gnd/prompt",
-	"let":    "/gnd/let",
+	"prompt":    "/gnd/prompt",
+	"let":       "/gnd/let",
+	"select":    "/gnd/select",
+	"concat":    "/gnd/concat",
+	"lowercase": "/gnd/lowercase",
+	"uppercase": "/gnd/uppercase",
+	"trim":      "/gnd/trim",
 }
 
 // Instruction represents a parsed GND instruction
@@ -51,7 +56,77 @@ func ParseInstruction(line string) (*Instruction, error) {
 		return nil, nil
 	}
 
-	tokens := strings.Fields(line)
+	var tokens []string
+	var current strings.Builder
+	inString := false
+	escape := false
+
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+
+		if escape {
+			if inString {
+				// Only process escape sequences inside strings
+				switch c {
+				case 'n':
+					current.WriteByte('\n')
+				case 't':
+					current.WriteByte('\t')
+				case 'r':
+					current.WriteByte('\r')
+				case '\\':
+					current.WriteByte('\\')
+				case '"':
+					current.WriteByte('"')
+				default:
+					current.WriteByte('\\')
+					current.WriteByte(c)
+				}
+			} else {
+				current.WriteByte('\\')
+				current.WriteByte(c)
+			}
+			escape = false
+			continue
+		}
+
+		if c == '\\' {
+			escape = true
+			continue
+		}
+
+		if c == '"' {
+			if inString {
+				// End of string
+				tokens = append(tokens, current.String())
+				current.Reset()
+				inString = false
+			} else {
+				// Start of string
+				if current.Len() > 0 {
+					tokens = append(tokens, current.String())
+					current.Reset()
+				}
+				inString = true
+			}
+			continue
+		}
+
+		if !inString && (c == ' ' || c == '\t') {
+			if current.Len() > 0 {
+				tokens = append(tokens, current.String())
+				current.Reset()
+			}
+			continue
+		}
+
+		current.WriteByte(c)
+	}
+
+	if current.Len() > 0 {
+		tokens = append(tokens, current.String())
+	}
+
 	if len(tokens) == 0 {
 		return nil, fmt.Errorf("empty instruction")
 	}
@@ -78,56 +153,85 @@ func ParseInstruction(line string) (*Instruction, error) {
 	}, nil
 }
 
+// unescapeString converts escape sequences in a string literal to their actual values
+func unescapeString(s string) string {
+	var result strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+1 < len(s) {
+			switch s[i+1] {
+			case 'n':
+				result.WriteByte('\n')
+			case 't':
+				result.WriteByte('\t')
+			case 'r':
+				result.WriteByte('\r')
+			case '\\':
+				result.WriteByte('\\')
+			case '"':
+				result.WriteByte('"')
+			default:
+				result.WriteByte(s[i])
+				result.WriteByte(s[i+1])
+			}
+			i++ // Skip the next character
+		} else {
+			result.WriteByte(s[i])
+		}
+	}
+	return result.String()
+}
+
 // ExecuteInstruction executes a single GND instruction
 func (i *Interpreter) ExecuteInstruction(op *Instruction, idx int) error {
 	if op == nil {
 		return nil
 	}
 
-	logf(LogDebug, "[DEBUG] Executing instruction %d: %s %s %v", idx+1, op.Opcode, op.Destination, op.Arguments)
+	logf(LogDebug, "[DEBUG] %s %s %v", op.Opcode, op.Destination, op.Arguments)
 
-	var resolvedArgs []string
-	if op.Opcode == "/gnd/let" && len(op.Arguments) == 0 && op.Destination != "_" {
-		// let args  => bind _ to args
-		if val, ok := i.Slots["_"]; ok {
-			resolvedArgs = []string{fmt.Sprintf("%v", val)}
+	// Resolve arguments
+	resolvedArgs := make([]interface{}, len(op.Arguments))
+	for j, arg := range op.Arguments {
+		// If the argument is a string literal (starts and ends with quotes)
+		if len(arg) >= 2 && arg[0] == '"' && arg[len(arg)-1] == '"' {
+			// Remove the quotes and unescape
+			unescaped := unescapeString(arg[1 : len(arg)-1])
+			resolvedArgs[j] = unescaped
+		} else if val, ok := i.Slots[arg]; ok {
+			// If it's a defined variable, use its value
+			resolvedArgs[j] = val
 		} else {
-			resolvedArgs = []string{""}
-		}
-	} else {
-		resolvedArgs = make([]string, len(op.Arguments))
-		for j, arg := range op.Arguments {
-			if val, ok := i.Slots[arg]; ok {
-				resolvedArgs[j] = fmt.Sprintf("%v", val)
-			} else if op.Opcode == "/gnd/let" && len(op.Arguments) == 1 {
-				// let x y (already handled above, but keep for completeness)
-				if val, ok := i.Slots["_"]; ok {
-					resolvedArgs[j] = fmt.Sprintf("%v", val)
-				} else {
-					resolvedArgs[j] = ""
-				}
-			} else {
-				resolvedArgs[j] = arg
-			}
+			// Otherwise use the literal value
+			resolvedArgs[j] = arg
 		}
 	}
-	logf(LogDebug, "[DEBUG] Resolved args: %v", resolvedArgs)
+
+	// If no arguments provided, use current value of _
+	if len(resolvedArgs) == 0 {
+		if val, ok := i.Slots["_"]; ok {
+			resolvedArgs = []interface{}{val}
+		} else {
+			resolvedArgs = []interface{}{""}
+		}
+	}
 
 	prim, ok := primitive.Get(op.Opcode)
 	if !ok {
-		logf(LogError, "[ERROR] Unknown opcode: %s", op.Opcode)
 		return fmt.Errorf("unknown opcode: %s", op.Opcode)
 	}
 
 	result, err := prim.Execute(resolvedArgs)
 	if err != nil {
-		logf(LogError, "[ERROR] Primitive error: %v", err)
-		return err
+		return fmt.Errorf("%s: %v", op.Opcode, err)
 	}
 
-	logf(LogDebug, "[DEBUG] Result: %v", result)
+	// For debug output, escape newlines to make them visible
+	debugResult := fmt.Sprintf("%v", result)
+	debugResult = strings.ReplaceAll(debugResult, "\n", "\\n")
+	logf(LogDebug, "[DEBUG] %s = %s", op.Destination, debugResult)
+
+	// Store the result in the destination slot
 	i.Slots[op.Destination] = result
-	logf(LogDebug, "[DEBUG] Slots: %+v", i.Slots)
 	return nil
 }
 

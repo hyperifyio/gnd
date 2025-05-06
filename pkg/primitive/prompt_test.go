@@ -14,19 +14,19 @@ func TestPrompt(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		args    []string
+		args    []interface{}
 		want    interface{}
 		wantErr bool
 	}{
 		{
 			name:    "valid prompt",
-			args:    []string{"test prompt"},
+			args:    []interface{}{"test prompt"},
 			want:    "Echo: test prompt",
 			wantErr: false,
 		},
 		{
 			name:    "no args",
-			args:    []string{},
+			args:    []interface{}{},
 			want:    nil,
 			wantErr: true,
 		},
@@ -54,7 +54,7 @@ func TestPromptNoAPIKey(t *testing.T) {
 	defer os.Unsetenv("GO_TEST")
 
 	p := &Prompt{}
-	_, err := p.Execute([]string{"test prompt"})
+	_, err := p.Execute([]interface{}{"test prompt"})
 	if err == nil {
 		t.Error("Prompt.Execute() expected error with no API key, got nil")
 	}

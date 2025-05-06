@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 )
 
@@ -71,12 +70,15 @@ func (p *Prompt) Name() string {
 	return "/gnd/prompt"
 }
 
-func (p *Prompt) Execute(args []string) (interface{}, error) {
+func (p *Prompt) Execute(args []interface{}) (interface{}, error) {
 	if len(args) < 1 {
 		return nil, fmt.Errorf("prompt expects at least 1 argument, got %d", len(args))
 	}
 
-	prompt := strings.Join(args, " ")
+	prompt := fmt.Sprintf("%v", args[0])
+	for i := 1; i < len(args); i++ {
+		prompt += " " + fmt.Sprintf("%v", args[i])
+	}
 
 	// Get API key from environment
 	apiKey := os.Getenv("OPENAI_API_KEY")
@@ -122,6 +124,14 @@ func LLMImpl(client LLMClient, config LLMConfig, apiKey string, prompt string) (
 		return "", fmt.Errorf("failed to marshal request: %w", err)
 	}
 
+	// Log request details
+	fmt.Fprintf(os.Stderr, "[DEBUG] LLM Request:\n")
+	fmt.Fprintf(os.Stderr, "[DEBUG] URL: %s\n", config.BaseURL+"/chat/completions")
+	fmt.Fprintf(os.Stderr, "[DEBUG] Model: %s\n", config.Model)
+	fmt.Fprintf(os.Stderr, "[DEBUG] Temperature: %f\n", config.Temperature)
+	fmt.Fprintf(os.Stderr, "[DEBUG] MaxTokens: %d\n", config.MaxTokens)
+	fmt.Fprintf(os.Stderr, "[DEBUG] Messages: %+v\n", messages)
+
 	req, err := http.NewRequest("POST", config.BaseURL+"/chat/completions", bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
@@ -141,6 +151,11 @@ func LLMImpl(client LLMClient, config LLMConfig, apiKey string, prompt string) (
 		return "", fmt.Errorf("failed to read response: %w", err)
 	}
 
+	// Log response details
+	fmt.Fprintf(os.Stderr, "[DEBUG] LLM Response:\n")
+	fmt.Fprintf(os.Stderr, "[DEBUG] Status: %s\n", resp.Status)
+	fmt.Fprintf(os.Stderr, "[DEBUG] Body: %s\n", string(body))
+
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("API error: %s", body)
 	}
@@ -153,6 +168,9 @@ func LLMImpl(client LLMClient, config LLMConfig, apiKey string, prompt string) (
 	if len(chatResp.Choices) == 0 {
 		return "", fmt.Errorf("no response from API")
 	}
+
+	// Log the final response content
+	fmt.Fprintf(os.Stderr, "[DEBUG] Response Content: %s\n", chatResp.Choices[0].Message.Content)
 
 	return chatResp.Choices[0].Message.Content, nil
 }
