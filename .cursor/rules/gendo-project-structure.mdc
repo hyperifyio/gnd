@@ -1,49 +1,78 @@
 ---
-description: 
-globs: 
+description:
+globs:
 alwaysApply: false
 ---
-# Gendo Project Structure and Bootstrapping
 
 ## Overview
-Gendo is a local-first programming system where code, prompts, and artifacts are version-controlled and modular. The project is bootstrapped in Go, with a focus on plain text artifacts and deterministic, auditable builds.
+Gendo is a locally executed, AI-assisted programming system whose implementation files carry the `.gnd` extension. It is designed so every phase of code generation and execution can run offline, with deterministic behaviour and no hidden state.
+
+## Tool Chain
+The tool-chain is delivered as three executables:
+- **`gndc`**: The compiler front-end that reads natural-language headers in `.llm` files and optional implementation prompts in `.gnd.llm` files, expands those prompts with a local language model, and writes the resulting `.gnd` implementation files.
+- **`gnd`**: The runtime interpreter that executes `.gnd` scripts or their compact, text-based compiled form saved as `.gnc`.
+- **`gndtest`**: The test runner. Tests may be written as `.test.gnd.llm`, which the compiler converts into executable `.test.gnd` pipelines, or as `.test.llm`, which the test runner evaluates directly with the language model.
 
 ## Directory and File Conventions
-- **Units of code** are identified by their path and base-name. Dots in names stand for directory slashes, and case is ignored.
-- **Headers**: `.llm` files describe the operation, dependencies, and constraints in free prose.
-- **Prompt files**: `.gnd.llm` files are generated from headers and outline the implementation pipeline.
-- **Implementations**: `.gnd` files contain the actual code, as a sequence of single-line instructions.
-- **Compiled output**: `.gnc` files are dense byte-streams produced by the interpreter.
-- **Tests**: `.test.gnd` files are executable assertions; `.test.llm` files are model questions.
-- **Fragments**: Numbered fragments (e.g., `010-Abs.gnd`) are concatenated in numeric order before parsing; unnumbered fragments come last.
+A unit comprises all files that share the same base name in one directory:
+- **Headers**: `.llm` files record the unit's intent, dependencies, and constraints
+- **Prompts**: `.gnd.llm` files (optional) guide automatic code generation
+- **Implementations**: `.gnd` files contain the actual code
+- **Compiled output**: `.gnc` files are compact, text-based compiled forms
+- **Tests**: `.test.gnd.llm` files are converted to `.test.gnd` pipelines, or `.test.llm` files for direct evaluation
+
+### Fragment Ordering
+If several numbered fragments exist (e.g., `010-sum.gnd`, `020-sum.gnd`, `sum.gnd`), they are concatenated in this order:
+1. Ascending numeric-prefix order
+2. Any unnumbered fragment
+3. Numeric-suffix fragments (e.g., `sum-1.gnd`, `sum-2.gnd`) in ascending suffix order
+
+Case differences and dots in the base name are ignored, so `010-Sum.gnd` and `sum.gnd` are merged into the same unit.
+
+## Instruction Format
+Inside a `.gnd` file each physical line (ignoring blank lines and comments) is one instruction. Lines beginning with `#` are comments.
+
+### Token Rules
+- Tokens are separated by spaces or horizontal tabs
+- An unescaped `#` terminates tokenisation for the rest of the line
+- Identifiers begin with a letter, may contain letters, digits, or hyphens
+- Identifiers are case-insensitive and never include dots or slashes
+- The single underscore `_` is reserved
+- Literals are decimal or hexadecimal integers, floating-point numbers, or double-quoted strings with C-style escapes
+- String literals must close on the same line
+
+### Instruction Syntax
+```
+opcode [destination] [argument …] [# comment]
+```
+- The first token is always the opcode
+- If an instruction consists of only that token, its destination is `_`
+- Otherwise the destination (an identifier or `_`) appears second, followed by zero or more arguments
+- No additional punctuation is allowed
+
+### Data Flow
+- Data flows through `_`
+- On entry, `_` holds the entire argument array passed to the unit
+- Each instruction implicitly consumes `_` as its first input (unless further inputs are explicitly named)
+- The result is bound to the destination, which becomes the new `_`
+- After the final instruction, whatever value resides in `_` is returned as the unit's result
+- All other identifiers obey single assignment: they may be bound once and refer only to values defined earlier in the file
+
+### Syntax Rules
+- Only spaces and tabs count as intra-line whitespace
+- Other control characters cause a syntax error
+- Lines end with LF (CR-LF is normalised)
+- There is no line-continuation escape—each physical line is complete
+- A file is rejected if:
+  - Any identifier or literal breaks the token rules
+  - A string literal is unterminated
+  - A non-underscore identifier is rebound
+  - A line has no opcode after stripping comments
+  - Disallowed control characters appear outside a string
 
 ## Interpreter and Primitives
 - The interpreter is a Go binary that loads `.gnd` or `.gnc` files, resolves mnemonics to opcodes, and executes instructions deterministically.
-- **Minimal vocabulary**: Only the LLM and identity primitives are provided by default. All other operations must be implemented in `.gnd` or via LLM.
+- **Minimal vocabulary**: Core operations are provided by default, with more complex operations implemented in `.gnd` or via LLM.
 - Primitives:
-  - `llm`: Calls the language model with a prompt.
-  - `identity`: Passes data through unchanged.
-
-## Instruction Format
-- Each non-comment, non-blank line in a `.gnd` file is a single instruction.
-- Format: `opcode [destination] [argument ...] [# comment]`
-- The first token is always the opcode. If only the opcode is present, destination is `_` by default. Otherwise, the destination (an identifier or `_`) appears second, followed by zero or more arguments.
-- Data flows through `_`, which is the implicit input and output slot.
-- Identifiers are single-assignment and case-insensitive.
-
-## Bootstrapping Stages
-1. **Stage Zero**: Deliver the interpreter and 20 Go primitives with wrappers.
-2. **Stage One**: Write arithmetic, list, and string utilities in `.gnd`.
-3. **Stage Two**: Implement compiler passes in `.gnd`.
-4. **Stage Three**: Self-hosting: recompile and compare hashes.
-5. **Stage Four**: Rewrite as many primitives as possible in Gendo.
-
-## Development Workflow
-- Create a `.llm` header for each new operation.
-- Write or generate a `.gnd.llm` prompt.
-- Compile to produce `.gnd` and other artifacts.
-- Run tests; if they fail, edit and retry.
-- All artifacts are plain text and version-controlled.
-
-## References
-- See [README.md](mdc:README.md) and [docs/gnd-syntex.md](mdc:docs/gnd-syntex.md) for a detailed description of the system, file conventions, and syntax.
+  - `prompt`: Sends a prompt to the language model and returns its response.
+  - `let`: Binds a value to a destination slot, with special handling for implicit input/output.
