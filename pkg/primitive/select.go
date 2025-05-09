@@ -26,3 +26,7 @@ func (s *Select) Execute(args []interface{}) (interface{}, error) {
 	}
 	return falseValue, nil
 }
+
+func init() {
+	RegisterPrimitive(&Select{})
+}
