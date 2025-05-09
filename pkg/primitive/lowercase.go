@@ -21,3 +21,7 @@ func (l *Lowercase) Execute(args []interface{}) (interface{}, error) {
 	input := fmt.Sprintf("%v", args[0])
 	return strings.ToLower(input), nil
 }
+
+func init() {
+	RegisterPrimitive(&Lowercase{})
+}

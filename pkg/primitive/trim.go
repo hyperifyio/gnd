@@ -29,3 +29,7 @@ func (t *Trim) Execute(args []interface{}) (interface{}, error) {
 	chars := fmt.Sprintf("%v", args[1])
 	return strings.Trim(input, chars), nil
 }
+
+func init() {
+	RegisterPrimitive(&Trim{})
+}
