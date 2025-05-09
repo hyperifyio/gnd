@@ -71,3 +71,7 @@ func (e *Exit) Execute(args []interface{}) (interface{}, error) {
 
 	return nil, nil
 }
+
+func init() {
+	RegisterPrimitive(&Exit{})
+}
