@@ -147,3 +147,7 @@ func (l *Log) Execute(args []interface{}) (interface{}, error) {
 	}
 	return args[0], nil
 }
+
+func init() {
+	RegisterPrimitive(&Log{})
+}
