@@ -54,3 +54,7 @@ func (p *Print) Execute(args []interface{}) (interface{}, error) {
 	}
 	return nil, nil
 }
+
+func init() {
+	RegisterPrimitive(&Print{})
+}
