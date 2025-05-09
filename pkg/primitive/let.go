@@ -13,3 +13,7 @@ func (l *Let) Execute(args []interface{}) (interface{}, error) {
 	}
 	return args[0], nil
 }
+
+func init() {
+	RegisterPrimitive(&Let{})
+}
