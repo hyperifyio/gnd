@@ -177,28 +177,6 @@ func LLMImpl(client LLMClient, config LLMConfig, apiKey string, prompt string) (
 	return chatResp.Choices[0].Message.Content, nil
 }
 
-// LLM is a primitive that handles LLM operations
-type LLM struct{}
-
-func (l *LLM) Name() string {
-	return "/gnd/llm"
-}
-
-func (l *LLM) Execute(args []string) (interface{}, error) {
-	if len(args) == 0 {
-		return nil, fmt.Errorf("llm requires at least one argument")
-	}
-
-	// Check for API key first
-	if os.Getenv("OPENAI_API_KEY") == "" {
-		return nil, fmt.Errorf("OPENAI_API_KEY environment variable is required")
-	}
-
-	// In test mode, just echo the input
-	if os.Getenv("GO_TEST") == "1" {
-		return fmt.Sprintf("Echo: %s", args[0]), nil
-	}
-
-	// TODO: Implement actual LLM call
-	return nil, fmt.Errorf("LLM implementation not yet complete")
+func init() {
+	RegisterPrimitive(&Prompt{})
 }
