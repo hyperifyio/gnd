@@ -21,3 +21,7 @@ func (u *Uppercase) Execute(args []interface{}) (interface{}, error) {
 	input := fmt.Sprintf("%v", args[0])
 	return strings.ToUpper(input), nil
 }
+
+func init() {
+	RegisterPrimitive(&Uppercase{})
+}
