@@ -62,3 +62,7 @@ func (c *Concat) concatStrings(args []interface{}) (interface{}, error) {
 	}
 	return result.String(), nil
 }
+
+func init() {
+	RegisterPrimitive(&Concat{})
+}
