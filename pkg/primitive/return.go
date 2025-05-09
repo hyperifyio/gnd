@@ -89,5 +89,5 @@ func NewReturn(isSubroutine bool, destination string) *Return {
 }
 
 func init() {
-	Register(&Return{})
+	RegisterPrimitive(&Return{})
 }
