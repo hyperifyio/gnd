@@ -4,7 +4,7 @@ package core
 type Instruction struct {
 	Opcode         string
 	Destination    string
-	Arguments      []string
+	Arguments      []interface{}
 	IsSubroutine   bool
 	SubroutinePath string
 }
