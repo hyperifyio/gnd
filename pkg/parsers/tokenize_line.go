@@ -2,123 +2,44 @@ package parsers
 
 import (
 	"fmt"
-	"strings"
 )
 
-// TokenizeLine breaks down a line into tokens, handling strings, arrays, and escape sequences
+// TokenizeLine tokenizes a line at the top level, ensuring the first two tokens are plain strings,
+// and subsequent tokens are wrapped as PropertyRef if unquoted.
 func TokenizeLine(line string) ([]interface{}, error) {
+	p := NewLineParser(line)
 	var tokens []interface{}
-	var current strings.Builder
-	inString := false
-	escape := false
-	var arrayStack [][]interface{} // stack of arrays
 
-	appendToken := func(tok interface{}) {
-		if len(arrayStack) > 0 {
-			arrayStack[len(arrayStack)-1] = append(arrayStack[len(arrayStack)-1], tok)
-		} else {
-			tokens = append(tokens, tok)
-		}
+	// Parse operation code
+	p.ParseWhitespace()
+	if p.IsEOF() {
+		return nil, fmt.Errorf("empty line")
 	}
 
-	for i := 0; i < len(line); i++ {
-		c := line[i]
+	token, err := p.ParseOpCode()
+	if err != nil {
+		return nil, err
+	}
+	tokens = append(tokens, token)
 
-		if escape {
-			if inString {
-				// Only process escape sequences inside strings
-				switch c {
-				case 'n':
-					current.WriteByte('\n')
-				case 't':
-					current.WriteByte('\t')
-				case 'r':
-					current.WriteByte('\r')
-				case '\\':
-					current.WriteByte('\\')
-				case '"':
-					current.WriteByte('"')
-				default:
-					current.WriteByte('\\')
-					current.WriteByte(c)
-				}
-			} else {
-				current.WriteByte('\\')
-				current.WriteByte(c)
-			}
-			escape = false
-			continue
-		}
-
-		if c == '\\' {
-			escape = true
-			continue
-		}
-
-		if c == '"' {
-			if inString {
-				// End of string
-				appendToken(current.String())
-				current.Reset()
-				inString = false
-			} else {
-				// Start of string
-				if current.Len() > 0 {
-					appendToken(current.String())
-					current.Reset()
-				}
-				inString = true
-			}
-			continue
-		}
-
-		if c == '[' && !inString {
-			if current.Len() > 0 {
-				appendToken(current.String())
-				current.Reset()
-			}
-			// Start a new array
-			arrayStack = append(arrayStack, []interface{}{})
-			continue
-		}
-
-		if c == ']' && !inString {
-			if current.Len() > 0 {
-				appendToken(current.String())
-				current.Reset()
-			}
-			if len(arrayStack) == 0 {
-				return nil, fmt.Errorf("unexpected closing bracket")
-			}
-			// Pop the last array
-			arr := arrayStack[len(arrayStack)-1]
-			arrayStack = arrayStack[:len(arrayStack)-1]
-			appendToken(arr)
-			continue
-		}
-
-		if !inString && (c == ' ' || c == '\t') {
-			if current.Len() > 0 {
-				appendToken(current.String())
-				current.Reset()
-			}
-			continue
-		}
-
-		current.WriteByte(c)
+	// Parse destination
+	p.ParseWhitespace()
+	if p.IsEOF() {
+		return tokens, nil
 	}
 
-	if current.Len() > 0 {
-		appendToken(current.String())
+	token, err = p.ParseDestination()
+	if err != nil {
+		return nil, err
 	}
+	tokens = append(tokens, token)
 
-	// Check for unclosed strings or arrays
-	if inString {
-		return nil, fmt.Errorf("unclosed string")
+	// Parse remaining tokens
+	remainingTokens, err := p.ParseRemainingTokens()
+	if err != nil {
+		return nil, err
 	}
-	if len(arrayStack) > 0 {
-		return nil, fmt.Errorf("unclosed array")
-	}
+	tokens = append(tokens, remainingTokens...)
 
 	return tokens, nil
 }
