@@ -48,9 +48,21 @@ func TestTokenizeLine(t *testing.T) {
 			wantErr:  false,
 		},
 		{
+			name:     "nested array notation with flat values",
+			input:    "command [arg1 arg2] arg3 [arg4 arg5]",
+			expected: []interface{}{"command", []interface{}{"arg1", "arg2"}, "arg3", []interface{}{"arg4", "arg5"}},
+			wantErr:  false,
+		},
+		{
 			name:     "nested arrays",
 			input:    "command [arg1 [nested arg]]",
 			expected: []interface{}{"command", []interface{}{"arg1", []interface{}{"nested", "arg"}}},
+			wantErr:  false,
+		},
+		{
+			name:     "nested arrays and normal items",
+			input:    "command [arg1 [nested arg]] arg3",
+			expected: []interface{}{"command", []interface{}{"arg1", []interface{}{"nested", "arg"}}, "arg3"},
 			wantErr:  false,
 		},
 		{
