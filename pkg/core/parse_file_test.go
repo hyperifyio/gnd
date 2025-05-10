@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/hyperifyio/gnd/pkg/parsers"
 )
 
 func TestParseFile(t *testing.T) {
@@ -26,7 +28,7 @@ func TestParseFile(t *testing.T) {
 			content: `# This is a comment
 add result 1 2
 sub result 5 3
-return "Hello World"`,
+return _ "Hello World"`,
 			wantErr: false,
 			validate: func(t *testing.T, instructions []*Instruction) {
 				if len(instructions) != 3 {
@@ -83,8 +85,13 @@ return "Hello World"`,
 					t.Errorf("Expected %d arguments, got %d", len(expectedArgs), len(instructions[0].Arguments))
 				} else {
 					for i, arg := range expectedArgs {
-						if instructions[0].Arguments[i] != arg {
-							t.Errorf("Expected argument %d to be %q, got %q", i, arg, instructions[0].Arguments[i])
+						propRef, ok := instructions[0].Arguments[i].(parsers.PropertyRef)
+						if !ok {
+							t.Errorf("Expected argument %d to be a PropertyRef, got %T", i, instructions[0].Arguments[i])
+							continue
+						}
+						if propRef.Name != arg {
+							t.Errorf("Expected argument %d to be %q, got %q", i, arg, propRef.Name)
 						}
 					}
 				}
