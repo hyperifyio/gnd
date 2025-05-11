@@ -16,6 +16,9 @@ type Interpreter interface {
 
 	// ExecuteInstruction executes a single GND instruction and returns its result
 	ExecuteInstruction(op *Instruction, idx int) (interface{}, error)
+
+	// ExecuteInstructions executes a sequence of instructions and returns the last result
+	ExecuteInstructions(instructions []*Instruction) (interface{}, error)
 }
 
 // NewFunc is a function type that creates a new core instance

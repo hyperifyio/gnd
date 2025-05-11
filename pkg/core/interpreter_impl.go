@@ -88,6 +88,19 @@ func (i *InterpreterImpl) loadSubroutine(name string) error {
 	return nil
 }
 
+// ExecuteInstructions executes a sequence of instructions and returns the last result
+func (i *InterpreterImpl) ExecuteInstructions(instructions []*Instruction) (interface{}, error) {
+	var lastResult interface{}
+	for idx, op := range instructions {
+		result, err := i.ExecuteInstruction(op, idx)
+		if err != nil {
+			return nil, fmt.Errorf("failed at instruction %d: %v", idx, err)
+		}
+		lastResult = result
+	}
+	return lastResult, nil
+}
+
 // executeSubroutine executes a subroutine with the given arguments
 func (i *InterpreterImpl) executeSubroutine(name string, args []interface{}) (interface{}, error) {
 	// Check if the subroutine is already loaded
@@ -105,17 +118,13 @@ func (i *InterpreterImpl) executeSubroutine(name string, args []interface{}) (in
 		"_": args,
 	})
 
-	// Execute each instruction
-	var lastResult interface{}
-	for idx, op := range instructions {
-		result, err := subInterpreter.ExecuteInstruction(op, idx)
-		if err != nil {
-			return nil, fmt.Errorf("subroutine %s failed at instruction %d: %v", name, idx, err)
-		}
-		lastResult = result
+	// Execute the instructions using the new method
+	result, err := subInterpreter.ExecuteInstructions(instructions)
+	if err != nil {
+		return nil, fmt.Errorf("subroutine %s failed: %v", name, err)
 	}
 
-	return lastResult, nil
+	return result, nil
 }
 
 // ExitErrorWithValue represents an exit error that includes a return value
