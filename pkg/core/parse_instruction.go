@@ -21,17 +21,7 @@ func ParseInstruction(line string, scriptDir string) (*Instruction, error) {
 	if len(tokens) == 0 {
 		return nil, fmt.Errorf("empty instruction")
 	}
-
-	// Convert opcode and destination to string if they are PropertyRef
-	if ref, ok := tokens[0].(parsers.PropertyRef); ok {
-		tokens[0] = ref.Name
-	}
-	if len(tokens) > 1 {
-		if ref, ok := tokens[1].(parsers.PropertyRef); ok {
-			tokens[1] = ref.Name
-		}
-	}
-
+	
 	// Type assert opcode to string
 	opcode, ok := tokens[0].(string)
 	if !ok {
