@@ -127,16 +127,6 @@ func (i *InterpreterImpl) executeSubroutine(name string, args []interface{}) (in
 	return result, nil
 }
 
-// ExitErrorWithValue represents an exit error that includes a return value
-type ExitErrorWithValue struct {
-	Code  int
-	Value interface{}
-}
-
-func (e *ExitErrorWithValue) Error() string {
-	return fmt.Sprintf("exit with code %d", e.Code)
-}
-
 // ExecuteInstruction executes a single GND instruction and returns its result
 func (i *InterpreterImpl) ExecuteInstruction(op *Instruction, idx int) (interface{}, error) {
 	if op == nil {
