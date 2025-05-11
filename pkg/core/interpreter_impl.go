@@ -43,20 +43,6 @@ func NewInterpreterWithSlots(scriptDir string, initialSlots map[string]interface
 	}
 }
 
-// GetSlots returns a copy of the slots map
-func (i *InterpreterImpl) GetSlots() map[string]interface{} {
-	slots := make(map[string]interface{})
-	for k, v := range i.Slots {
-		slots[k] = v
-	}
-	return slots
-}
-
-// GetSubroutines returns the subroutines map
-func (i *InterpreterImpl) GetSubroutines() map[string][]*Instruction {
-	return i.Subroutines
-}
-
 // GetScriptDir returns the script directory
 func (i *InterpreterImpl) GetScriptDir() string {
 	return i.ScriptDir
@@ -104,7 +90,6 @@ func (i *InterpreterImpl) loadSubroutine(name string) error {
 
 // executeSubroutine executes a subroutine with the given arguments
 func (i *InterpreterImpl) executeSubroutine(name string, args []interface{}) (interface{}, error) {
-
 	// Check if the subroutine is already loaded
 	instructions, ok := i.Subroutines[name]
 	if !ok {

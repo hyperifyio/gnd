@@ -2,12 +2,6 @@ package core
 
 // Interpreter defines the methods that an interpreter must implement
 type Interpreter interface {
-	// GetSlots returns the slots map
-	GetSlots() map[string]interface{}
-
-	// GetSubroutines returns the subroutines map
-	GetSubroutines() map[string][]*Instruction
-
 	// GetScriptDir returns the script directory
 	GetScriptDir() string
 
