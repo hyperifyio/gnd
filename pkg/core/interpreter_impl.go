@@ -3,13 +3,11 @@ package core
 import (
 	"fmt"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/hyperifyio/gnd/pkg/parsers"
-
 	"github.com/hyperifyio/gnd/pkg/log"
+	"github.com/hyperifyio/gnd/pkg/parsers"
 	"github.com/hyperifyio/gnd/pkg/primitive"
 	"github.com/hyperifyio/gnd/pkg/units"
 )
@@ -34,9 +32,24 @@ var NewInterpreter NewFunc = func(scriptDir string) Interpreter {
 	}
 }
 
-// GetSlots returns the slots map
+// NewInterpreterWithSlots creates a new interpreter with initial slots
+func NewInterpreterWithSlots(scriptDir string, initialSlots map[string]interface{}) Interpreter {
+	return &InterpreterImpl{
+		Slots:       initialSlots,
+		Subroutines: make(map[string][]*Instruction),
+		ScriptDir:   scriptDir,
+		LogIndent:   0,
+		UnitsFS:     units.GetUnitsFS(),
+	}
+}
+
+// GetSlots returns a copy of the slots map
 func (i *InterpreterImpl) GetSlots() map[string]interface{} {
-	return i.Slots
+	slots := make(map[string]interface{})
+	for k, v := range i.Slots {
+		slots[k] = v
+	}
+	return slots
 }
 
 // GetSubroutines returns the subroutines map
@@ -89,78 +102,56 @@ func (i *InterpreterImpl) loadSubroutine(name string) error {
 	return nil
 }
 
-// executeSubroutine executes a subroutine
-func (i *InterpreterImpl) executeSubroutine(name string) error {
+// executeSubroutine executes a subroutine with the given arguments
+func (i *InterpreterImpl) executeSubroutine(name string, args []interface{}) (interface{}, error) {
+
 	// Check if the subroutine is already loaded
 	instructions, ok := i.Subroutines[name]
 	if !ok {
 		// Try to load the subroutine
 		if err := i.loadSubroutine(name); err != nil {
-			return err
+			return nil, err
 		}
 		instructions = i.Subroutines[name]
 	}
 
-	// Create a new core for the subroutine
-	subInterpreter := NewInterpreter(i.GetScriptDir())
-
-	// Copy the slots from the parent core
-	for k, v := range i.Slots {
-		subInterpreter.GetSlots()[k] = v
-	}
+	// Create a new scope for the subroutine with just the arguments
+	subInterpreter := NewInterpreterWithSlots(i.GetScriptDir(), map[string]interface{}{
+		"_": args,
+	})
 
 	// Execute each instruction
+	var lastResult interface{}
 	for idx, op := range instructions {
-		if err := subInterpreter.ExecuteInstruction(op, idx); err != nil {
-			return fmt.Errorf("subroutine %s failed at instruction %d: %v", name, idx, err)
+		result, err := subInterpreter.ExecuteInstruction(op, idx)
+		if err != nil {
+			return nil, fmt.Errorf("subroutine %s failed at instruction %d: %v", name, idx, err)
 		}
+		lastResult = result
 	}
 
-	// Copy the slots back to the parent core
-	for k, v := range subInterpreter.GetSlots() {
-		i.Slots[k] = v
-	}
-
-	return nil
+	return lastResult, nil
 }
 
-// ExecuteInstruction executes a single GND instruction
-func (i *InterpreterImpl) ExecuteInstruction(op *Instruction, idx int) error {
+// ExitErrorWithValue represents an exit error that includes a return value
+type ExitErrorWithValue struct {
+	Code  int
+	Value interface{}
+}
+
+func (e *ExitErrorWithValue) Error() string {
+	return fmt.Sprintf("exit with code %d", e.Code)
+}
+
+// ExecuteInstruction executes a single GND instruction and returns its result
+func (i *InterpreterImpl) ExecuteInstruction(op *Instruction, idx int) (interface{}, error) {
 	if op == nil {
-		return nil
+		return nil, nil
 	}
 
 	// Handle subroutine calls
 	if op.IsSubroutine {
-		// Extract the base name without .gnd extension
-		baseName := strings.TrimSuffix(op.SubroutinePath, ".gnd")
-		i.LogDebug("%s %s %v", op.Opcode, op.Destination, op.Arguments)
-
-		// Resolve arguments by mapping context properties
-		resolvedArgs, err := parsers.MapContextProperties(i.Slots, op.Arguments)
-		if err != nil {
-			return err
-		}
-
-		// Store the resolved arguments in _
-		i.LogDebug("Storing resolved args %v in _ before subroutine call", resolvedArgs)
-		i.Slots["_"] = resolvedArgs
-
-		// Execute the subroutine
-		err = i.executeSubroutine(baseName)
-		if err != nil {
-			return err
-		}
-
-		// Store the result in the destination slot
-		if val, ok := i.Slots["_"]; ok {
-			i.LogDebug("Storing subroutine result %v in destination %s", val, op.Destination)
-			i.Slots[op.Destination] = val
-		} else {
-			i.LogDebug("No result in _ to store in destination %s", op.Destination)
-		}
-
-		return nil
+		return i.ExecuteSubroutineCall(op)
 	}
 
 	// Log regular instruction
@@ -169,7 +160,7 @@ func (i *InterpreterImpl) ExecuteInstruction(op *Instruction, idx int) error {
 	// Resolve arguments by mapping context properties
 	resolvedArgs, err := parsers.MapContextProperties(i.Slots, op.Arguments)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// If no arguments provided, use current value of _
@@ -183,37 +174,14 @@ func (i *InterpreterImpl) ExecuteInstruction(op *Instruction, idx int) error {
 		}
 	}
 
-	// For return primitive, handle unquoted strings
-	if op.Opcode == "/gnd/return" {
-		// Check if all arguments are unquoted strings
-		allUnquoted := true
-		strArgs := make([]string, 0, len(op.Arguments))
-		for _, arg := range op.Arguments {
-			if strArg, ok := arg.(string); ok {
-				if len(strArg) >= 2 && strArg[0] == '"' && strArg[len(strArg)-1] == '"' {
-					allUnquoted = false
-					break
-				}
-				strArgs = append(strArgs, strArg)
-			} else {
-				allUnquoted = false
-				break
-			}
-		}
-		if allUnquoted && len(strArgs) > 0 {
-			i.LogDebug("Joining unquoted strings with spaces: %v", strArgs)
-			resolvedArgs = []interface{}{strings.Join(strArgs, " ")}
-		}
-	}
-
 	prim, ok := primitive.Get(op.Opcode)
 	if !ok {
-		return fmt.Errorf("unknown opcode: %s", op.Opcode)
+		return nil, fmt.Errorf("unknown opcode: %s", op.Opcode)
 	}
 
 	result, err := prim.Execute(resolvedArgs)
 	if err != nil {
-		return fmt.Errorf("%s: %v", op.Opcode, err)
+		return nil, fmt.Errorf("%s: %v", op.Opcode, err)
 	}
 
 	i.LogDebug("primitive result: %v", result)
@@ -237,34 +205,48 @@ func (i *InterpreterImpl) ExecuteInstruction(op *Instruction, idx int) error {
 				i.LogDebug("storing value %v (type: %T) in destination %s", val, val, dest)
 				i.Slots[dest] = val
 				i.LogDebug("after storing, destination %s contains: %v (type: %T)", dest, i.Slots[dest], i.Slots[dest])
-				// Print all values
-				switch v := val.(type) {
-				case []interface{}:
-					i.LogDebug("printing array of values: %v (type: %T)", v, v)
-					for _, item := range v {
-						i.LogDebug("printing array item: %v (type: %T)", item, item)
-						fmt.Print(item)
-					}
-				default:
-					i.LogDebug("printing single value: %v (type: %T)", v, v)
-					fmt.Print(val)
+
+				return val, &ExitErrorWithValue{
+					Code:  exitCode,
+					Value: val,
 				}
-				os.Stdout.Sync()
-				return &ExitError{Code: exitCode}
 			} else {
 				i.LogDebug("no value found in result map")
-				return &ExitError{Code: exitCode}
+				return nil, &ExitError{Code: exitCode}
 			}
 		}
 	}
 
 	// For debug output, escape newlines to make them visible
-	debugResult := fmt.Sprintf("%v", result)
-	debugResult = strings.ReplaceAll(debugResult, "\n", "\\n")
-	i.LogDebug("%s = %s", op.Destination, debugResult)
+	i.LogDebug("%s = %s", op.Destination, log.StringifyValue(result))
 
 	// Store the result in the destination slot
 	i.LogDebug("storing result %v in destination %s", result, op.Destination)
 	i.Slots[op.Destination] = result
-	return nil
+	return result, nil
+}
+
+// ExecuteSubroutineCall handles the complete flow of executing a subroutine call,
+// including argument resolution and result storage
+func (i *InterpreterImpl) ExecuteSubroutineCall(op *Instruction) (interface{}, error) {
+	// Extract the base name without .gnd extension
+	baseName := strings.TrimSuffix(op.SubroutinePath, ".gnd")
+	i.LogDebug("%s %s %v", op.Opcode, op.Destination, op.Arguments)
+
+	// Resolve arguments by mapping context properties
+	resolvedArgs, err := parsers.MapContextProperties(i.Slots, op.Arguments)
+	if err != nil {
+		return nil, err
+	}
+
+	// Execute the subroutine with the resolved arguments
+	result, err := i.executeSubroutine(baseName, resolvedArgs)
+	if err != nil {
+		return nil, err
+	}
+
+	// Store the result in the destination slot
+	i.LogDebug("Storing subroutine result %v in destination %s", result, op.Destination)
+	i.Slots[op.Destination] = result
+	return result, nil
 }

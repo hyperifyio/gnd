@@ -20,8 +20,8 @@ type Interpreter interface {
 	// LogDebug logs a debug message with proper indentation
 	LogDebug(format string, args ...interface{})
 
-	// ExecuteInstruction executes a single GND instruction
-	ExecuteInstruction(op *Instruction, idx int) error
+	// ExecuteInstruction executes a single GND instruction and returns its result
+	ExecuteInstruction(op *Instruction, idx int) (interface{}, error)
 }
 
 // NewFunc is a function type that creates a new core instance
