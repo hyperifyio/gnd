@@ -27,7 +27,7 @@ func (r *Return) Execute(args []interface{}) (interface{}, error) {
 	}
 
 	if l != 1 {
-		// TODO: Print a warning
+		log.Printf(log.Warn, "return: ignoring extra arguments, only the first argument will be returned")
 	}
 
 	currentValue := args[0]
