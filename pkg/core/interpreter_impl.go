@@ -94,6 +94,10 @@ func (i *InterpreterImpl) ExecuteInstructions(instructions []*Instruction) (inte
 	for idx, op := range instructions {
 		result, err := i.ExecuteInstruction(op, idx)
 		if err != nil {
+			if value, ok := primitive.GetReturnValue(err); ok {
+				lastResult = value
+				break
+			}
 			return nil, fmt.Errorf("failed at instruction %d: %v", idx, err)
 		}
 		lastResult = result
@@ -134,6 +138,7 @@ func (i *InterpreterImpl) ExecuteInstruction(op *Instruction, idx int) (interfac
 	}
 
 	// Handle subroutine calls
+	// TODO: Investigate if we really need to know that the op is subroutine or could we handle this in the upper context
 	if op.IsSubroutine {
 		return i.ExecuteSubroutineCall(op)
 	}
