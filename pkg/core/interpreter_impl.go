@@ -170,35 +170,20 @@ func (i *InterpreterImpl) ExecuteInstruction(op *Instruction, idx int) (interfac
 
 	i.LogDebug("primitive result: %v", result)
 
-	// Check if this is a return with exit signal
-	if resultMap, ok := result.(map[string]interface{}); ok {
-		i.LogDebug("result is a map: %v", resultMap)
-		if exit, ok := resultMap["exit"].(bool); ok && exit {
-			i.LogDebug("exit signal detected")
-			// Get the exit code if provided
-			exitCode := 0
-			if code, ok := resultMap["code"].(int); ok {
-				exitCode = code
-			}
-			// Store the value in the destination slot before exiting
-			if val, ok := resultMap["value"]; ok {
-				dest := op.Destination
-				if d, ok := resultMap["destination"].(string); ok {
-					dest = d
-				}
-				i.LogDebug("storing value %v (type: %T) in destination %s", val, val, dest)
-				i.Slots[dest] = val
-				i.LogDebug("after storing, destination %s contains: %v (type: %T)", dest, i.Slots[dest], i.Slots[dest])
-
-				return val, &ExitErrorWithValue{
-					Code:  exitCode,
-					Value: val,
-				}
-			} else {
-				i.LogDebug("no value found in result map")
-				return nil, &ExitError{Code: exitCode}
+	// Check if this is an ExitResult
+	if exitResult, ok := GetExitResult(result); ok {
+		i.LogDebug("exit result detected with code %d", exitResult.Code)
+		// Store the value in the destination slot before exiting
+		if exitResult.Value != nil {
+			i.LogDebug("storing value %v (type: %T) in destination %s", exitResult.Value, exitResult.Value, op.Destination)
+			i.Slots[op.Destination] = exitResult.Value
+			i.LogDebug("after storing, destination %s contains: %v (type: %T)", op.Destination, i.Slots[op.Destination], i.Slots[op.Destination])
+			return exitResult.Value, &ExitErrorWithValue{
+				Code:  exitResult.Code,
+				Value: exitResult.Value,
 			}
 		}
+		return nil, &ExitError{Code: exitResult.Code}
 	}
 
 	// For debug output, escape newlines to make them visible
