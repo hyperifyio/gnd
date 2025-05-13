@@ -16,12 +16,12 @@ func ParseInstruction(line string, scriptDir string) (*Instruction, error) {
 
 	tokens, err := parsers.TokenizeLine(line)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to tokenize line: %w", err)
 	}
 	if len(tokens) == 0 {
 		return nil, fmt.Errorf("empty instruction")
 	}
-
+	
 	// Type assert opcode to string
 	opcode, ok := tokens[0].(string)
 	if !ok {
