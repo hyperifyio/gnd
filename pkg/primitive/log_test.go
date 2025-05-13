@@ -25,15 +25,13 @@ func TestLog(t *testing.T) {
 			name:           "no arguments",
 			args:           []interface{}{},
 			expectedReturn: nil,
-			expectError:    false,
-			expectedOutput: "[INFO]: _\n",
+			expectError:    true,
 		},
 		{
 			name:           "only value",
 			args:           []interface{}{"test"},
-			expectedReturn: "test",
-			expectError:    false,
-			expectedOutput: "[INFO]: test\n",
+			expectedReturn: nil,
+			expectError:    true,
 		},
 		{
 			name:           "non-string value",
@@ -119,4 +117,135 @@ func TestLog(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestConvertLogLevel(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    int
+		wantErr bool
+	}{
+		{
+			name:    "valid error level",
+			input:   "error",
+			want:    log.Error,
+			wantErr: false,
+		},
+		{
+			name:    "valid warn level",
+			input:   "warn",
+			want:    log.Warn,
+			wantErr: false,
+		},
+		{
+			name:    "valid info level",
+			input:   "info",
+			want:    log.Info,
+			wantErr: false,
+		},
+		{
+			name:    "valid debug level",
+			input:   "debug",
+			want:    log.Debug,
+			wantErr: false,
+		},
+		{
+			name:    "case insensitive error",
+			input:   "ERROR",
+			want:    log.Error,
+			wantErr: false,
+		},
+		{
+			name:    "invalid level",
+			input:   "invalid",
+			want:    0,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ConvertLogLevel(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ConvertLogLevel() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("ConvertLogLevel() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestConvertToStrings(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   []interface{}
+		want    []string
+		wantErr bool
+	}{
+		{
+			name:    "simple string arguments",
+			input:   []interface{}{"hello", "world"},
+			want:    []string{"hello", "world"},
+			wantErr: false,
+		},
+		{
+			name:    "array of strings",
+			input:   []interface{}{[]interface{}{"hello", "world"}},
+			want:    []string{"hello", "world"},
+			wantErr: false,
+		},
+		{
+			name:    "mixed string and array arguments",
+			input:   []interface{}{"hello", []interface{}{"world", "!"}},
+			want:    []string{"hello", "world", "!"},
+			wantErr: false,
+		},
+		{
+			name:    "non-string argument",
+			input:   []interface{}{123},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name:    "non-string in array",
+			input:   []interface{}{[]interface{}{"hello", 123}},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name:    "empty input",
+			input:   []interface{}{},
+			want:    []string{},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ConvertToStrings(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ConvertToStrings() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !compareStringSlices(got, tt.want) {
+				t.Errorf("ConvertToStrings() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// compareStringSlices compares two string slices for equality
+func compareStringSlices(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

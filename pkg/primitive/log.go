@@ -15,103 +15,27 @@ const (
 	LogDebug
 )
 
-// Log represents the log primitive
-type Log struct{}
-
-// Name returns the name of the primitive
-func (l *Log) Name() string {
-	return "/gnd/log"
-}
-
-// Execute runs the log primitive
-func (l *Log) Execute(args []interface{}) (interface{}, error) {
-	// Case 1: No arguments - use _ as an array
-	if len(args) == 0 {
-		log.Printf(log.Info, "_")
-		return nil, nil
-	}
-
-	// Case 2: Single argument - could be a string or an array from _
-	if len(args) == 1 {
-		// Check if it's an array
-		if arr, ok := args[0].([]interface{}); ok {
-			// First element should be the log level
-			levelStr, ok := arr[0].(string)
-			if !ok {
-				return nil, fmt.Errorf("log level must be a string, got %T", arr[0])
-			}
-
-			// Convert level string to int
-			var level int
-			normalizedLevel := strings.ToLower(levelStr)
-			switch normalizedLevel {
-			case "error":
-				level = log.Error
-			case "warn":
-				level = log.Warn
-			case "info":
-				level = log.Info
-			case "debug":
-				level = log.Debug
-			default:
-				return nil, fmt.Errorf("invalid log level: %s (must be one of: error, warn, info, debug)", levelStr)
-			}
-
-			// Convert remaining elements to strings
-			var strArgs []string
-			for _, item := range arr[1:] {
-				str, ok := item.(string)
-				if !ok {
-					return nil, fmt.Errorf("log requires string arguments, got %T", item)
-				}
-				strArgs = append(strArgs, str)
-			}
-
-			// Join all arguments with spaces and log
-			output := strings.Join(strArgs, " ")
-			log.Printf(level, output)
-
-			// Return the last argument
-			if len(arr) > 1 {
-				return arr[len(arr)-1], nil
-			}
-			return arr[0], nil
-		}
-
-		// If it's a string, log at info level
-		val, ok := args[0].(string)
-		if !ok {
-			return nil, fmt.Errorf("log requires string arguments, got %T", args[0])
-		}
-		log.Printf(log.Info, val)
-		return val, nil
-	}
-
-	// Case 3: Level and value(s) provided
-	levelStr, ok := args[0].(string)
-	if !ok {
-		return nil, fmt.Errorf("log level must be a string, got %T", args[0])
-	}
-
-	// Convert level string to int
-	var level int
+// ConvertLogLevel converts a string log level to its corresponding integer value
+func ConvertLogLevel(levelStr string) (int, error) {
 	normalizedLevel := strings.ToLower(levelStr)
 	switch normalizedLevel {
 	case "error":
-		level = log.Error
+		return log.Error, nil
 	case "warn":
-		level = log.Warn
+		return log.Warn, nil
 	case "info":
-		level = log.Info
+		return log.Info, nil
 	case "debug":
-		level = log.Debug
+		return log.Debug, nil
 	default:
-		return nil, fmt.Errorf("invalid log level: %s (must be one of: error, warn, info, debug)", levelStr)
+		return 0, fmt.Errorf("invalid log level: %s (must be one of: error, warn, info, debug)", levelStr)
 	}
+}
 
-	// Convert remaining arguments to strings, handling arrays
+// ConvertToStrings converts log arguments to a slice of strings
+func ConvertToStrings(args []interface{}) ([]string, error) {
 	var strArgs []string
-	for _, arg := range args[1:] {
+	for _, arg := range args {
 		switch v := arg.(type) {
 		case string:
 			strArgs = append(strArgs, v)
@@ -133,19 +57,49 @@ func (l *Log) Execute(args []interface{}) (interface{}, error) {
 			strArgs = append(strArgs, str)
 		}
 	}
+	return strArgs, nil
+}
+
+// Log represents the log primitive
+type Log struct{}
+
+// Name returns the name of the primitive
+func (l *Log) Name() string {
+	return "/gnd/log"
+}
+
+// Execute runs the log primitive
+func (l *Log) Execute(args []interface{}) (interface{}, error) {
+	if len(args) == 0 || len(args) == 1 {
+		return nil, fmt.Errorf("log primitive requires at least two arguments")
+	}
+
+	// Case 3: Level and value(s) provided
+	levelStr, ok := args[0].(string)
+	if !ok {
+		return nil, fmt.Errorf("log level must be a string, got %T", args[0])
+	}
+
+	// Convert level string to int
+	level, err := ConvertLogLevel(levelStr)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert remaining arguments to strings
+	strArgs, err := ConvertToStrings(args[1:])
+	if err != nil {
+		return nil, err
+	}
 
 	// Join all arguments with spaces and log
 	output := strings.Join(strArgs, " ")
 	log.Printf(level, output)
-
-	// Return the last argument
-	if len(args) > 1 {
-		if arr, ok := args[len(args)-1].([]interface{}); ok && len(arr) > 0 {
-			return arr[len(arr)-1], nil
-		}
-		return args[len(args)-1], nil
+	// Return the last string argument, as expected by the tests
+	if len(strArgs) > 0 {
+		return strArgs[len(strArgs)-1], nil
 	}
-	return args[0], nil
+	return output, nil
 }
 
 func init() {
