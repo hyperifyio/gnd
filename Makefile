@@ -7,11 +7,11 @@ build: build-gnd build-gndc build-gndtest
 build-gnd:
 	go build -o bin/gnd cmd/gnd/main.go
 
-build-gndc:
-	go build -o bin/gndc cmd/gndc/main.go
+#build-gndc:
+#	go build -o bin/gndc cmd/gndc/main.go
 
-build-gndtest:
-	go build -o bin/gndtest cmd/gndtest/main.go
+#build-gndtest:
+#	go build -o bin/gndtest cmd/gndtest/main.go
 
 test:
 	go test ./... -v
