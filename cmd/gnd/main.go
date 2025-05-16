@@ -8,7 +8,28 @@ import (
 
 	"github.com/hyperifyio/gnd/pkg/core"
 	"github.com/hyperifyio/gnd/pkg/log"
+	"github.com/hyperifyio/gnd/pkg/parsers"
 )
+
+// DefaultOpcodeMap Default opcode mapping
+var DefaultOpcodeMap = map[string]string{
+	"prompt":    "/gnd/prompt",
+	"let":       "/gnd/let",
+	"select":    "/gnd/select",
+	"first":     "/gnd/first",
+	"concat":    "/gnd/concat",
+	"lowercase": "/gnd/lowercase",
+	"uppercase": "/gnd/uppercase",
+	"trim":      "/gnd/trim",
+	"print":     "/gnd/print",
+	"log":       "/gnd/log",
+	"error":     "/gnd/error",
+	"warn":      "/gnd/warn",
+	"info":      "/gnd/info",
+	"debug":     "/gnd/debug",
+	"exit":      "/gnd/exit",
+	"return":    "/gnd/return",
+}
 
 func printHelp() {
 	fmt.Print(`Usage: gnd [options] <script.gnd>
@@ -47,23 +68,39 @@ func main() {
 		os.Exit(1)
 	}
 
-	scriptPath := flag.Args()[0]
+	args := flag.Args()
+	scriptPath := args[0]
 	scriptDir := filepath.Dir(scriptPath)
+	log.Printf(log.Debug, "script path: %v", scriptPath)
+	log.Printf(log.Debug, "script dir: %v", scriptDir)
 
-	// Parse the script file
-	instructions, err := core.ParseFile(scriptPath)
+	scriptArgs := args[1:]
+	log.Printf(log.Debug, "script args: %v", scriptArgs)
+
+	// Create a new core interpreter
+	interpreterImpl := core.NewInterpreter(scriptDir, DefaultOpcodeMap)
+	interpreterImpl.SetSlot("_", scriptArgs)
+
+	// Read the script file
+	content, err := os.ReadFile(scriptPath)
+	if err != nil {
+		fmt.Printf("Error reading the script: %s: %v\n", scriptPath, err)
+		os.Exit(1)
+	}
+
+	// Parse the instructions
+	instructions, err := parsers.ParseInstructionLines(scriptPath, string(content))
 	if err != nil {
 		fmt.Printf("Error parsing script: %v\n", err)
 		os.Exit(1)
 	}
-
-	// Create a new core
-	interpreterImpl := core.NewInterpreter(scriptDir)
+	log.Printf(log.Debug, "loaded %d instructions", len(instructions))
 
 	// Execute each instruction
 	status := 0
 	var value interface{}
-	if value, err = interpreterImpl.ExecuteInstructions(instructions); err != nil {
+	log.Printf(log.Debug, "Executing: %s %v", scriptPath, scriptArgs)
+	if value, err = interpreterImpl.ExecuteInstructionBlock(scriptPath, scriptArgs, instructions); err != nil {
 		if exitErr, ok := core.GetExitResult(err); ok {
 			value = exitErr.Value
 			status = exitErr.Code

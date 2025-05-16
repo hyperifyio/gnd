@@ -6,8 +6,9 @@ import (
 )
 
 // SubroutinePath constructs the path to a subroutine file
+// - name is the opcode name, which can be a relative or absolute path.
+// - dir is the directory of the currently executing main script.
 func SubroutinePath(name, dir string) string {
-	// Construct the path to the subroutine file
 	subPath := name
 	if !strings.HasPrefix(name, "/") {
 		subPath = filepath.Join(dir, name)

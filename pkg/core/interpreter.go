@@ -1,5 +1,7 @@
 package core
 
+import "github.com/hyperifyio/gnd/pkg/parsers"
+
 // Interpreter defines the methods that an interpreter must implement
 type Interpreter interface {
 	// GetScriptDir returns the script directory
@@ -15,11 +17,15 @@ type Interpreter interface {
 	LogDebug(format string, args ...interface{})
 
 	// ExecuteInstruction executes a single GND instruction and returns its result
-	ExecuteInstruction(op *Instruction, idx int) (interface{}, error)
+	ExecuteInstruction(opcode, destination string, arguments []interface{}) (interface{}, error)
 
-	// ExecuteInstructions executes a sequence of instructions and returns the last result
-	ExecuteInstructions(instructions []*Instruction) (interface{}, error)
+	// ExecuteInstructionBlock executes a sequence of instructions and returns the last result
+	// source is the source of the instructions (for debug purporeses only), e.g., a file name or a source identificating string
+	ExecuteInstructionBlock(source string, input interface{}, instructions []*parsers.Instruction) (interface{}, error)
+
+	// SetSlot sets a slot value
+	SetSlot(name string, value interface{}) error
+
+	// GetSlot gets a slot value
+	GetSlot(name string) (interface{}, error)
 }
-
-// NewFunc is a function type that creates a new core instance
-type NewFunc func(scriptDir string) Interpreter

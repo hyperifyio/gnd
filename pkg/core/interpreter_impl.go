@@ -3,7 +3,7 @@ package core
 import (
 	"fmt"
 	"io/fs"
-	"path/filepath"
+	"os"
 	"strings"
 
 	"github.com/hyperifyio/gnd/pkg/log"
@@ -15,32 +15,65 @@ import (
 // InterpreterImpl represents the execution environment
 type InterpreterImpl struct {
 	Slots       map[string]interface{}
-	Subroutines map[string][]*Instruction
-	ScriptDir   string // Directory of the currently executing script
-	LogIndent   int    // Current log indentation level
-	UnitsFS     fs.FS  // Embedded filesystem containing GND units
+	Subroutines map[string][]*parsers.Instruction
+	ScriptDir   string            // Directory of the currently executing script
+	LogIndent   int               // Current log indentation level
+	UnitsFS     fs.FS             // Embedded filesystem containing GND units
+	OpcodeMap   map[string]string // Map of opcode aliases
+	parent      *InterpreterImpl  // Parent interpreter for nested calls
 }
 
 // NewInterpreter creates a new core instance
-var NewInterpreter NewFunc = func(scriptDir string) Interpreter {
+func NewInterpreter(
+	scriptDir string,
+	opcodeMap map[string]string,
+) Interpreter {
 	return &InterpreterImpl{
 		Slots:       make(map[string]interface{}),
-		Subroutines: make(map[string][]*Instruction),
+		Subroutines: make(map[string][]*parsers.Instruction),
 		ScriptDir:   scriptDir,
 		LogIndent:   0,
 		UnitsFS:     units.GetUnitsFS(),
+		OpcodeMap:   opcodeMap,
 	}
 }
 
-// NewInterpreterWithSlots creates a new interpreter with initial slots
-func NewInterpreterWithSlots(scriptDir string, initialSlots map[string]interface{}) Interpreter {
+// NewInterpreterWithParent creates a new interpreter with initial slots and opcode aliases
+func NewInterpreterWithParent(
+	scriptDir string,
+	initialSlots map[string]interface{},
+	parent *InterpreterImpl,
+) Interpreter {
 	return &InterpreterImpl{
 		Slots:       initialSlots,
-		Subroutines: make(map[string][]*Instruction),
+		Subroutines: make(map[string][]*parsers.Instruction),
 		ScriptDir:   scriptDir,
 		LogIndent:   0,
 		UnitsFS:     units.GetUnitsFS(),
+		OpcodeMap:   make(map[string]string),
+		parent:      parent,
 	}
+}
+
+// SetSlot sets a slot value
+func (i *InterpreterImpl) SetSlot(name string, value interface{}) error {
+	if name == "" {
+		return fmt.Errorf("SetSlot: empty slot name")
+	}
+	i.Slots[name] = value
+	return nil
+}
+
+// GetSlot gets a slot value
+func (i *InterpreterImpl) GetSlot(name string) (interface{}, error) {
+	if name == "" {
+		return nil, fmt.Errorf("GetSlot: empty slot name")
+	}
+	value, ok := i.Slots[name]
+	if !ok {
+		return nil, fmt.Errorf("GetSlot: slot not found: %s", name)
+	}
+	return value, nil
 }
 
 // GetScriptDir returns the script directory
@@ -72,155 +105,211 @@ func (i *InterpreterImpl) LogDebug(format string, args ...interface{}) {
 	log.Printf(log.Debug, prefix+format, args...)
 }
 
-// loadSubroutine loads a subroutine from a file
-func (i *InterpreterImpl) loadSubroutine(name string) error {
-	// Construct the path to the subroutine file
-	subPath := filepath.Join(i.GetScriptDir(), name+".gnd")
+// LoadSubroutine loads a subroutine from a file
+func (i *InterpreterImpl) LoadSubroutine(subPath string) error {
+
+	var content []byte
+
+	if strings.HasPrefix(subPath, "/gnd/") {
+		// Parse subroutine file from embedded filesystem i.UnitsFS
+		c, err := fs.ReadFile(i.UnitsFS, subPath[1:])
+		if err != nil {
+			return fmt.Errorf("[%s]: LoadSubroutine: failed to read embedded subroutine:\n  %v", subPath, err)
+		}
+		content = c
+	} else {
+		// Read the subroutine file from filesystem
+		c, err := os.ReadFile(subPath)
+		if err != nil {
+			return fmt.Errorf("[%s]: LoadSubroutine: failed to read subroutine:\n  %v", subPath, err)
+		}
+		content = c
+	}
 
 	// Parse the subroutine file
-	instructions, err := ParseFile(subPath)
+	instructions, err := parsers.ParseInstructionLines(subPath, string(content))
 	if err != nil {
-		return fmt.Errorf("failed to parse subroutine %s: %v", name, err)
+		return fmt.Errorf("[%s]: LoadSubroutine: failed to parse subroutine:\n  %v", subPath, err)
 	}
 
 	// Store the subroutine
-	i.Subroutines[name] = instructions
+	i.Subroutines[subPath] = instructions
 	return nil
 }
 
-// ExecuteInstructions executes a sequence of instructions and returns the last result
-func (i *InterpreterImpl) ExecuteInstructions(instructions []*Instruction) (interface{}, error) {
-	var lastResult interface{}
+// ExecuteInstructionBlock executes a sequence of instructions and returns the last result
+func (i *InterpreterImpl) ExecuteInstructionBlock(source string, input interface{}, instructions []*parsers.Instruction) (interface{}, error) {
+	lastResult := input
 	for idx, op := range instructions {
-		result, err := i.ExecuteInstruction(op, idx)
-		if err != nil {
-			if value, ok := primitive.GetReturnValue(err); ok {
-				lastResult = value
-				break
+		if op != nil {
+			i.LogDebug("[%s:%d]: ExecuteInstructionBlock: %s <- %s %v", source, idx, op.Destination, op.Opcode, op.Arguments)
+			result, err := i.ExecuteInstruction(op.Opcode, op.Destination, op.Arguments)
+			if err != nil {
+				if returnValue, ok := primitive.GetReturnValue(err); ok {
+					i.LogDebug("[%s:%d]: ExecuteInstructionBlock: return by ReturnValue: %v", source, idx, returnValue.Value)
+					return returnValue.Value, nil
+				}
+				return nil, fmt.Errorf("\n  %s:%d: %v", source, idx, err)
 			}
-			return nil, fmt.Errorf("failed at instruction %d: %v", idx, err)
+			lastResult = result
 		}
-		lastResult = result
 	}
+	i.LogDebug("[%s]: ExecuteInstructionBlock: return by loop end: %v", source, lastResult)
 	return lastResult, nil
 }
 
-// executeSubroutine executes a subroutine with the given arguments
-func (i *InterpreterImpl) executeSubroutine(name string, args []interface{}) (interface{}, error) {
-	// Check if the subroutine is already loaded
-	instructions, ok := i.Subroutines[name]
+// GetSubroutineInstructions retrieves the cached instructions for a subroutine
+func (i *InterpreterImpl) GetSubroutineInstructions(path string) ([]*parsers.Instruction, error) {
+	instructions, ok := i.Subroutines[path]
 	if !ok {
-		// Try to load the subroutine
-		if err := i.loadSubroutine(name); err != nil {
-			return nil, err
+		if err := i.LoadSubroutine(path); err != nil {
+			return nil, fmt.Errorf("[%s]: GetSubroutineInstructions: loading failed: %v", path, err)
 		}
-		instructions = i.Subroutines[name]
+		instructions, ok = i.Subroutines[path]
+		if !ok {
+			return nil, fmt.Errorf("[%s]: GetSubroutineInstructions: failed to find instructions", path)
+		}
 	}
+	return instructions, nil
+}
+
+// ExecuteSubroutine executes a subroutine with the given arguments
+func (i *InterpreterImpl) ExecuteSubroutine(name string, args []interface{}) (interface{}, error) {
+
+	pwd := i.GetScriptDir()
+	i.LogDebug("[%s]: ExecuteSubroutine: %v with pwd %s", name, args, pwd)
+
+	// Check if the subroutine is already loaded
+	subPath := SubroutinePath(name, pwd)
+	i.LogDebug("[%s]: ExecuteSubroutine: subPath = %v", name, subPath)
+
+	instructions, err := i.GetSubroutineInstructions(subPath)
+	if err != nil {
+		return nil, fmt.Errorf("[%s]: ExecuteSubroutine: loading failed: %v", name, err)
+	}
+	i.LogDebug("[%s]: Loaded %d instructions", name, len(instructions))
 
 	// Create a new scope for the subroutine with just the arguments
-	subInterpreter := NewInterpreterWithSlots(i.GetScriptDir(), map[string]interface{}{
-		"_": args,
-	})
+	subInterpreter := NewInterpreterWithParent(
+		pwd,
+		map[string]interface{}{
+			"_": args,
+		},
+		i,
+	)
 
 	// Execute the instructions using the new method
-	result, err := subInterpreter.ExecuteInstructions(instructions)
-	if err != nil {
-		return nil, fmt.Errorf("subroutine %s failed: %v", name, err)
+	result, err2 := subInterpreter.ExecuteInstructionBlock(subPath, args, instructions)
+	if err2 != nil {
+		return nil, fmt.Errorf("[%s]: ExecuteSubroutine: execute failed: %v", name, err2)
 	}
-
+	i.LogDebug("[%s]: result: %v", name, result)
 	return result, nil
 }
 
+func (i *InterpreterImpl) ResolveOpcode(opcode string) string {
+	if mapped, exists := i.OpcodeMap[opcode]; exists {
+		i.LogDebug("[%s]: Resolved as: %s", opcode, mapped)
+		return mapped
+	}
+	if i.parent != nil {
+		p := i.parent.ResolveOpcode(opcode)
+		i.LogDebug("[%s]: Resolved from parent as: %s", opcode, p)
+		return p
+	}
+	return opcode
+}
+
 // ExecuteInstruction executes a single GND instruction and returns its result
-func (i *InterpreterImpl) ExecuteInstruction(op *Instruction, idx int) (interface{}, error) {
-	if op == nil {
-		return nil, nil
-	}
+func (i *InterpreterImpl) ExecuteInstruction(opcode, destination string, arguments []interface{}) (interface{}, error) {
 
-	// Handle subroutine calls
-	// TODO: Investigate if we really need to know that the op is subroutine or could we handle this in the upper context
-	if op.IsSubroutine {
-		return i.ExecuteSubroutineCall(op)
-	}
+	i.LogDebug("[%s]: ExecuteInstruction: preparing: %s %v", opcode, opcode, arguments)
 
-	// Log regular instruction
-	i.LogDebug("%s %s %v", op.Opcode, op.Destination, op.Arguments)
+	// Check if the opcode exists in the default alias map
+	opcode = i.ResolveOpcode(opcode)
 
 	// Resolve arguments by mapping context properties
-	resolvedArgs, err := parsers.MapContextProperties(i.Slots, op.Arguments)
+	resolvedArgs, err := i.LoadArguments(opcode, arguments)
+	if err != nil {
+		return nil, fmt.Errorf("[%s]: ExecuteInstruction: failed to load arguments: %s", opcode, err)
+	}
+	i.LogDebug("[%s]: ExecuteInstruction: Resolved arguments as: %v from %v", opcode, resolvedArgs, arguments)
+
+	prim, ok := primitive.Get(opcode)
+	if !ok {
+		i.LogDebug("[%s]: ExecuteInstruction: subroutine: %s <- %s %v", opcode, destination, opcode, resolvedArgs)
+		return i.ExecuteSubroutineCall(opcode, destination, resolvedArgs)
+	}
+
+	i.LogDebug("[%s]: ExecuteInstruction: primitive: %s <- %s %v", opcode, opcode, destination, resolvedArgs)
+	return i.ExecutePrimitive(prim, destination, resolvedArgs)
+}
+
+func (i *InterpreterImpl) LoadArguments(source string, arguments []interface{}) ([]interface{}, error) {
+
+	// Resolve arguments by mapping context properties
+	resolvedArgs, err := parsers.MapContextProperties(source, i.Slots, arguments)
 	if err != nil {
 		return nil, err
 	}
 
-	// If no arguments provided, use current value of _
-	if len(resolvedArgs) == 0 {
-		if val, ok := i.Slots["_"]; ok {
-			i.LogDebug("Using current value of _ (%v) as argument", val)
-			resolvedArgs = []interface{}{val}
-		} else {
-			i.LogDebug("No value in _, using empty string as argument")
-			resolvedArgs = []interface{}{""}
-		}
-	}
+	i.LogDebug("[%s]: LoadArguments: %v from %v", source, resolvedArgs, arguments)
+	return resolvedArgs, nil
+}
 
-	prim, ok := primitive.Get(op.Opcode)
-	if !ok {
-		return nil, fmt.Errorf("unknown opcode: %s", op.Opcode)
-	}
+// ExecutePrimitive executes a single GND primitive and returns its result
+func (i *InterpreterImpl) ExecutePrimitive(prim primitive.Primitive, destination string, arguments []interface{}) (interface{}, error) {
 
-	result, err := prim.Execute(resolvedArgs)
+	// Log regular instruction
+	i.LogDebug("[%s]: ExecutePrimitive: %s <- %s %v", prim.Name(), destination, prim.Name(), arguments)
+
+	result, err := prim.Execute(arguments)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %v", op.Opcode, err)
-	}
 
-	i.LogDebug("primitive result: %v", result)
-
-	// Check if this is an ExitResult
-	if exitResult, ok := GetExitResult(result); ok {
-		i.LogDebug("exit result detected with code %d", exitResult.Code)
-		// Store the value in the destination slot before exiting
-		if exitResult.Value != nil {
-			i.LogDebug("storing value %v (type: %T) in destination %s", exitResult.Value, exitResult.Value, op.Destination)
-			i.Slots[op.Destination] = exitResult.Value
-			i.LogDebug("after storing, destination %s contains: %v (type: %T)", op.Destination, i.Slots[op.Destination], i.Slots[op.Destination])
-			return exitResult.Value, &ExitErrorWithValue{
-				Code:  exitResult.Code,
-				Value: exitResult.Value,
-			}
+		// Check if this is a ReturnValue
+		if returnValue, ok := primitive.GetReturnValue(err); ok {
+			i.LogDebug("[%s]: ExecutePrimitive: exit result detected with value %v", prim.Name(), returnValue.Value)
+			i.Slots[destination] = returnValue.Value
+			return nil, returnValue
 		}
-		return nil, &ExitError{Code: exitResult.Code}
-	}
 
-	// For debug output, escape newlines to make them visible
-	i.LogDebug("%s = %s", op.Destination, log.StringifyValue(result))
+		// Check if this is an ExitResult
+		if exitResult, ok := GetExitResult(err); ok {
+			i.LogDebug("[%s]: ExecutePrimitive: exit result detected with code %d", prim.Name(), exitResult.Code)
+			// Store the value in the destination slot before exiting
+			if exitResult.Value != nil {
+				i.LogDebug("[%s]: ExecutePrimitive: storing value %v (type: %T) in destination %s", prim.Name(), exitResult.Value, exitResult.Value, destination)
+				i.Slots[destination] = exitResult.Value
+				i.LogDebug("[%s]: ExecutePrimitive: after storing, destination %s contains: %v (type: %T)", prim.Name(), destination, i.Slots[destination], i.Slots[destination])
+				return nil, exitResult
+			}
+			return nil, exitResult
+		}
+
+		return nil, fmt.Errorf("[%s]: ExecutePrimitive: error: %v", prim.Name(), err)
+	}
 
 	// Store the result in the destination slot
-	i.LogDebug("storing result %v in destination %s", result, op.Destination)
-	i.Slots[op.Destination] = result
+	i.LogDebug("[%s]: ExecutePrimitive: %s <- %v", prim.Name(), destination, log.StringifyValue(result))
+	i.Slots[destination] = result
 	return result, nil
 }
 
 // ExecuteSubroutineCall handles the complete flow of executing a subroutine call,
 // including argument resolution and result storage
-func (i *InterpreterImpl) ExecuteSubroutineCall(op *Instruction) (interface{}, error) {
-	// Extract the base name without .gnd extension
-	baseName := strings.TrimSuffix(op.SubroutinePath, ".gnd")
-	i.LogDebug("%s %s %v", op.Opcode, op.Destination, op.Arguments)
+func (i *InterpreterImpl) ExecuteSubroutineCall(opcode, destination string, arguments []interface{}) (interface{}, error) {
 
-	// Resolve arguments by mapping context properties
-	resolvedArgs, err := parsers.MapContextProperties(i.Slots, op.Arguments)
-	if err != nil {
-		return nil, err
-	}
+	// Extract the base name without .gnd extension
+	i.LogDebug("[%s]: ExecuteSubroutineCall: %s <- %s %v", opcode, destination, opcode, arguments)
 
 	// Execute the subroutine with the resolved arguments
-	result, err := i.executeSubroutine(baseName, resolvedArgs)
+	result, err := i.ExecuteSubroutine(opcode, arguments)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("[%s]: ExecuteSubroutineCall: error: %s", opcode, err)
 	}
 
 	// Store the result in the destination slot
-	i.LogDebug("Storing subroutine result %v in destination %s", result, op.Destination)
-	i.Slots[op.Destination] = result
+	i.LogDebug("[%s]: ExecuteSubroutineCall: Storing subroutine result %v in destination %s", opcode, result, destination)
+	i.Slots[destination] = result
 	return result, nil
 }
