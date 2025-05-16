@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-func TestExitError(t *testing.T) {
+func TestExitResult(t *testing.T) {
 	tests := []struct {
 		name     string
 		code     int
@@ -34,9 +34,9 @@ func TestExitError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := &ExitError{Code: tt.code}
+			err := &ExitResult{Code: tt.code}
 			if err.Error() != tt.expected {
-				t.Errorf("ExitError.Error() = %q, want %q", err.Error(), tt.expected)
+				t.Errorf("ExitResult.Error() = %q, want %q", err.Error(), tt.expected)
 			}
 		})
 	}

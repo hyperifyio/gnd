@@ -1,5 +1,7 @@
 package core
 
+import "fmt"
+
 // ExitResult represents a result that signals the interpreter to exit
 type ExitResult struct {
 	// Code is the exit code to return (defaults to 0)
@@ -16,10 +18,8 @@ func NewExitResult(code int, value interface{}) *ExitResult {
 	}
 }
 
-// IsExitResult checks if a value is an ExitResult
-func IsExitResult(v interface{}) bool {
-	_, ok := v.(*ExitResult)
-	return ok
+func (e *ExitResult) Error() string {
+	return fmt.Sprintf("exit with code %d", e.Code)
 }
 
 // GetExitResult extracts the ExitResult from a value if it is one
