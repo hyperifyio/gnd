@@ -3,7 +3,8 @@ package primitive
 import (
 	"fmt"
 	"os"
-	"strings"
+
+	"github.com/hyperifyio/gnd/pkg/parsers"
 )
 
 // Print represents the print primitive
@@ -16,36 +17,11 @@ func (p *Print) Name() string {
 
 // Execute runs the print primitive
 func (p *Print) Execute(args []interface{}) (interface{}, error) {
-
-	// Convert all arguments to strings, handling arrays
-	var strArgs []string
-	for _, arg := range args {
-		switch v := arg.(type) {
-		case string:
-			strArgs = append(strArgs, v)
-		case []interface{}:
-			// For arrays, convert each element to string
-			for _, item := range v {
-				str, ok := item.(string)
-				if !ok {
-					return nil, fmt.Errorf("print requires string arguments, got %T", item)
-				}
-				strArgs = append(strArgs, str)
-			}
-		default:
-			// Try to convert the argument to a string
-			str, ok := arg.(string)
-			if !ok {
-				return nil, fmt.Errorf("print requires string arguments, got %T", arg)
-			}
-			strArgs = append(strArgs, str)
-		}
+	output, err := parsers.ParseString(args)
+	if err != nil {
+		return nil, fmt.Errorf("print: %v", err)
 	}
-
-	// Join all arguments with spaces and print
-	output := strings.Join(strArgs, " ")
-	fmt.Fprintln(os.Stdout, output)
-
+	fmt.Fprint(os.Stdout, output)
 	return output, nil
 }
 

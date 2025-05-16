@@ -23,6 +23,7 @@ var DefaultOpcodeMap = map[string]string{
 	"uppercase": "/gnd/uppercase",
 	"trim":      "/gnd/trim",
 	"print":     "/gnd/print",
+	"println":   "/gnd/println",
 	"log":       "/gnd/log",
 	"error":     "/gnd/error",
 	"warn":      "/gnd/warn",

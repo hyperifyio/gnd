@@ -1,9 +1,10 @@
 package primitive
 
 import (
+	"github.com/hyperifyio/gnd/pkg/log"
+	"github.com/hyperifyio/gnd/pkg/parsers"
 	"io"
 	"os"
-	"strings"
 	"testing"
 )
 
@@ -30,7 +31,7 @@ func TestPrint(t *testing.T) {
 			name:    "non-string argument",
 			args:    []interface{}{123},
 			want:    "123",
-			wantErr: true,
+			wantErr: false,
 		},
 		{
 			name:    "multiple string arguments",
@@ -48,7 +49,7 @@ func TestPrint(t *testing.T) {
 			name:    "array with non-string",
 			args:    []interface{}{[]interface{}{"Our input is:", 123}},
 			want:    "Our input is: 123",
-			wantErr: true,
+			wantErr: false,
 		},
 		{
 			name:    "mixed string and array arguments",
@@ -75,40 +76,27 @@ func TestPrint(t *testing.T) {
 
 			// Check error
 			if (err != nil) != tt.wantErr {
-				t.Errorf("Print.Execute() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("Print.Execute(%s) error = %v, wantErr %v", tt.name, err, tt.wantErr)
 				return
 			}
 
 			// Check return value
 			if !tt.wantErr {
 				if got != tt.want {
-					t.Errorf("Print.Execute() = %v, want %v", got, tt.want)
+					t.Errorf("Print.Execute(%s) = %v, want %v", tt.name, got, tt.want)
 				}
 
 				// Verify output was printed
 				output, err := io.ReadAll(r)
 				if err != nil {
-					t.Errorf("Failed to read output: %v", err)
+					t.Errorf("Print.Execute(%s): Failed to read output: %v", tt.name, err)
 					return
 				}
 
 				// Convert all arguments to strings and join them
-				var expectedStrings []string
-				for _, arg := range tt.args {
-					switch v := arg.(type) {
-					case string:
-						expectedStrings = append(expectedStrings, v)
-					case []interface{}:
-						for _, item := range v {
-							if str, ok := item.(string); ok {
-								expectedStrings = append(expectedStrings, str)
-							}
-						}
-					}
-				}
-				expectedOutput := strings.Join(expectedStrings, " ")
-				if strings.TrimSpace(string(output)) != expectedOutput {
-					t.Errorf("Print.Execute() output = %v, want %v", string(output), expectedOutput)
+				expectedOutput, err := parsers.ParseString(tt.args)
+				if string(output) != expectedOutput {
+					t.Errorf("Print.Execute(%s) output = %v, want %v", tt.name, log.StringifyValue(string(output)), log.StringifyValue(expectedOutput))
 				}
 			}
 		})
