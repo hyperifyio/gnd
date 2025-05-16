@@ -1,13 +1,11 @@
-The `select` operation chooses between two values based on a simple string 
-condition. It enables basic control flow within Gendo pipelines by selecting 
+The `select` operation chooses between two values based on a simple 
+conditions. It enables basic control flow within Gendo pipelines by selecting 
 either a `trueValue` or a `falseValue` depending on whether the `condition` 
-string exactly matches `"true"` (case-insensitive). This operation is 
-compatible with local text-based models, which typically produce plain textual 
-answers.
+string exactly matches `"true"` (case-insensitive). 
 
 The syntax of the `select` operation is as follows:
 
-  select [destination] condition trueValue falseValue
+  select [destination] value trueValue falseValue
 
 The `destination` identifier is optional. If omitted, the result is bound to 
 the special slot `_`. The `condition` is required and must be a 
