@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/hyperifyio/gnd/pkg/primitive"
 	"os"
 	"path/filepath"
 
@@ -101,7 +102,7 @@ func main() {
 	var value interface{}
 	log.Printf(log.Debug, "Executing: %s %v", scriptPath, scriptArgs)
 	if value, err = interpreterImpl.ExecuteInstructionBlock(scriptPath, scriptArgs, instructions); err != nil {
-		if exitErr, ok := core.GetExitResult(err); ok {
+		if exitErr, ok := primitive.GetExitResult(err); ok {
 			value = exitErr.Value
 			status = exitErr.Code
 		} else {

@@ -274,7 +274,7 @@ func (i *InterpreterImpl) ExecutePrimitive(prim primitive.Primitive, destination
 		}
 
 		// Check if this is an ExitResult
-		if exitResult, ok := GetExitResult(err); ok {
+		if exitResult, ok := primitive.GetExitResult(err); ok {
 			i.LogDebug("[%s]: ExecutePrimitive: exit result detected with code %d", prim.Name(), exitResult.Code)
 			// Store the value in the destination slot before exiting
 			if exitResult.Value != nil {
