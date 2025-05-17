@@ -1,2 +1,2 @@
-concat _ _ "\n"
+concat _ "\n"
 print

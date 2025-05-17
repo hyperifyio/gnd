@@ -4,15 +4,15 @@ string where each character is mapped to its lowercase form.
 
 The syntax of the `lowercase` operation is:
 
-  lowercase [destination] inputString
+  [ $destination ] lowercase inputString
 
-The `destination` identifier is optional. If omitted, the result is bound to 
+The `$destination` identifier is optional. If omitted, the result is bound to 
 the special slot `_`. The `inputString` argument is required and must be a 
 string value or an identifier bound to a string.
 
 For example, to convert a literal string to lowercase and bind it to `whisper`:
 
-  lowercase whisper "Hello, Gendo!"
+  $whisper lowercase "Hello, Gendo!"
 
 This produces `"hello, gendo!"` bound to `whisper`.
 

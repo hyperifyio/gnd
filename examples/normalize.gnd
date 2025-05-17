@@ -1,4 +1,4 @@
 # This is a subroutine for trimming prompt results for llm.gnd
 trim
 lowercase
-trim _ _ .
+trim _ .

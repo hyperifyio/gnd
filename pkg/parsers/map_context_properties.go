@@ -46,7 +46,7 @@ func MapContextProperty(source string, slots map[string]interface{}, arg interfa
 	}
 
 	// Not a property reference, just return as-is
-	log.Printf(log.Debug, "[%s]: MapContextProperty: Not a property refefence, mapped as: %s", source, arg)
+	log.Printf(log.Debug, "[%s]: MapContextProperty: Not a property reference, mapped as: %s", source, arg)
 	return arg, nil
 }
 

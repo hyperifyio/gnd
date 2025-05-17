@@ -165,15 +165,29 @@ func TestParseArray(t *testing.T) {
 		expectError bool
 	}{
 		{"empty array", "[]", 0, []interface{}{}, false},
+
 		{"simple array", "[a b c]", 0, []interface{}{
+			"a",
+			"b",
+			"c",
+		}, false},
+
+		{"simple array with props", "[$a $b $c]", 0, []interface{}{
 			NewPropertyRef("a"),
 			NewPropertyRef("b"),
 			NewPropertyRef("c"),
 		}, false},
+
 		{"nested array", "[[a] [b]]", 0, []interface{}{
+			[]interface{}{"a"},
+			[]interface{}{"b"},
+		}, false},
+		
+		{"nested array with props", "[[$a] [$b]]", 0, []interface{}{
 			[]interface{}{NewPropertyRef("a")},
 			[]interface{}{NewPropertyRef("b")},
 		}, false},
+
 		{"unterminated", "[a", 0, nil, true},
 		{"no array", "a", 0, nil, true},
 	}
@@ -227,10 +241,11 @@ func TestParseDestination(t *testing.T) {
 		name        string
 		line        string
 		pos         int
-		expected    string
+		expected    interface{}
 		expectError bool
 	}{
-		{"valid destination", "test", 0, "test", false},
+		{"valid destination", "$test", 0, NewPropertyRef("test"), false},
+		{"invalid destination", "test", 0, "", true},
 		{"quoted string", "\"test\"", 0, "", true},
 		{"array", "[test]", 0, "", true},
 		{"empty", "", 0, "", true},
@@ -244,7 +259,7 @@ func TestParseDestination(t *testing.T) {
 				t.Errorf("ParseDestination() error = %v, expectError %v", err, tt.expectError)
 				return
 			}
-			if !tt.expectError && got != tt.expected {
+			if !tt.expectError && !reflect.DeepEqual(got, tt.expected) {
 				t.Errorf("ParseDestination() = %v, want %v", got, tt.expected)
 			}
 		})
@@ -260,16 +275,30 @@ func TestParseRemainingTokens(t *testing.T) {
 		expectError bool
 	}{
 		{"simple tokens", "a b c", 0, []interface{}{
+			"a",
+			"b",
+			"c",
+		}, false},
+		{"simple properties", "$a $b $c", 0, []interface{}{
 			NewPropertyRef("a"),
 			NewPropertyRef("b"),
 			NewPropertyRef("c"),
 		}, false},
+
 		{"mixed tokens", "a \"b\" [c]", 0,
+			[]interface{}{
+				"a", "b", []interface{}{
+					"c",
+				},
+			}, false},
+
+		{"mixed properties", "$a \"b\" [$c]", 0,
 			[]interface{}{
 				NewPropertyRef("a"), "b", []interface{}{
 					NewPropertyRef("c"),
 				},
 			}, false},
+
 		{"empty", "", 0, []interface{}{}, false},
 		{"whitespace only", "   ", 0, []interface{}{}, false},
 	}

@@ -4,9 +4,9 @@ but you can supply a custom set of characters to remove.
 
 The syntax of the `trim` operation is:
 
-  trim [destination] inputString [charsToTrim]
+  [ $destination ] trim inputString [ charsToTrim ]
 
-The `destination` identifier is optional. If omitted, the result is bound to 
+The `$destination` identifier is optional. If omitted, the result is bound to 
 the special slot `_`. The `inputString` argument is required and must be a 
 string value or identifier bound to a string. The optional `charsToTrim` 
 argument is a string whose individual characters define the set to remove; if 
@@ -14,13 +14,13 @@ omitted, ASCII whitespace is used.
 
 For example, to remove leading and trailing whitespace:
 
-  trim cleanedText "   Hello, Gendo!   "
+  $cleanedText trim "   Hello, Gendo!   "
 
 This produces `"Hello, Gendo!"` bound to `cleanedText`.
 
 To remove periods and exclamation marks:
 
-  trim cleanedText "!!!Warning!!!" ".!"
+  $cleanedText trim "!!!Warning!!!" ".!"
 
 This produces `"Warning"` bound to `cleanedText`.
 

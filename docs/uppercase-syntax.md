@@ -4,15 +4,15 @@ with each character mapped to its uppercase form.
 
 The syntax of the `uppercase` operation is:
 
-  uppercase [destination] inputString
+  [ $destination ] uppercase inputString
 
-The `destination` identifier is optional. If omitted, the result is bound to 
+The `$destination` identifier is optional. If omitted, the result is bound to 
 the special slot `_`. The `inputString` argument is required and must be a 
 string value or an identifier bound to a string.
 
 For example, to convert a literal string to uppercase and bind it to `shout`:
 
-  uppercase shout "Hello, Gendo!"
+  $shout uppercase "Hello, Gendo!"
 
 This produces `"HELLO, GENDO!"` bound to `shout`.
 

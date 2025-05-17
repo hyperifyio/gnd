@@ -1,10 +1,10 @@
-let args
-log _ info "Our input is:" args
-let persona "You are a helpful assistant.\n---\n"
-let instruction "\n---\nIs the previous input acceptable? Reply 'true' or 'false'."
-concat fullPrompt persona args instruction
-prompt _ fullPrompt
+$args let
+log info "Our input is:" $args
+$persona let "You are a helpful assistant.\n---\n"
+$instruction let "\n---\nIs the previous input acceptable? Reply 'true' or 'false'."
+$fullPrompt concat $persona $args $instruction
+prompt $fullPrompt
 normalize
-let isValid
-select validationMessage isValid "Input is acceptable." "Input is not acceptable."
-log _ info validationMessage
+$isValid let
+$validationMessage select $isValid "Input is acceptable." "Input is not acceptable."
+log info $validationMessage

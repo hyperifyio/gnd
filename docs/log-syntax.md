@@ -6,18 +6,18 @@ binding default to the current `_` value at the `info` level.
 
 The syntax of the `log` operation is:
 
-  log [destination [level [value1 [value2 …]]]]
+  [ $destination ] log [ level [ value1 [ value2 … ] ] ]
 
 If no arguments are given, `log` is equivalent to logging `_` at `info` and 
 rebinding it to `_`. If only a `level` is provided, you must supply a 
-`destination`, for example:
+`$destination`, for example:
 
-  log _ debug
+  _ log debug
 
 logs the current `_` at DEBUG and leaves it unchanged. To log a custom message, 
 specify destination, level, and values:
 
-  log msg warn "Low disk space:" availableSpace
+  $msg log warn "Low disk space:" $availableSpace
 
 If `availableSpace` holds `1024`, this writes
 

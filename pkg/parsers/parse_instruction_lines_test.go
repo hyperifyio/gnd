@@ -13,60 +13,60 @@ func TestParseInstructionLines(t *testing.T) {
 	}{
 		{
 			name:  "simple let",
-			input: "let x y",
+			input: "$x let $y",
 			expected: &Instruction{
 				Opcode:      "let",
-				Destination: "x",
+				Destination: NewPropertyRef("x"),
 				Arguments:   []interface{}{NewPropertyRef("y")},
 			},
 			wantErr: false,
 		},
 		{
 			name:  "string with spaces",
-			input: `let x "Hello World"`,
+			input: `$x let "Hello World"`,
 			expected: &Instruction{
 				Opcode:      "let",
-				Destination: "x",
+				Destination: NewPropertyRef("x"),
 				Arguments:   []interface{}{"Hello World"},
 			},
 			wantErr: false,
 		},
 		{
 			name:  "string with newlines",
-			input: `let x "Hello\nWorld"`,
+			input: `$x let "Hello\nWorld"`,
 			expected: &Instruction{
 				Opcode:      "let",
-				Destination: "x",
+				Destination: NewPropertyRef("x"),
 				Arguments:   []interface{}{"Hello\nWorld"},
 			},
 			wantErr: false,
 		},
 		{
 			name:  "string with escaped quotes",
-			input: `let x "Hello \"World\""`,
+			input: `$x let "Hello \"World\""`,
 			expected: &Instruction{
 				Opcode:      "let",
-				Destination: "x",
+				Destination: NewPropertyRef("x"),
 				Arguments:   []interface{}{"Hello \"World\""},
 			},
 			wantErr: false,
 		},
 		{
 			name:  "string with mixed escapes",
-			input: `let x "Hello\n\"World\"\t!"`,
+			input: `$x let "Hello\n\"World\"\t!"`,
 			expected: &Instruction{
 				Opcode:      "let",
-				Destination: "x",
+				Destination: NewPropertyRef("x"),
 				Arguments:   []interface{}{"Hello\n\"World\"\t!"},
 			},
 			wantErr: false,
 		},
 		{
 			name:  "multiple arguments with strings",
-			input: `concat x "Hello\n" "World\n"`,
+			input: `$x concat "Hello\n" "World\n"`,
 			expected: &Instruction{
 				Opcode:      "concat",
-				Destination: "x",
+				Destination: NewPropertyRef("x"),
 				Arguments:   []interface{}{"Hello\n", "World\n"},
 			},
 			wantErr: false,
@@ -106,7 +106,7 @@ func TestParseInstructionLines(t *testing.T) {
 			if got.Opcode != tt.expected.Opcode {
 				t.Errorf("ParseInstructionLines() opcode: got = %v, want %v", got.Opcode, tt.expected.Opcode)
 			}
-			if got.Destination != tt.expected.Destination {
+			if !got.Destination.Equal(tt.expected.Destination) {
 				t.Errorf("ParseInstructionLines() destination: got %v, want %v", got.Destination, tt.expected.Destination)
 			}
 			if len(got.Arguments) != len(tt.expected.Arguments) {
@@ -121,7 +121,7 @@ func TestParseInstructionLines(t *testing.T) {
 				expectedArg := tt.expected.Arguments[i]
 				if propRef, ok := GetPropertyRef(arg); ok {
 					if expectedPropRef, ok := GetPropertyRef(expectedArg); ok {
-						if propRef.Name != expectedPropRef.Name {
+						if !propRef.Equal(expectedPropRef) {
 							t.Errorf("ParseInstructionLines() argument[%d] = %v, want %v", i, propRef.Name, expectedPropRef.Name)
 						}
 					} else {

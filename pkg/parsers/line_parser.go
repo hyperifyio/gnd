@@ -1,9 +1,12 @@
 package parsers
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
+
+var UnexpectedEofError = errors.New("unexpected EOF")
 
 // LineParser maintains the state for parsing a single line
 type LineParser struct {
@@ -19,6 +22,11 @@ func NewLineParser(line string) *LineParser {
 // IsEOF returns true if we've reached the end of the line
 func (p *LineParser) IsEOF() bool {
 	return p.pos >= len(p.line)
+}
+
+// IsDollar returns true if the current character is a dollar sign
+func (p *LineParser) IsDollar() bool {
+	return len(p.line) >= 1 && IsDollar(p.line[p.pos])
 }
 
 // ParseWhitespace advances the position past any whitespace characters
@@ -103,6 +111,21 @@ func (p *LineParser) ParseUnquotedToken() (string, error) {
 	return result.String(), nil
 }
 
+// ParseUnquotedTokenOrPropertyRef parses an unquoted token starting at the current position
+func (p *LineParser) ParseUnquotedTokenOrPropertyRef() (interface{}, error) {
+	token, err := p.ParseUnquotedToken()
+	if err != nil {
+		return "", err
+	}
+	if token == "_" {
+		return NewPropertyRef("_"), nil
+	}
+	if len(token) > 0 && IsDollar(token[0]) {
+		return NewPropertyRef(token[1:]), nil
+	}
+	return token, nil
+}
+
 // ParseArray parses an array starting at the current position
 func (p *LineParser) ParseArray() ([]interface{}, error) {
 	if !IsArrayStart(p.line[p.pos]) {
@@ -141,18 +164,14 @@ func (p *LineParser) ParseArrayElement() (interface{}, error) {
 		p.pos++
 		return nil, nil
 	default:
-		token, err := p.ParseUnquotedToken()
-		if err != nil {
-			return nil, err
-		}
-		return NewPropertyRef(token), nil
+		return p.ParseUnquotedTokenOrPropertyRef()
 	}
 }
 
 // ParseOpCode parses the operation code (first token) of the line
 func (p *LineParser) ParseOpCode() (interface{}, error) {
 	if p.IsEOF() {
-		return nil, fmt.Errorf("unexpected EOF")
+		return nil, UnexpectedEofError
 	}
 	switch {
 	case IsQuote(p.line[p.pos]):
@@ -169,7 +188,7 @@ func (p *LineParser) ParseOpCode() (interface{}, error) {
 // ParseDestination parses the destination (second token) of the line
 func (p *LineParser) ParseDestination() (interface{}, error) {
 	if p.IsEOF() {
-		return nil, fmt.Errorf("unexpected EOF")
+		return nil, UnexpectedEofError
 	}
 	switch {
 	case IsQuote(p.line[p.pos]):
@@ -178,8 +197,12 @@ func (p *LineParser) ParseDestination() (interface{}, error) {
 		return nil, fmt.Errorf("destination cannot be an array")
 	case IsArrayEnd(p.line[p.pos]):
 		return nil, fmt.Errorf("unexpected array end character ']' at position %d", p.pos)
+	case IsDollar(p.line[p.pos]):
+		return p.ParseUnquotedTokenOrPropertyRef()
+	case p.line[p.pos] == '_':
+		return p.ParseUnquotedTokenOrPropertyRef()
 	default:
-		return p.ParseUnquotedToken()
+		return nil, fmt.Errorf("destination is invalid at position %d", p.pos)
 	}
 }
 
@@ -187,6 +210,7 @@ func (p *LineParser) ParseDestination() (interface{}, error) {
 func (p *LineParser) ParseRemainingTokens() ([]interface{}, error) {
 	var tokens []interface{}
 	for !p.IsEOF() {
+
 		p.ParseWhitespace()
 		if p.IsEOF() {
 			break
@@ -211,10 +235,6 @@ func (p *LineParser) ParseRemainingToken() (interface{}, error) {
 	case IsArrayEnd(p.line[p.pos]):
 		return nil, fmt.Errorf("unexpected array end character ']' at position %d", p.pos)
 	default:
-		token, err := p.ParseUnquotedToken()
-		if err != nil {
-			return nil, err
-		}
-		return NewPropertyRef(token), nil
+		return p.ParseUnquotedTokenOrPropertyRef()
 	}
 }
