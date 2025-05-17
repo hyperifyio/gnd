@@ -24,12 +24,18 @@ The Gendo toolchain consists of three main executables:
 - [exec](exec-syntax.md) - Execute instructions
 - [compile](compile-syntax.md) - Compile instructions
 - [code](code-syntax.md) - Code block handling
+- [async](async-syntax.md) - Asynchronous execution
+- [await](await-syntax.md) - Wait for async operations
+- [wait](wait-syntax.md) - Wait for conditions
+- [throw](throw-syntax.md) - Error handling
+- [status](status-syntax.md) - Status checking
 
 #### String Operations
 - [concat](concat-syntax.md) - String concatenation
 - [trim](trim-syntax.md) - String trimming
 - [uppercase](uppercase-syntax.md) - Convert to uppercase
 - [lowercase](lowercase-syntax.md) - Convert to lowercase
+- [eq](eq-syntax.md) - Equality comparison
 
 #### Output and Logging
 - [print](print-syntax.md) - Standard output
