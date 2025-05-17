@@ -27,19 +27,19 @@ func TestParseInstruction(t *testing.T) {
 		{
 			name:    "opcode only",
 			line:    "nop",
-			want:    &Instruction{Opcode: "nop", Destination: "_", Arguments: []interface{}{NewPropertyRef("_")}},
+			want:    &Instruction{Opcode: "nop", Destination: NewPropertyRef("_"), Arguments: []interface{}{NewPropertyRef("_")}},
 			wantErr: false,
 		},
 		{
 			name:    "opcode and destination",
-			line:    "foo bar",
-			want:    &Instruction{Opcode: "foo", Destination: "bar", Arguments: []interface{}{NewPropertyRef("_")}},
+			line:    "$bar foo",
+			want:    &Instruction{Opcode: "foo", Destination: NewPropertyRef("bar"), Arguments: []interface{}{NewPropertyRef("_")}},
 			wantErr: false,
 		},
 		{
 			name: "concat variables arguments",
-			line: `concat x hello world`,
-			want: &Instruction{Opcode: "concat", Destination: "x", Arguments: []interface{}{
+			line: `$x concat $hello $world`,
+			want: &Instruction{Opcode: "concat", Destination: NewPropertyRef("x"), Arguments: []interface{}{
 				NewPropertyRef("hello"),
 				NewPropertyRef("world"),
 			}},
@@ -47,20 +47,20 @@ func TestParseInstruction(t *testing.T) {
 		},
 		{
 			name:    "concat string arguments",
-			line:    `concat x "hello" "world"`,
-			want:    &Instruction{Opcode: "concat", Destination: "x", Arguments: []interface{}{"hello", "world"}},
+			line:    `$x concat "hello" "world"`,
+			want:    &Instruction{Opcode: "concat", Destination: NewPropertyRef("x"), Arguments: []interface{}{"hello", "world"}},
 			wantErr: false,
 		},
 		{
 			name:    "concat array arguments",
-			line:    `concat x ["hello"] ["world"]`,
-			want:    &Instruction{Opcode: "concat", Destination: "x", Arguments: []interface{}{[]interface{}{"hello"}, []interface{}{"world"}}},
+			line:    `$x concat ["hello"] ["world"]`,
+			want:    &Instruction{Opcode: "concat", Destination: NewPropertyRef("x"), Arguments: []interface{}{[]interface{}{"hello"}, []interface{}{"world"}}},
 			wantErr: false,
 		},
 		{
 			name:    "concat array arguments with string",
-			line:    `concat x ["hello"] "world"`,
-			want:    &Instruction{Opcode: "concat", Destination: "x", Arguments: []interface{}{[]interface{}{"hello"}, "world"}},
+			line:    `$x concat ["hello"] "world"`,
+			want:    &Instruction{Opcode: "concat", Destination: NewPropertyRef("x"), Arguments: []interface{}{[]interface{}{"hello"}, "world"}},
 			wantErr: false,
 		},
 	}
