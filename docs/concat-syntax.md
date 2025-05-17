@@ -3,17 +3,17 @@ The `concat` operation joins multiple values into a single result. The return ty
 The syntax of the `concat` operation is:
 
 ```
-concat [destination] value1 value2 ...
+[ $destination ] concat value1 value2 ...
 ```
 
-The `destination` is optional. If omitted, the result is assigned to the special slot `_`. At least one value must be provided.
+The `$destination` is optional. If omitted, the result is assigned to the special slot `_`. At least one value must be provided.
 
 When the first value is a string, all other values are stringified and appended in order:
 
 ```
-let firstName "Alice"
-let lastName "Johnson"
-concat fullName firstName " " lastName
+$firstName let "Alice"
+$lastName let "Johnson"
+$fullName concat $firstName " " $lastName
 ```
 
 This results in `"Alice Johnson"` stored in `fullName`.
@@ -21,9 +21,9 @@ This results in `"Alice Johnson"` stored in `fullName`.
 When the first value is an array, all subsequent array values are unpacked and their items added in order. Any non-array value is inserted as a single item at its position:
 
 ```
-let part1 ["a", "b"]
-let part2 ["c", "d"]
-concat result part1 "x" part2
+$part1 let ["a", "b"]
+$part2 let ["c", "d"]
+$result concat $part1 "x" $part2
 ```
 
 This results in `["a", "b", "x", "c", "d"]` stored in `result`.
