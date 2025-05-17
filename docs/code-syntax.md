@@ -1,7 +1,7 @@
 The `code` operation produces an instruction array that Gendo can treat as 
 ordinary data. Called with no arguments, it yields the instruction array of the 
 routine that is currently executing. Called with one or more targets, it 
-resolves each target’s instructions in left-to-right order and returns a single 
+resolves each target's instructions in left-to-right order and returns a single 
 array containing all of them, without altering the originals.
 
 The syntax of the `code` operation is:
@@ -11,10 +11,11 @@ The syntax of the `code` operation is:
 ```
 
 The `$destination` is optional. If omitted, the result is assigned to the 
-special slot `_`. When **no** target is supplied, the current routine’s 
+special slot `_`. When **no** target is supplied, the current routine's 
 instructions are returned. When **one or more** targets are supplied, each 
 target must be one of:
 
+* `@` - represents the current routine's instructions
 * a string literal ending in `.gnd` – the file is loaded (and compiled if necessary);
 * an opcode identifier – returns a one-instruction array for that primitive;
 * a `$variable` already bound to a routine value.
@@ -25,10 +26,10 @@ and so on.
 
 Examples
 
-Return the current routine’s code, compile it, and run in parallel:
+Return the current routine's code, compile it, and run in parallel:
 
 ```
-$compiled compile code       # compile our own instructions
+$compiled compile "debug hello world"       # compile our own instructions
 $task     async   $compiled  # run in background
 await _   $task              # wait and get result
 ```
@@ -36,8 +37,8 @@ await _   $task              # wait and get result
 Merge two external files and execute once:
 
 ```
-$math   code "math.gnd"
-$string code "string.gnd"
+$math   code math
+$string code string
 $all    code $math $string   # concatenate in this order
 _exec   exec $all
 ```
@@ -46,9 +47,18 @@ Combine a primitive with a helper routine and inspect length:
 
 ```
 $addOp  code add
-$utils  code "helpers.gnd"
+$utils  code helpers
 $merged code $addOp $utils
 $count  len  $merged
+```
+
+Combine current routine with a helper routine:
+
+```
+$current code @              # get current routine's instructions
+$utils   code helpers        # get helper routine's instructions
+$merged  code @ $utils       # combine current routine with helpers
+$count   len  $merged        # get total instruction count
 ```
 
 Errors

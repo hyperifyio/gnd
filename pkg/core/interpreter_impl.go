@@ -142,8 +142,11 @@ func (i *InterpreterImpl) ExecuteInstructionBlock(source string, input interface
 	lastResult := input
 	for idx, op := range instructions {
 		if op != nil {
+
 			i.LogDebug("[%s:%d]: ExecuteInstructionBlock: %v <- %s %v", source, idx, op.Destination, op.Opcode, op.Arguments)
+
 			result, err := i.ExecuteInstruction(op.Opcode, op.Destination, op.Arguments)
+
 			if err != nil {
 				if returnValue, ok := primitive.GetReturnValue(err); ok {
 					i.LogDebug("[%s:%d]: ExecuteInstructionBlock: return by ReturnValue: %v", source, idx, returnValue.Value)
@@ -151,6 +154,19 @@ func (i *InterpreterImpl) ExecuteInstructionBlock(source string, input interface
 				}
 				return nil, fmt.Errorf("\n  %s:%d: %v", source, idx, err)
 			}
+
+			if codeResult, ok := primitive.GetCodeResult(result); ok {
+				codeInstructions, err := i.HandleCodeResult(source, codeResult, instructions)
+				if err != nil {
+					return nil, err
+				}
+
+				// Store the codeInstructions in the destination slot
+				i.LogDebug("[%s]: ExecutePrimitive: storing %d codeInstructions in %s", source, len(codeInstructions), op.Destination.Name)
+				i.Slots[op.Destination.Name] = codeInstructions
+				return codeInstructions, nil
+			}
+
 			lastResult = result
 		}
 	}
@@ -257,6 +273,53 @@ func (i *InterpreterImpl) LoadArguments(source string, arguments []interface{}) 
 	return resolvedArgs, nil
 }
 
+// HandleCodeResult processes a CodeResult and returns the concatenated instructions
+func (i *InterpreterImpl) HandleCodeResult(source string, codeResult *primitive.CodeResult, block []*parsers.Instruction) ([]*parsers.Instruction, error) {
+	i.LogDebug("[%s]: HandleCodeResult: processing targets: %v", source, codeResult.Targets)
+	var allInstructions []*parsers.Instruction
+
+	// Process each target in order
+	for _, target := range codeResult.Targets {
+		var instructions []*parsers.Instruction
+		var err error
+
+		switch v := target.(type) {
+		case string:
+			if v == "@" {
+				return block, nil
+			} else {
+				// Get instructions using existing subroutine logic
+				pwd := i.GetScriptDir()
+				i.LogDebug("[%s]: HandleCodeResult: pwd = %s", source, pwd)
+
+				// Check if the subroutine is already loaded
+				subPath := SubroutinePath(v, pwd)
+				i.LogDebug("[%s]: HandleCodeResult: subPath = %v", source, subPath)
+
+				instructions, err = i.GetSubroutineInstructions(subPath)
+				i.LogDebug("[%s]: HandleCodeResult: instructions = %v", source, instructions)
+			}
+		case []*parsers.Instruction:
+			// Use the instructions directly
+			instructions = v
+		case *parsers.Instruction:
+			// Use the instructions directly
+			instructions = []*parsers.Instruction{v}
+		default:
+			return nil, fmt.Errorf("[%s]: HandleCodeResult: invalid target type: %T", source, target)
+		}
+
+		if err != nil {
+			return nil, fmt.Errorf("[%s]: HandleCodeResult: failed to get instructions for %v: %v", source, target, err)
+		}
+
+		// Append instructions to the result
+		allInstructions = append(allInstructions, instructions...)
+	}
+
+	return allInstructions, nil
+}
+
 // ExecutePrimitive executes a single GND primitive and returns its result
 func (i *InterpreterImpl) ExecutePrimitive(prim primitive.Primitive, destination *parsers.PropertyRef, arguments []interface{}) (interface{}, error) {
 
@@ -264,6 +327,7 @@ func (i *InterpreterImpl) ExecutePrimitive(prim primitive.Primitive, destination
 	i.LogDebug("[%s]: ExecutePrimitive: %v <- %s %v", prim.Name(), destination, prim.Name(), arguments)
 
 	result, err := prim.Execute(arguments)
+
 	if err != nil {
 
 		// Check if this is a ReturnValue
@@ -287,6 +351,12 @@ func (i *InterpreterImpl) ExecutePrimitive(prim primitive.Primitive, destination
 		}
 
 		return nil, fmt.Errorf("[%s]: ExecutePrimitive: error: %v", prim.Name(), err)
+	}
+
+	// Check if this is a CodeResult
+	if codeResult, ok := primitive.GetCodeResult(result); ok {
+		i.LogDebug("[%s]: ExecutePrimitive: code result detected: %v", prim.Name(), codeResult)
+		return codeResult, nil
 	}
 
 	// Store the result in the destination slot

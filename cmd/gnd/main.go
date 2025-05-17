@@ -3,9 +3,10 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/hyperifyio/gnd/pkg/primitive"
 	"os"
 	"path/filepath"
+
+	"github.com/hyperifyio/gnd/pkg/primitive"
 
 	"github.com/hyperifyio/gnd/pkg/core"
 	"github.com/hyperifyio/gnd/pkg/log"
@@ -31,6 +32,7 @@ var DefaultOpcodeMap = map[string]string{
 	"debug":     "/gnd/debug",
 	"exit":      "/gnd/exit",
 	"return":    "/gnd/return",
+	"code":      "/gnd/code",
 }
 
 func printHelp() {

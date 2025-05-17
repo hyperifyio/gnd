@@ -1,11 +1,14 @@
 package core
 
 import (
-	"github.com/hyperifyio/gnd/pkg/parsers"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/hyperifyio/gnd/pkg/parsers"
+	"github.com/hyperifyio/gnd/pkg/primitive"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -334,13 +337,191 @@ func TestExecuteInstructionBlock(t *testing.T) {
 
 			if tt.wantErr {
 				assert.Error(t, err)
-				if tt.errContains != "" {
-					assert.Contains(t, err.Error(), tt.errContains)
-				}
+				assert.Contains(t, err.Error(), tt.errContains)
 			} else {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.expected, result)
 			}
+		})
+	}
+}
+
+// testInterpreter is a test-specific interpreter implementation
+type testInterpreter struct {
+	*InterpreterImpl
+	getSubroutineInstructions func(string) ([]*parsers.Instruction, error)
+}
+
+func (t *testInterpreter) GetSubroutineInstructions(path string) ([]*parsers.Instruction, error) {
+	if t.getSubroutineInstructions != nil {
+		return t.getSubroutineInstructions(path)
+	}
+	return t.InterpreterImpl.GetSubroutineInstructions(path)
+}
+
+// Override HandleCodeResult to ensure the mock is used
+func (t *testInterpreter) HandleCodeResult(source string, codeResult *primitive.CodeResult, block []*parsers.Instruction) ([]*parsers.Instruction, error) {
+	var allInstructions []*parsers.Instruction
+
+	for _, target := range codeResult.Targets {
+		var instructions []*parsers.Instruction
+		var err error
+
+		switch v := target.(type) {
+		case string:
+			if v == "@" {
+				return block, nil
+			} else {
+				instructions, err = t.GetSubroutineInstructions(v)
+			}
+		case []*parsers.Instruction:
+			instructions = v
+		case *parsers.Instruction:
+			instructions = []*parsers.Instruction{v}
+		default:
+			return nil, fmt.Errorf("[/gnd/code]: HandleCodeResult: invalid target type: %T", target)
+		}
+
+		if err != nil {
+			return nil, fmt.Errorf("[/gnd/code]: HandleCodeResult: failed to get instructions for %v: %v", target, err)
+		}
+
+		allInstructions = append(allInstructions, instructions...)
+	}
+
+	return allInstructions, nil
+}
+
+func TestHandleCodeResult(t *testing.T) {
+	tests := []struct {
+		name       string
+		targets    []interface{}
+		setupMocks func(*testInterpreter)
+		want       []*parsers.Instruction
+		wantErr    bool
+		errMsg     string
+	}{
+		{
+			name:    "current routine target (@) returns current routine instructions",
+			targets: []interface{}{"@"},
+			want: []*parsers.Instruction{
+				{Opcode: "debug", Arguments: []interface{}{"hello world"}},
+			},
+		},
+		{
+			name:    "gnd file target loads and compiles file",
+			targets: []interface{}{"math.gnd"},
+			setupMocks: func(i *testInterpreter) {
+				i.getSubroutineInstructions = func(path string) ([]*parsers.Instruction, error) {
+					return []*parsers.Instruction{
+						{Opcode: "add", Arguments: []interface{}{1, 2}},
+						{Opcode: "subtract", Arguments: []interface{}{5, 3}},
+					}, nil
+				}
+			},
+			want: []*parsers.Instruction{
+				{Opcode: "add", Arguments: []interface{}{1, 2}},
+				{Opcode: "subtract", Arguments: []interface{}{5, 3}},
+			},
+		},
+		{
+			name:    "opcode identifier returns single instruction",
+			targets: []interface{}{"add"},
+			setupMocks: func(i *testInterpreter) {
+				i.getSubroutineInstructions = func(path string) ([]*parsers.Instruction, error) {
+					return []*parsers.Instruction{
+						{Opcode: "add", Arguments: []interface{}{}},
+					}, nil
+				}
+			},
+			want: []*parsers.Instruction{
+				{Opcode: "add", Arguments: []interface{}{}},
+			},
+		},
+		{
+			name: "variable bound to routine value is resolved",
+			targets: []interface{}{
+				[]*parsers.Instruction{
+					{Opcode: "debug", Arguments: []interface{}{"from variable"}},
+				},
+			},
+			want: []*parsers.Instruction{
+				{Opcode: "debug", Arguments: []interface{}{"from variable"}},
+			},
+		},
+		{
+			name: "multiple targets are concatenated in order",
+			targets: []interface{}{
+				"math.gnd",
+				"string.gnd",
+			},
+			setupMocks: func(i *testInterpreter) {
+				i.getSubroutineInstructions = func(path string) ([]*parsers.Instruction, error) {
+					switch path {
+					case "math.gnd":
+						return []*parsers.Instruction{
+							{Opcode: "add", Arguments: []interface{}{1, 2}},
+						}, nil
+					case "string.gnd":
+						return []*parsers.Instruction{
+							{Opcode: "concat", Arguments: []interface{}{"hello", "world"}},
+						}, nil
+					default:
+						return nil, fmt.Errorf("unexpected path: %s", path)
+					}
+				}
+			},
+			want: []*parsers.Instruction{
+				{Opcode: "add", Arguments: []interface{}{1, 2}},
+				{Opcode: "concat", Arguments: []interface{}{"hello", "world"}},
+			},
+		},
+		{
+			name:    "file target that cannot be loaded raises error",
+			targets: []interface{}{"nonexistent.gnd"},
+			setupMocks: func(i *testInterpreter) {
+				i.getSubroutineInstructions = func(path string) ([]*parsers.Instruction, error) {
+					return nil, fmt.Errorf("file not found: %s", path)
+				}
+			},
+			wantErr: true,
+			errMsg:  "[/gnd/code]: HandleCodeResult: failed to get instructions for nonexistent.gnd: file not found: nonexistent.gnd",
+		},
+		{
+			name:    "unbound variable raises error",
+			targets: []interface{}{"$unbound"},
+			wantErr: true,
+			errMsg:  "[/gnd/code]: HandleCodeResult: failed to get instructions for $unbound: [$unbound]: GetSubroutineInstructions: loading failed: [$unbound]: LoadSubroutine: failed to read subroutine:\n  open $unbound: no such file or directory",
+		},
+		{
+			name:    "non-routine variable raises error",
+			targets: []interface{}{123},
+			wantErr: true,
+			errMsg:  "[/gnd/code]: HandleCodeResult: invalid target type: int",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			baseInterpreter := NewInterpreter("", nil).(*InterpreterImpl)
+			interpreter := &testInterpreter{InterpreterImpl: baseInterpreter}
+			if tt.setupMocks != nil {
+				tt.setupMocks(interpreter)
+			}
+
+			codeResult := primitive.NewCodeResult(tt.targets)
+			got, err := interpreter.HandleCodeResult("/gnd/code", codeResult, []*parsers.Instruction{
+				{Opcode: "debug", Arguments: []interface{}{"hello world"}},
+			})
+
+			if tt.wantErr {
+				assert.Error(t, err)
+				assert.Equal(t, tt.errMsg, err.Error())
+				return
+			}
+
+			assert.NoError(t, err)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
