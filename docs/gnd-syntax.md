@@ -1,7 +1,7 @@
-# Gendo `.gnd` File Syntax - RFC Draft 1.0 (Semantic Versioning: Major.Minor)
+# Gendo `.gnd` File Syntax - RFC Draft 1.1 (Semantic Versioning: Major.Minor)
 
 Conventions: The key words **MUST**, **SHOULD**, and **MAY** in this document 
-are to be interpreted as described in RFC 2119 (March 1997).
+are to be interpreted as described in RFC 2119 (March 1997).
 
 1. Document Scope *(Normative)*
 
@@ -38,46 +38,60 @@ letters, digits (0-9), or hyphens (`-`), and **MUST NOT** begin with or include
 other symbols such as `@` or `$` (reserved for future annotations). Identifiers 
 **MUST** be case-insensitive, with parsers canonicalizing them to lower-case; 
 the single underscore character (`_`) **MUST** be reserved for the implicit 
-data slot and **MUST NOT** be used as an ordinary identifier. Literals **MUST** 
-follow one of these forms: a decimal integer matching `-?[0-9]+`, a hexadecimal 
-integer matching `-?0x[0-9A-Fa-f]+`, a floating-point number matching 
-`-?(?:[0-9]+\.[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?`, or a double-quoted string 
-using C-style escapes (`"`, `\`, ` `, ` `, \`\`, `\uXXXX`). Numeric literals 
-**MUST** end at the first whitespace character, and string literals **MUST** 
-close on the same line.
+data slot and **MUST NOT** be used as an ordinary identifier.
+
+A variable token **MUST** consist of a dollar sign (`$`) followed by an 
+identifier. Variable tokens are used both as explicit destinations and as 
+arguments referring to previously defined values.
+
+Literals **MUST** follow one of these forms: a decimal integer matching 
+`-?[0-9]+`, a hexadecimal integer matching `-?0x[0-9A-Fa-f]+`, a floating-point 
+number matching `-?(?:[0-9]+\.[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?`, or a 
+double-quoted string using C-style escapes (`\"`, `\\`, `\n`, `\t`, `\uXXXX`). 
+Numeric literals **MUST** end at the first whitespace character, and string 
+literals **MUST** close on the same line.
 
 To eliminate any ambiguity, the grammar for tokens, identifiers, and literals 
 is defined inline here:
 
 ```
 identifier = ALPHA *( ALPHA / DIGIT / "-" )
+variable    = "$" identifier
+underscore  = "_"
+opcode      = identifier ; but MUST NOT start with DIGIT
+
 decimal    = ["-"] 1*DIGIT
 hex        = ["-"] "0x" 1*(DIGIT / "A"-"F" / "a"-"f")
 float      = ["-"] (1*DIGIT "." *DIGIT / "." 1*DIGIT) [ exponent ]
 exponent   = ("e" / "E") ["+" / "-"] 1*DIGIT
 string     = DQUOTE *(string-char / escape) DQUOTE
 string-char= %x20-21 / %x23-5B / %x5D-7E
-escape     = "\" ( "\"" / "\\" / "n" / "t" / "u" 4HEXD )
+escape     = "\\" ( "\"" / "\\" / "n" / "t" / "u" 4HEXD )
 HEXD       = DIGIT / %x41-46 / %x61-66
+
 literal    = decimal / hex / float / string
-token      = identifier / literal / "_"
+token      = variable / underscore / opcode / literal
 ```
 
-Note - A leading BOM (0xEF,0xBB,0xBF) MAY be present in the file but SHOULD be 
+Note - A leading BOM (0xEF,0xBB,0xBF) MAY be present in the file but SHOULD be 
 ignored by the parser, provided it does not affect UTF-8 decoding.
 
 4. Instruction Grammar
 
-Each instruction **MUST** conform to the pattern `opcode [ destination ] [ 
-argument... ] [ # comment ]`. An opcode token **MUST** appear first. An 
-optional destination token (an identifier or `_`) **MAY** follow; if omitted, 
-`_` **MUST** be assumed implicitly, and writers **MAY** explicitly write 
-`opcode _` when no arguments are present, treating it as equivalent to 
-omission. However, if argument tokens appear, the destination **MUST** be 
-explicitly provided. Argument tokens **MAY** follow the destination, separated 
-by spaces or tabs. An unescaped `#` **MUST** introduce a comment, causing the 
-remainder of the line to be ignored. No punctuation other than spaces, tabs, 
-and `#` **MAY** appear.
+Each instruction **MUST** conform one of the patern 
+`[ $destination ] opcode [ argument ... ]`
+
+If the first token begins with `$` or is `_`, it is taken as the destination; 
+the second token **MUST** then be the opcode. Otherwise, the first token 
+**MUST** be the opcode and the destination is implicitly `_`. Writing `_` 
+explicitly as the destination is permitted and is synonymous with omitting the 
+destination.
+
+All variable references inside the argument list **MUST** use the `$` prefix. 
+Bare tokens that are neither numeric literals, quoted strings, `$variables`, 
+nor `_` **MUST** be interpreted as string literals. An unescaped `#` **MUST** 
+introduce a comment, causing the remainder of the line to be ignored. No 
+punctuation other than spaces, tabs, and `#` **MAY** appear.
 
 5. Data-Flow Conventions
 
@@ -145,3 +159,11 @@ Future syntax extensions **MAY** introduce new literal categories or optional
 trailing attributes, provided they do not introduce multi-line constructs, do 
 not repurpose `#` for comment delimiters, do not break existing valid `.gnd` 
 files, and preserve the line-oriented, positional-token model.
+
+## 11. Revision History
+
+*Draft 1.1* - Introduces destination-first `$dest opcode ...` form, allows 
+opcode-first form with implicit `_`, requires `$` prefix for all variable 
+references, and prohibits opcode identifiers beginning with digits.
+
+*Draft 1.0* - Original specification.
