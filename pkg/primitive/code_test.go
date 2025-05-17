@@ -49,6 +49,11 @@ func TestCodePrimitive(t *testing.T) {
 				"@",
 			}),
 		},
+		{
+			name: "opcode identifier is treated as string target",
+			args: []interface{}{"add"},
+			want: NewCodeResult([]interface{}{"add"}),
+		},
 	}
 
 	for _, tt := range tests {

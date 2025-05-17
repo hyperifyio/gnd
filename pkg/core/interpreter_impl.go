@@ -281,13 +281,16 @@ func (i *InterpreterImpl) HandleCodeResult(source string, codeResult *primitive.
 	// Process each target in order
 	for _, target := range codeResult.Targets {
 		var instructions []*parsers.Instruction
-		var err error
 
 		switch v := target.(type) {
 		case string:
 			if v == "@" {
-				return block, nil
+				if block == nil {
+					return nil, fmt.Errorf("[%s]: HandleCodeResult: no instructions provided for @", source)
+				}
+				instructions = append(instructions, block...)
 			} else {
+
 				// Get instructions using existing subroutine logic
 				pwd := i.GetScriptDir()
 				i.LogDebug("[%s]: HandleCodeResult: pwd = %s", source, pwd)
@@ -296,21 +299,31 @@ func (i *InterpreterImpl) HandleCodeResult(source string, codeResult *primitive.
 				subPath := SubroutinePath(v, pwd)
 				i.LogDebug("[%s]: HandleCodeResult: subPath = %v", source, subPath)
 
+				var err error
 				instructions, err = i.GetSubroutineInstructions(subPath)
 				i.LogDebug("[%s]: HandleCodeResult: instructions = %v", source, instructions)
+				if err != nil {
+					return nil, fmt.Errorf("[%s]: HandleCodeResult: failed to get instructions for %v: %v", source, target, err)
+				}
+				if instructions == nil {
+					return nil, fmt.Errorf("[%s]: HandleCodeResult: no instructions found for %v", source, target)
+				}
+
 			}
 		case []*parsers.Instruction:
 			// Use the instructions directly
 			instructions = v
+			if instructions == nil {
+				return nil, fmt.Errorf("[%s]: HandleCodeResult: no instructions found for %v", source, target)
+			}
 		case *parsers.Instruction:
 			// Use the instructions directly
 			instructions = []*parsers.Instruction{v}
+			if instructions == nil {
+				return nil, fmt.Errorf("[%s]: HandleCodeResult: no instructions found for %v", source, target)
+			}
 		default:
 			return nil, fmt.Errorf("[%s]: HandleCodeResult: invalid target type: %T", source, target)
-		}
-
-		if err != nil {
-			return nil, fmt.Errorf("[%s]: HandleCodeResult: failed to get instructions for %v: %v", source, target, err)
 		}
 
 		// Append instructions to the result

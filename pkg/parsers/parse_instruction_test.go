@@ -63,6 +63,14 @@ func TestParseInstruction(t *testing.T) {
 			want:    &Instruction{Opcode: "concat", Destination: NewPropertyRef("x"), Arguments: []interface{}{[]interface{}{"hello"}, "world"}},
 			wantErr: false,
 		},
+		{
+			name: "instruction with no arguments",
+			line: "add",
+			want: &Instruction{Opcode: "add", Destination: NewPropertyRef("_"), Arguments: []interface{}{
+				NewPropertyRef("_"),
+			}},
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
