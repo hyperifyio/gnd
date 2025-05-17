@@ -32,18 +32,22 @@ one instruction.  Lines beginning with `#` are comments.  Tokens are separated
 by spaces or horizontal tabs; an unescaped `#` terminates tokenisation for the 
 rest of the line.  Identifiers begin with a letter, may contain letters, 
 digits, or hyphens, are case-insensitive, and never include dots or slashes.  
-The single underscore `_` is reserved.  Literals are decimal or hexadecimal 
-integers, floating-point numbers, or double-quoted strings with C-style 
-escapes; string literals must close on the same line.
+The single underscore `_` is reserved for the implicit data slot.  Literals are 
+decimal or hexadecimal integers, floating-point numbers, or double-quoted 
+strings with C-style escapes; string literals must close on the same line.
 
 An instruction has the form
 
-    [@destination] opcode [argument ...] [# comment]
+    [ $destination ] opcode [ argument ... ] [# comment]
 
-The first token is always the opcode.  If an instruction consists of only that 
-token, its destination is `_`.  Otherwise the destination (an identifier or 
-`_`) appears second, followed by zero or more arguments.  No additional 
-punctuation is allowed.
+If the first token begins with `$` or is `_`, it is taken as the destination; 
+the second token must then be the opcode. Otherwise, the first token must be 
+the opcode and the destination is implicitly `_`. Writing `_` explicitly as the 
+destination is permitted and is synonymous with omitting the destination.
+
+All variable references inside the argument list must use the `$` prefix. Bare 
+tokens that are neither numeric literals, quoted strings, `$variables`, nor `_` 
+must be interpreted as string literals.
 
 Data flows through `_`.  On entry, `_` holds the entire argument array passed 
 to the unit.  Each instruction implicitly consumes `_` as its first input 
