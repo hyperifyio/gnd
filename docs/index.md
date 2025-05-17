@@ -21,6 +21,9 @@ The Gendo toolchain consists of three main executables:
 - [let](let-syntax.md) - Variable assignment and binding
 - [return](return-syntax.md) - Early return from execution
 - [exit](exit-syntax.md) - Program termination
+- [exec](exec-syntax.md) - Execute instructions
+- [compile](compile-syntax.md) - Compile instructions
+- [code](code-syntax.md) - Code block handling
 
 #### String Operations
 - [concat](concat-syntax.md) - String concatenation
