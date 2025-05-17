@@ -142,7 +142,7 @@ func (i *InterpreterImpl) ExecuteInstructionBlock(source string, input interface
 	lastResult := input
 	for idx, op := range instructions {
 		if op != nil {
-			i.LogDebug("[%s:%d]: ExecuteInstructionBlock: %s <- %s %v", source, idx, op.Destination, op.Opcode, op.Arguments)
+			i.LogDebug("[%s:%d]: ExecuteInstructionBlock: %v <- %s %v", source, idx, op.Destination, op.Opcode, op.Arguments)
 			result, err := i.ExecuteInstruction(op.Opcode, op.Destination, op.Arguments)
 			if err != nil {
 				if returnValue, ok := primitive.GetReturnValue(err); ok {
@@ -237,11 +237,11 @@ func (i *InterpreterImpl) ExecuteInstruction(opcode string, destination *parsers
 
 	prim, ok := primitive.Get(opcode)
 	if !ok {
-		i.LogDebug("[%s]: ExecuteInstruction: subroutine: %s <- %s %v", opcode, destination, opcode, resolvedArgs)
+		i.LogDebug("[%s]: ExecuteInstruction: subroutine: %v <- %s %v", opcode, destination, opcode, resolvedArgs)
 		return i.ExecuteSubroutineCall(opcode, destination, resolvedArgs)
 	}
 
-	i.LogDebug("[%s]: ExecuteInstruction: primitive: %s <- %s %v", opcode, opcode, destination, resolvedArgs)
+	i.LogDebug("[%s]: ExecuteInstruction: primitive: %v <- %s %v", opcode, opcode, destination, resolvedArgs)
 	return i.ExecutePrimitive(prim, destination, resolvedArgs)
 }
 
@@ -261,7 +261,7 @@ func (i *InterpreterImpl) LoadArguments(source string, arguments []interface{}) 
 func (i *InterpreterImpl) ExecutePrimitive(prim primitive.Primitive, destination *parsers.PropertyRef, arguments []interface{}) (interface{}, error) {
 
 	// Log regular instruction
-	i.LogDebug("[%s]: ExecutePrimitive: %s <- %s %v", prim.Name(), destination, prim.Name(), arguments)
+	i.LogDebug("[%s]: ExecutePrimitive: %v <- %s %v", prim.Name(), destination, prim.Name(), arguments)
 
 	result, err := prim.Execute(arguments)
 	if err != nil {
@@ -290,7 +290,7 @@ func (i *InterpreterImpl) ExecutePrimitive(prim primitive.Primitive, destination
 	}
 
 	// Store the result in the destination slot
-	i.LogDebug("[%s]: ExecutePrimitive: %s <- %v", prim.Name(), destination, log.StringifyValue(result))
+	i.LogDebug("[%s]: ExecutePrimitive: %v <- %v", prim.Name(), destination, log.StringifyValue(result))
 	i.Slots[destination.Name] = result
 	return result, nil
 }
@@ -300,7 +300,7 @@ func (i *InterpreterImpl) ExecutePrimitive(prim primitive.Primitive, destination
 func (i *InterpreterImpl) ExecuteSubroutineCall(opcode string, destination *parsers.PropertyRef, arguments []interface{}) (interface{}, error) {
 
 	// Extract the base name without .gnd extension
-	i.LogDebug("[%s]: ExecuteSubroutineCall: %s <- %s %v", opcode, destination, opcode, arguments)
+	i.LogDebug("[%s]: ExecuteSubroutineCall: %v <- %s %v", opcode, destination, opcode, arguments)
 
 	// Execute the subroutine with the resolved arguments
 	result, err := i.ExecuteSubroutine(opcode, arguments)

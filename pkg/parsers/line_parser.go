@@ -117,6 +117,9 @@ func (p *LineParser) ParseUnquotedTokenOrPropertyRef() (interface{}, error) {
 	if err != nil {
 		return "", err
 	}
+	if token == "_" {
+		return NewPropertyRef("_"), nil
+	}
 	if len(token) > 0 && IsDollar(token[0]) {
 		return NewPropertyRef(token[1:]), nil
 	}
@@ -195,6 +198,8 @@ func (p *LineParser) ParseDestination() (interface{}, error) {
 	case IsArrayEnd(p.line[p.pos]):
 		return nil, fmt.Errorf("unexpected array end character ']' at position %d", p.pos)
 	case IsDollar(p.line[p.pos]):
+		return p.ParseUnquotedTokenOrPropertyRef()
+	case p.line[p.pos] == '_':
 		return p.ParseUnquotedTokenOrPropertyRef()
 	default:
 		return nil, fmt.Errorf("destination is invalid at position %d", p.pos)
