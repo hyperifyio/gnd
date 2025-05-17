@@ -16,9 +16,9 @@ into executable `.test.gnd` pipelines, or as `.test.llm`, which the test runner
 evaluates directly with the language model.
 
 A unit comprises all files that share the same base name in one directory.  
-The human-written header ends in `.llm` and records the unit’s intent, 
+The human-written header ends in `.llm` and records the unit's intent, 
 dependencies, and constraints.  A prompt ending in `.gnd.llm` (optional) guides 
-automatic code generation.  The generated—or hand-edited—implementation is 
+automatic code generation.  The generated-or hand-edited-implementation is 
 stored in `.gnd`; when compact distribution is desired, the interpreter can 
 convert that script to `.gnc`.  If several numbered fragments such as 
 `010-sum.gnd`, `020-sum.gnd`, and `sum.gnd` exist, the build concatenates them 
@@ -38,24 +38,24 @@ escapes; string literals must close on the same line.
 
 An instruction has the form
 
-    opcode [destination] [argument …] [# comment]
+    [@destination] opcode [argument ...] [# comment]
 
 The first token is always the opcode.  If an instruction consists of only that 
-token, its destination is `_`.  Otherwise the destination (an 
-identifier or `_`) appears second, followed by zero or more arguments.  No 
-additional punctuation is allowed.
+token, its destination is `_`.  Otherwise the destination (an identifier or 
+`_`) appears second, followed by zero or more arguments.  No additional 
+punctuation is allowed.
 
 Data flows through `_`.  On entry, `_` holds the entire argument array passed 
 to the unit.  Each instruction implicitly consumes `_` as its first input 
 (unless further inputs are explicitly named) and binds its result to the 
 destination, which becomes the new `_`.  After the final instruction, whatever 
-value resides in `_` is returned as the unit’s result.  All other identifiers 
+value resides in `_` is returned as the unit's result.  All other identifiers 
 obey single assignment: they may be bound once and refer only to values defined 
 earlier in the file.
 
 Only spaces and tabs count as intra-line whitespace; other control characters 
 cause a syntax error.  Lines end with LF (CR-LF is normalised).  There is no 
-line-continuation escape—each physical line is complete.  A file is rejected if 
+line-continuation escape-each physical line is complete.  A file is rejected if 
 any identifier or literal breaks the token rules, a string literal is 
 unterminated, a non-underscore identifier is rebound, a line has no opcode 
 after stripping comments, or disallowed control characters appear outside a 
