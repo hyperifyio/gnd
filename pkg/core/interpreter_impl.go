@@ -333,6 +333,28 @@ func (i *InterpreterImpl) HandleCodeResult(source string, codeResult *primitive.
 	return allInstructions, nil
 }
 
+// HandleExecResult processes an ExecResult and returns the routine's output
+func (i *InterpreterImpl) HandleExecResult(source string, execResult *primitive.ExecResult) (interface{}, error) {
+	i.LogDebug("[%s]: HandleExecResult: executing routine with args: %v", source, execResult.Args)
+
+	// Create a new interpreter for the routine
+	interpreter := NewInterpreterWithParent(
+		i.GetScriptDir(),
+		map[string]interface{}{
+			"_": execResult.Args,
+		},
+		i,
+	)
+
+	// Execute the routine
+	result, err := interpreter.ExecuteInstructionBlock(source, execResult.Args, execResult.Routine)
+	if err != nil {
+		return nil, fmt.Errorf("[%s]: HandleExecResult: routine execution failed: %v", source, err)
+	}
+
+	return result, nil
+}
+
 // ExecutePrimitive executes a single GND primitive and returns its result
 func (i *InterpreterImpl) ExecutePrimitive(prim primitive.Primitive, destination *parsers.PropertyRef, arguments []interface{}) (interface{}, error) {
 
@@ -342,7 +364,6 @@ func (i *InterpreterImpl) ExecutePrimitive(prim primitive.Primitive, destination
 	result, err := prim.Execute(arguments)
 
 	if err != nil {
-
 		// Check if this is a ReturnValue
 		if returnValue, ok := primitive.GetReturnValue(err); ok {
 			i.LogDebug("[%s]: ExecutePrimitive: exit result detected with value %v", prim.Name(), returnValue.Value)
@@ -370,6 +391,17 @@ func (i *InterpreterImpl) ExecutePrimitive(prim primitive.Primitive, destination
 	if codeResult, ok := primitive.GetCodeResult(result); ok {
 		i.LogDebug("[%s]: ExecutePrimitive: code result detected: %v", prim.Name(), codeResult)
 		return codeResult, nil
+	}
+
+	// Check if this is an ExecResult
+	if execResult, ok := primitive.GetExecResult(result); ok {
+		i.LogDebug("[%s]: ExecutePrimitive: exec result detected: %v", prim.Name(), execResult)
+		result, err := i.HandleExecResult(prim.Name(), execResult)
+		if err != nil {
+			return nil, err
+		}
+		i.Slots[destination.Name] = result
+		return result, nil
 	}
 
 	// Store the result in the destination slot

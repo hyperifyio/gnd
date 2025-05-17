@@ -1,6 +1,9 @@
 package core
 
-import "github.com/hyperifyio/gnd/pkg/parsers"
+import (
+	"github.com/hyperifyio/gnd/pkg/parsers"
+	"github.com/hyperifyio/gnd/pkg/primitive"
+)
 
 // Interpreter defines the methods that an interpreter must implement
 type Interpreter interface {
@@ -31,4 +34,7 @@ type Interpreter interface {
 
 	// GetSubroutineInstructions retrieves the instructions for a subroutine
 	GetSubroutineInstructions(path string) ([]*parsers.Instruction, error)
+
+	// HandleExecResult processes an ExecResult and returns the routine's output
+	HandleExecResult(source string, execResult *primitive.ExecResult) (interface{}, error)
 }
