@@ -27,19 +27,22 @@ func TestParseInstruction(t *testing.T) {
 		{
 			name:    "opcode only",
 			line:    "nop",
-			want:    &Instruction{Opcode: "nop", Destination: "_", Arguments: []interface{}{&PropertyRef{"_"}}},
+			want:    &Instruction{Opcode: "nop", Destination: "_", Arguments: []interface{}{NewPropertyRef("_")}},
 			wantErr: false,
 		},
 		{
 			name:    "opcode and destination",
 			line:    "foo bar",
-			want:    &Instruction{Opcode: "foo", Destination: "bar", Arguments: []interface{}{&PropertyRef{"_"}}},
+			want:    &Instruction{Opcode: "foo", Destination: "bar", Arguments: []interface{}{NewPropertyRef("_")}},
 			wantErr: false,
 		},
 		{
-			name:    "concat variables arguments",
-			line:    `concat x hello world`,
-			want:    &Instruction{Opcode: "concat", Destination: "x", Arguments: []interface{}{PropertyRef{"hello"}, PropertyRef{"world"}}},
+			name: "concat variables arguments",
+			line: `concat x hello world`,
+			want: &Instruction{Opcode: "concat", Destination: "x", Arguments: []interface{}{
+				NewPropertyRef("hello"),
+				NewPropertyRef("world"),
+			}},
 			wantErr: false,
 		},
 		{

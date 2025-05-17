@@ -35,8 +35,6 @@ func ParseString(arg interface{}) (string, error) {
 		return string(b), nil
 
 	case []interface{}:
-
-		// For arrays, convert each element to string
 		var strArgs []string
 		for _, item := range v {
 			str, err := ParseString(item)
@@ -46,6 +44,9 @@ func ParseString(arg interface{}) (string, error) {
 			strArgs = append(strArgs, str)
 		}
 		return strings.Join(strArgs, " "), nil
+
+	case []string:
+		return strings.Join(v, " "), nil
 
 	default:
 		return "", fmt.Errorf("invalid type: %T", arg)

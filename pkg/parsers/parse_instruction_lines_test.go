@@ -17,7 +17,7 @@ func TestParseInstructionLines(t *testing.T) {
 			expected: &Instruction{
 				Opcode:      "let",
 				Destination: "x",
-				Arguments:   []interface{}{PropertyRef{Name: "y"}},
+				Arguments:   []interface{}{NewPropertyRef("y")},
 			},
 			wantErr: false,
 		},
