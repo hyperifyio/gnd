@@ -1,7 +1,7 @@
-# Gendo `.gnd` File Syntax — RFC Draft 1.0 (Semantic Versioning: Major.Minor)
+# Gendo `.gnd` File Syntax - RFC Draft 1.0 (Semantic Versioning: Major.Minor)
 
-Conventions: The key words **MUST**, **SHOULD**, and **MAY** in this document are to be 
-interpreted as described in RFC 2119 (March 1997).
+Conventions: The key words **MUST**, **SHOULD**, and **MAY** in this document 
+are to be interpreted as described in RFC 2119 (March 1997).
 
 1. Document Scope *(Normative)*
 
@@ -9,22 +9,22 @@ This section **MUST** be followed by all `.gnd` implementations and **MAY**
 include non-normative guidance for context. This document **MUST** be used to 
 define the concrete syntax of Gendo implementation files (those with the `.gnd` 
 extension). It **SHOULD** specify how source text is split into instructions, 
-how tokens are formed, and how data‑flow conventions are expressed; it **MUST 
+how tokens are formed, and how data-flow conventions are expressed; it **MUST
 NOT** address opcode semantics, build ordering, file naming rules, or runtime 
 behaviour beyond what is necessary for parsing.
 
 2. File Structure and Parsing
 
-A `.gnd` file **MUST** be encoded in UTF‑8; any decoding errors (invalid byte 
+A `.gnd` file **MUST** be encoded in UTF-8; any decoding errors (invalid byte 
 sequences) **MUST** cause the parser to reject the file. A leading BOM 
 (0xEF,0xBB,0xBF) **MAY** be present; the parser **SHOULD** recognize it and 
 ignore it at the start of the file without modifying source content or emitting 
-warnings, provided it does not interfere with normal UTF‑8 decoding. The parser 
+warnings, provided it does not interfere with normal UTF-8 decoding. The parser 
 **MUST** read the file one line at a time. Blank lines **SHOULD** be ignored, 
-and any line whose first non‑whitespace character is `#` **MUST** be treated as 
+and any line whose first non-whitespace character is `#` **MUST** be treated as 
 a comment and skipped. All other lines **MUST** be parsed as exactly one 
-instruction; the parser **MUST NOT** support multi‑line constructs, block 
-delimiters, look‑ahead, or backtracking—each physical line **MUST** stand 
+instruction; the parser **MUST NOT** support multi-line constructs, block 
+delimiters, look-ahead, or backtracking-each physical line **MUST** stand 
 alone.
 
 3. Token Types
@@ -33,16 +33,16 @@ In this context, a *token* is a maximal sequence of non-whitespace characters
 (excluding `#`) that the parser **MUST** treat as a single syntactic unit. 
 Tokens **MUST** be separated by spaces or horizontal tabs, and an unescaped `#` 
 **MUST** terminate tokenization for the remainder of the line. Identifiers 
-**MUST** begin with an ASCII letter (A–Z or a–z), **MAY** include ASCII 
-letters, digits (0–9), or hyphens (`-`), and **MUST NOT** begin with or include 
+**MUST** begin with an ASCII letter (A-Z or a-z), **MAY** include ASCII 
+letters, digits (0-9), or hyphens (`-`), and **MUST NOT** begin with or include 
 other symbols such as `@` or `$` (reserved for future annotations). Identifiers 
-**MUST** be case‑insensitive, with parsers canonicalizing them to lower-case; 
+**MUST** be case-insensitive, with parsers canonicalizing them to lower-case; 
 the single underscore character (`_`) **MUST** be reserved for the implicit 
 data slot and **MUST NOT** be used as an ordinary identifier. Literals **MUST** 
 follow one of these forms: a decimal integer matching `-?[0-9]+`, a hexadecimal 
-integer matching `-?0x[0-9A-Fa-f]+`, a floating‑point number matching 
-`-?(?:[0-9]+\.[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?`, or a double‑quoted string 
-using C‑style escapes (`"`, `\`, ` `, ` `, \`\`, `\uXXXX`). Numeric literals 
+integer matching `-?0x[0-9A-Fa-f]+`, a floating-point number matching 
+`-?(?:[0-9]+\.[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?`, or a double-quoted string 
+using C-style escapes (`"`, `\`, ` `, ` `, \`\`, `\uXXXX`). Numeric literals 
 **MUST** end at the first whitespace character, and string literals **MUST** 
 close on the same line.
 
@@ -63,8 +63,8 @@ literal    = decimal / hex / float / string
 token      = identifier / literal / "_"
 ```
 
-Note – A leading BOM (0xEF,0xBB,0xBF) MAY be present in the file but SHOULD be 
-ignored by the parser, provided it does not affect UTF‑8 decoding.
+Note - A leading BOM (0xEF,0xBB,0xBF) MAY be present in the file but SHOULD be 
+ignored by the parser, provided it does not affect UTF-8 decoding.
 
 4. Instruction Grammar
 
@@ -79,14 +79,14 @@ by spaces or tabs. An unescaped `#` **MUST** introduce a comment, causing the
 remainder of the line to be ignored. No punctuation other than spaces, tabs, 
 and `#` **MAY** appear.
 
-5. Data‑Flow Conventions
+5. Data-Flow Conventions
 
 The special slot `_` **MUST** represent the current value flowing through the 
 unit; on entry, `_` **MUST** hold the array of arguments supplied to the unit. 
 Each instruction **MUST** consume `_` implicitly as its first input unless 
 additional inputs are explicitly named. The named destination of the 
 instruction **MUST** become the new value of `_`. When the final instruction 
-completes, the value in `_` **MUST** be taken as the unit’s return value. All 
+completes, the value in `_` **MUST** be taken as the unit's return value. All 
 other named identifiers **MUST** remain bound locally within the unit, and 
 their values **SHALL** be discarded externally unless explicitly bound to `_` 
 before the final instruction. All identifiers **MUST** follow 
@@ -94,7 +94,7 @@ single-assignment: a destination identifier **MUST NOT** be reused later in the
 same file, and argument tokens **MUST** refer only to identifiers already bound 
 at that point in the file (forward references **SHALL NOT** be permitted).
 
-6. Instruction Semantics (Syntax‑Level)
+6. Instruction Semantics (Syntax-Level)
 
 The parser **MAY** emit for each instruction an abstract record containing the 
 opcode name, the destination slot, and the ordered list of argument tokens. The 
@@ -106,17 +106,17 @@ reordering of independent instructions.
 7. Fragment Concatenation
 
 Fragments sharing the same base name **MUST** be concatenated before parsing. 
-Numeric‑prefixed fragments (for example, `010-foo.gnd` and `020-foo.gnd`) 
+Numeric-prefixed fragments (for example, `010-foo.gnd` and `020-foo.gnd`) 
 **SHOULD** be concatenated in ascending numeric order, followed by any 
-unnumbered fragments. Suffix‑numbered fragments (for example, `foo-1.gnd` and 
+unnumbered fragments. Suffix-numbered fragments (for example, `foo-1.gnd` and 
 `foo-2.gnd`) **SHOULD** be treated equivalently: the numeric suffix **MUST** 
 control ordering, and any following characters in the file name **MUST** be 
-ignored when determining the base name. If both prefix‑numbered and 
-suffix‑numbered fragments exist for the same base name, prefix‑style fragments 
+ignored when determining the base name. If both prefix-numbered and 
+suffix-numbered fragments exist for the same base name, prefix-style fragments 
 **MUST** be ordered first (in ascending numeric prefix order), followed by 
-suffix‑style fragments (in ascending numeric suffix order). The compiler 
+suffix-style fragments (in ascending numeric suffix order). The compiler 
 **MAY** generate a staging file (such as `foo.gnd`) containing the concatenated 
-content for parsing. The single‑assignment rule **MUST** apply across 
+content for parsing. The single-assignment rule **MUST** apply across 
 concatenated fragments.
 
 8. Comments and Whitespace
