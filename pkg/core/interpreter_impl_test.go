@@ -1,11 +1,14 @@
 package core
 
 import (
-	"github.com/hyperifyio/gnd/pkg/parsers"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/hyperifyio/gnd/pkg/parsers"
+	"github.com/hyperifyio/gnd/pkg/primitive"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -174,40 +177,84 @@ func TestExecuteInstruction_UnknownOpcodeFile(t *testing.T) {
 }
 
 func TestLoadSubroutine(t *testing.T) {
-	opcodeMap := map[string]string{
-		"prompt":    "/gnd/prompt",
-		"let":       "/gnd/let",
-		"select":    "/gnd/select",
-		"concat":    "/gnd/concat",
-		"lowercase": "/gnd/lowercase",
-		"uppercase": "/gnd/uppercase",
-		"trim":      "/gnd/trim",
-		"print":     "/gnd/print",
-		"log":       "/gnd/log",
-		"error":     "/gnd/error",
-		"warn":      "/gnd/warn",
-		"info":      "/gnd/info",
-		"debug":     "/gnd/debug",
-		"exit":      "/gnd/exit",
-		"return":    "/gnd/return",
-		"first":     "/gnd/first",
-	}
-
 	// Create a temporary directory for test files
 	tempDir, err := os.MkdirTemp("", "gnd-test-*")
 	assert.NoError(t, err)
 	defer os.RemoveAll(tempDir)
 
-	// Create a test subroutine file
-	subPath := filepath.Join(tempDir, "test.gnd")
-	err = os.WriteFile(subPath, []byte(`first _ ["test"]`), 0644)
-	assert.NoError(t, err)
+	// Create test files
+	testFiles := map[string]string{
+		"math.gnd": `add _ [1 2]
+subtract _ [5 3]`,
+		"string.gnd": `concat _ ["hello" "world"]`,
+		"add.gnd":    `add _ []`,
+	}
 
-	interpreter := NewInterpreter(tempDir, opcodeMap).(*InterpreterImpl)
+	for name, content := range testFiles {
+		err := os.WriteFile(filepath.Join(tempDir, name), []byte(content), 0644)
+		assert.NoError(t, err)
+	}
 
-	err = interpreter.LoadSubroutine(subPath)
-	assert.NoError(t, err)
-	assert.NotNil(t, interpreter.Subroutines[subPath])
+	tests := []struct {
+		name    string
+		subPath string
+		want    []*parsers.Instruction
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name:    "load existing file",
+			subPath: filepath.Join(tempDir, "math.gnd"),
+			want: []*parsers.Instruction{
+				{
+					Opcode:      "add",
+					Destination: parsers.NewPropertyRef("_"),
+					Arguments: []interface{}{
+						parsers.NewPropertyRef("_"),
+						[]interface{}{"1", "2"},
+					},
+				},
+				{
+					Opcode:      "subtract",
+					Destination: parsers.NewPropertyRef("_"),
+					Arguments: []interface{}{
+						parsers.NewPropertyRef("_"),
+						[]interface{}{"5", "3"},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:    "load non-existent file",
+			subPath: filepath.Join(tempDir, "nonexistent.gnd"),
+			wantErr: true,
+			errMsg:  "failed to read subroutine",
+		},
+		{
+			name:    "load opcode identifier",
+			subPath: "add",
+			wantErr: true,
+			errMsg:  "failed to read subroutine",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			interpreter := NewInterpreter(tempDir, make(map[string]string)).(*InterpreterImpl)
+			err := interpreter.LoadSubroutine(tt.subPath)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errMsg)
+			} else {
+				assert.NoError(t, err)
+				instructions, ok := interpreter.Subroutines[tt.subPath]
+				assert.True(t, ok)
+				assert.Equal(t, tt.want, instructions)
+			}
+		})
+	}
 }
 
 func TestExecuteInstructionBlock(t *testing.T) {
@@ -334,13 +381,167 @@ func TestExecuteInstructionBlock(t *testing.T) {
 
 			if tt.wantErr {
 				assert.Error(t, err)
-				if tt.errContains != "" {
-					assert.Contains(t, err.Error(), tt.errContains)
-				}
+				assert.Contains(t, err.Error(), tt.errContains)
 			} else {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.expected, result)
 			}
+		})
+	}
+}
+
+func TestHandleCodeResult(t *testing.T) {
+	// Create a temporary directory for test files
+	tempDir, err := os.MkdirTemp("", "gnd-test-*")
+	assert.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	// Create test files
+	testFiles := map[string]string{
+		"math.gnd": `add _ [1 2]
+subtract _ [5 3]`,
+		"string.gnd": `concat _ ["hello" "world"]`,
+		"add.gnd":    `add _ []`,
+	}
+
+	for name, content := range testFiles {
+		err := os.WriteFile(filepath.Join(tempDir, name), []byte(content), 0644)
+		assert.NoError(t, err)
+	}
+
+	var nullInstructionListInterface []interface{}
+
+	tests := []struct {
+		name    string
+		targets []interface{}
+		want    []*parsers.Instruction
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name:    "current routine target (@) returns current routine instructions",
+			targets: []interface{}{"@"},
+			want: []*parsers.Instruction{
+				{Opcode: "debug", Arguments: []interface{}{"hello world"}},
+			},
+		},
+		{
+			name:    "gnd file target loads and compiles file",
+			targets: []interface{}{"math.gnd"},
+			want: []*parsers.Instruction{
+				{
+					Opcode:      "add",
+					Destination: parsers.NewPropertyRef("_"),
+					Arguments: []interface{}{
+						parsers.NewPropertyRef("_"),
+						[]interface{}{"1", "2"},
+					},
+				},
+				{
+					Opcode:      "subtract",
+					Destination: parsers.NewPropertyRef("_"),
+					Arguments: []interface{}{
+						parsers.NewPropertyRef("_"),
+						[]interface{}{"5", "3"},
+					},
+				},
+			},
+		},
+		{
+			name:    "opcode identifier returns single instruction",
+			targets: []interface{}{"add"},
+			want: []*parsers.Instruction{
+				{
+					Opcode:      "add",
+					Destination: parsers.NewPropertyRef("_"),
+					Arguments: []interface{}{
+						parsers.NewPropertyRef("_"),
+						nullInstructionListInterface,
+					},
+				},
+			},
+		},
+		{
+			name: "variable bound to routine value is resolved",
+			targets: []interface{}{
+				[]*parsers.Instruction{
+					{Opcode: "debug", Arguments: []interface{}{"from variable"}},
+				},
+			},
+			want: []*parsers.Instruction{
+				{Opcode: "debug", Arguments: []interface{}{"from variable"}},
+			},
+		},
+		{
+			name: "multiple targets are concatenated in order",
+			targets: []interface{}{
+				"math.gnd",
+				"string.gnd",
+			},
+			want: []*parsers.Instruction{
+				{
+					Opcode:      "add",
+					Destination: parsers.NewPropertyRef("_"),
+					Arguments: []interface{}{
+						parsers.NewPropertyRef("_"),
+						[]interface{}{"1", "2"},
+					},
+				},
+				{
+					Opcode:      "subtract",
+					Destination: parsers.NewPropertyRef("_"),
+					Arguments: []interface{}{
+						parsers.NewPropertyRef("_"),
+						[]interface{}{"5", "3"},
+					},
+				},
+				{
+					Opcode:      "concat",
+					Destination: parsers.NewPropertyRef("_"),
+					Arguments: []interface{}{
+						parsers.NewPropertyRef("_"),
+						[]interface{}{"hello", "world"},
+					},
+				},
+			},
+		},
+		{
+			name:    "file target that cannot be loaded raises error",
+			targets: []interface{}{"nonexistent.gnd"},
+			wantErr: true,
+			errMsg:  fmt.Sprintf("[/gnd/code]: HandleCodeResult: failed to get instructions for nonexistent.gnd: [%s/nonexistent.gnd]: GetSubroutineInstructions: loading failed: [%s/nonexistent.gnd]: LoadSubroutine: failed to read subroutine:\n  open %s/nonexistent.gnd: no such file or directory", tempDir, tempDir, tempDir),
+		},
+		{
+			name:    "unbound variable raises error",
+			targets: []interface{}{"$unbound"},
+			wantErr: true,
+			errMsg:  fmt.Sprintf("[/gnd/code]: HandleCodeResult: failed to get instructions for $unbound: [%s/$unbound.gnd]: GetSubroutineInstructions: loading failed: [%s/$unbound.gnd]: LoadSubroutine: failed to read subroutine:\n  open %s/$unbound.gnd: no such file or directory", tempDir, tempDir, tempDir),
+		},
+		{
+			name:    "non-routine variable raises error",
+			targets: []interface{}{123},
+			wantErr: true,
+			errMsg:  "[/gnd/code]: HandleCodeResult: invalid target type: int",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			interpreter := NewInterpreter(tempDir, nil).(*InterpreterImpl)
+
+			codeResult := primitive.NewCodeResult(tt.targets)
+			got, err := interpreter.HandleCodeResult("/gnd/code", codeResult, []*parsers.Instruction{
+				{Opcode: "debug", Arguments: []interface{}{"hello world"}},
+			})
+
+			if tt.wantErr {
+				assert.Error(t, err)
+				assert.Equal(t, tt.errMsg, err.Error())
+				return
+			}
+
+			assert.NoError(t, err)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }

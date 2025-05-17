@@ -28,4 +28,7 @@ type Interpreter interface {
 
 	// GetSlot gets a slot value
 	GetSlot(name string) (interface{}, error)
+
+	// GetSubroutineInstructions retrieves the instructions for a subroutine
+	GetSubroutineInstructions(path string) ([]*parsers.Instruction, error)
 }

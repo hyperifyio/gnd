@@ -1,6 +1,5 @@
 $args let
 debug "Our input is:" $args
-return "This is test"
 $persona let "You are a helpful assistant.\n---\n"
 $instruction let "\n---\nIs the previous input acceptable? Reply 'true' or 'false'."
 $fullPrompt concat $persona $args $instruction
