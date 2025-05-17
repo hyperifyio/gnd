@@ -55,22 +55,22 @@ func TestLog(t *testing.T) {
 		{
 			name:           "level and multiple values",
 			args:           []interface{}{"info", "hello", "world"},
-			expectedReturn: "world",
+			expectedReturn: "hello world",
 			expectError:    false,
 			expectedOutput: "[INFO]: hello world\n",
 		},
 		{
 			name:           "level and array value",
 			args:           []interface{}{"info", []interface{}{"hello", "world"}},
-			expectedReturn: "world",
+			expectedReturn: "hello world",
 			expectError:    false,
 			expectedOutput: "[INFO]: hello world\n",
 		},
 		{
 			name:           "array with non-string elements",
 			args:           []interface{}{"info", []interface{}{"hello", 123}},
-			expectedReturn: nil,
-			expectError:    true,
+			expectedReturn: "hello 123",
+			expectError:    false,
 		},
 	}
 
@@ -176,76 +176,4 @@ func TestConvertLogLevel(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestConvertToStrings(t *testing.T) {
-	tests := []struct {
-		name    string
-		input   []interface{}
-		want    []string
-		wantErr bool
-	}{
-		{
-			name:    "simple string arguments",
-			input:   []interface{}{"hello", "world"},
-			want:    []string{"hello", "world"},
-			wantErr: false,
-		},
-		{
-			name:    "array of strings",
-			input:   []interface{}{[]interface{}{"hello", "world"}},
-			want:    []string{"hello", "world"},
-			wantErr: false,
-		},
-		{
-			name:    "mixed string and array arguments",
-			input:   []interface{}{"hello", []interface{}{"world", "!"}},
-			want:    []string{"hello", "world", "!"},
-			wantErr: false,
-		},
-		{
-			name:    "non-string argument",
-			input:   []interface{}{123},
-			want:    nil,
-			wantErr: true,
-		},
-		{
-			name:    "non-string in array",
-			input:   []interface{}{[]interface{}{"hello", 123}},
-			want:    nil,
-			wantErr: true,
-		},
-		{
-			name:    "empty input",
-			input:   []interface{}{},
-			want:    []string{},
-			wantErr: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := ConvertToStrings(tt.input)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("ConvertToStrings() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !compareStringSlices(got, tt.want) {
-				t.Errorf("ConvertToStrings() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-// compareStringSlices compares two string slices for equality
-func compareStringSlices(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }

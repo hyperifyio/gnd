@@ -145,7 +145,7 @@ func (p *LineParser) ParseArrayElement() (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
-		return PropertyRef{Name: token}, nil
+		return NewPropertyRef(token), nil
 	}
 }
 
@@ -215,6 +215,6 @@ func (p *LineParser) ParseRemainingToken() (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
-		return PropertyRef{Name: token}, nil
+		return NewPropertyRef(token), nil
 	}
 }

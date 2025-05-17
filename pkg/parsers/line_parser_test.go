@@ -165,10 +165,14 @@ func TestParseArray(t *testing.T) {
 		expectError bool
 	}{
 		{"empty array", "[]", 0, []interface{}{}, false},
-		{"simple array", "[a b c]", 0, []interface{}{PropertyRef{Name: "a"}, PropertyRef{Name: "b"}, PropertyRef{Name: "c"}}, false},
+		{"simple array", "[a b c]", 0, []interface{}{
+			NewPropertyRef("a"),
+			NewPropertyRef("b"),
+			NewPropertyRef("c"),
+		}, false},
 		{"nested array", "[[a] [b]]", 0, []interface{}{
-			[]interface{}{PropertyRef{Name: "a"}},
-			[]interface{}{PropertyRef{Name: "b"}},
+			[]interface{}{NewPropertyRef("a")},
+			[]interface{}{NewPropertyRef("b")},
 		}, false},
 		{"unterminated", "[a", 0, nil, true},
 		{"no array", "a", 0, nil, true},
@@ -255,8 +259,17 @@ func TestParseRemainingTokens(t *testing.T) {
 		expected    []interface{}
 		expectError bool
 	}{
-		{"simple tokens", "a b c", 0, []interface{}{PropertyRef{Name: "a"}, PropertyRef{Name: "b"}, PropertyRef{Name: "c"}}, false},
-		{"mixed tokens", "a \"b\" [c]", 0, []interface{}{PropertyRef{Name: "a"}, "b", []interface{}{PropertyRef{Name: "c"}}}, false},
+		{"simple tokens", "a b c", 0, []interface{}{
+			NewPropertyRef("a"),
+			NewPropertyRef("b"),
+			NewPropertyRef("c"),
+		}, false},
+		{"mixed tokens", "a \"b\" [c]", 0,
+			[]interface{}{
+				NewPropertyRef("a"), "b", []interface{}{
+					NewPropertyRef("c"),
+				},
+			}, false},
 		{"empty", "", 0, []interface{}{}, false},
 		{"whitespace only", "   ", 0, []interface{}{}, false},
 	}

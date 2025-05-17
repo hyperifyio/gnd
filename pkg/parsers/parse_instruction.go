@@ -42,12 +42,12 @@ func ParseInstruction(source, line string) (*Instruction, error) {
 		if len(tokens) > 2 {
 			args = tokens[2:]
 		} else {
-			args = []interface{}{&PropertyRef{"_"}}
+			args = []interface{}{NewPropertyRef("_")}
 		}
 
 	} else {
 		dest = "_"
-		args = []interface{}{&PropertyRef{"_"}}
+		args = []interface{}{NewPropertyRef("_")}
 	}
 
 	// Check if this is a subroutine call

@@ -5,6 +5,10 @@ type PropertyRef struct {
 	Name string
 }
 
+func NewPropertyRef(name string) *PropertyRef {
+	return &PropertyRef{Name: name}
+}
+
 func (p *PropertyRef) String() string {
 	return "PropertyRef{" + p.Name + "}"
 }

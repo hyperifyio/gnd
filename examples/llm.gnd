@@ -1,6 +1,6 @@
 let args
 debug _ "Our input is:" args
-return _ This is test
+return _ "This is test"
 let persona "You are a helpful assistant.\n---\n"
 let instruction "\n---\nIs the previous input acceptable? Reply 'true' or 'false'."
 concat fullPrompt persona args instruction
