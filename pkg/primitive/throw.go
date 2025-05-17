@@ -1,9 +1,14 @@
 package primitive
 
 import (
+	"errors"
 	"fmt"
-	"strings"
+
+	"github.com/hyperifyio/gnd/pkg/parsers"
 )
+
+// Predefined errors
+var ThrowErrNoArguments = errors.New("throw: requires at least one argument")
 
 // Throw represents the throw primitive
 type Throw struct{}
@@ -15,20 +20,20 @@ func (t *Throw) Name() string {
 
 // Execute runs the throw primitive
 func (t *Throw) Execute(args []interface{}) (interface{}, error) {
-	// If no arguments provided, use the current value of _
+
+	// If no arguments provided, return an error
 	if len(args) == 0 {
-		return nil, fmt.Errorf("_")
+		return nil, ThrowErrNoArguments
 	}
 
-	// Convert all arguments to strings and join them with spaces
-	parts := make([]string, len(args))
-	for i, arg := range args {
-		parts[i] = fmt.Sprintf("%v", arg)
+	// Convert arguments to string using ParseString
+	message, err := parsers.ParseString(args)
+	if err != nil {
+		return nil, fmt.Errorf("invalid argument: %v", err)
 	}
-	message := strings.Join(parts, " ")
 
 	// Return an error with the composed message
-	return nil, fmt.Errorf(message)
+	return nil, errors.New(message)
 }
 
 func init() {
