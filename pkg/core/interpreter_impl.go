@@ -221,7 +221,7 @@ func (i *InterpreterImpl) ResolveOpcode(opcode string) string {
 }
 
 // ExecuteInstruction executes a single GND instruction and returns its result
-func (i *InterpreterImpl) ExecuteInstruction(opcode, destination string, arguments []interface{}) (interface{}, error) {
+func (i *InterpreterImpl) ExecuteInstruction(opcode string, destination *parsers.PropertyRef, arguments []interface{}) (interface{}, error) {
 
 	i.LogDebug("[%s]: ExecuteInstruction: preparing: %s %v", opcode, opcode, arguments)
 
@@ -258,7 +258,7 @@ func (i *InterpreterImpl) LoadArguments(source string, arguments []interface{}) 
 }
 
 // ExecutePrimitive executes a single GND primitive and returns its result
-func (i *InterpreterImpl) ExecutePrimitive(prim primitive.Primitive, destination string, arguments []interface{}) (interface{}, error) {
+func (i *InterpreterImpl) ExecutePrimitive(prim primitive.Primitive, destination *parsers.PropertyRef, arguments []interface{}) (interface{}, error) {
 
 	// Log regular instruction
 	i.LogDebug("[%s]: ExecutePrimitive: %s <- %s %v", prim.Name(), destination, prim.Name(), arguments)
@@ -269,7 +269,7 @@ func (i *InterpreterImpl) ExecutePrimitive(prim primitive.Primitive, destination
 		// Check if this is a ReturnValue
 		if returnValue, ok := primitive.GetReturnValue(err); ok {
 			i.LogDebug("[%s]: ExecutePrimitive: exit result detected with value %v", prim.Name(), returnValue.Value)
-			i.Slots[destination] = returnValue.Value
+			i.Slots[destination.Name] = returnValue.Value
 			return nil, returnValue
 		}
 
@@ -279,8 +279,8 @@ func (i *InterpreterImpl) ExecutePrimitive(prim primitive.Primitive, destination
 			// Store the value in the destination slot before exiting
 			if exitResult.Value != nil {
 				i.LogDebug("[%s]: ExecutePrimitive: storing value %v (type: %T) in destination %s", prim.Name(), exitResult.Value, exitResult.Value, destination)
-				i.Slots[destination] = exitResult.Value
-				i.LogDebug("[%s]: ExecutePrimitive: after storing, destination %s contains: %v (type: %T)", prim.Name(), destination, i.Slots[destination], i.Slots[destination])
+				i.Slots[destination.Name] = exitResult.Value
+				i.LogDebug("[%s]: ExecutePrimitive: after storing, destination %s contains: %v (type: %T)", prim.Name(), destination, i.Slots[destination.Name], i.Slots[destination.Name])
 				return nil, exitResult
 			}
 			return nil, exitResult
@@ -291,13 +291,13 @@ func (i *InterpreterImpl) ExecutePrimitive(prim primitive.Primitive, destination
 
 	// Store the result in the destination slot
 	i.LogDebug("[%s]: ExecutePrimitive: %s <- %v", prim.Name(), destination, log.StringifyValue(result))
-	i.Slots[destination] = result
+	i.Slots[destination.Name] = result
 	return result, nil
 }
 
 // ExecuteSubroutineCall handles the complete flow of executing a subroutine call,
 // including argument resolution and result storage
-func (i *InterpreterImpl) ExecuteSubroutineCall(opcode, destination string, arguments []interface{}) (interface{}, error) {
+func (i *InterpreterImpl) ExecuteSubroutineCall(opcode string, destination *parsers.PropertyRef, arguments []interface{}) (interface{}, error) {
 
 	// Extract the base name without .gnd extension
 	i.LogDebug("[%s]: ExecuteSubroutineCall: %s <- %s %v", opcode, destination, opcode, arguments)
@@ -310,6 +310,6 @@ func (i *InterpreterImpl) ExecuteSubroutineCall(opcode, destination string, argu
 
 	// Store the result in the destination slot
 	i.LogDebug("[%s]: ExecuteSubroutineCall: Storing subroutine result %v in destination %s", opcode, result, destination)
-	i.Slots[destination] = result
+	i.Slots[destination.Name] = result
 	return result, nil
 }

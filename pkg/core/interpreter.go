@@ -17,7 +17,7 @@ type Interpreter interface {
 	LogDebug(format string, args ...interface{})
 
 	// ExecuteInstruction executes a single GND instruction and returns its result
-	ExecuteInstruction(opcode, destination string, arguments []interface{}) (interface{}, error)
+	ExecuteInstruction(opcode string, destination *parsers.PropertyRef, arguments []interface{}) (interface{}, error)
 
 	// ExecuteInstructionBlock executes a sequence of instructions and returns the last result
 	// source is the source of the instructions (for debug purporeses only), e.g., a file name or a source identificating string

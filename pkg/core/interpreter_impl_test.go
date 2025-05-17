@@ -73,7 +73,7 @@ func TestExecuteInstruction(t *testing.T) {
 			name: "let with destination",
 			op: &parsers.Instruction{
 				Opcode:      "/gnd/let",
-				Destination: "x",
+				Destination: parsers.NewPropertyRef("x"),
 				Arguments:   []interface{}{"value"},
 			},
 			slots:    make(map[string]interface{}),
@@ -84,7 +84,7 @@ func TestExecuteInstruction(t *testing.T) {
 			name: "let with default destination",
 			op: &parsers.Instruction{
 				Opcode:      "/gnd/let",
-				Destination: "_",
+				Destination: parsers.NewPropertyRef("_"),
 				Arguments:   []interface{}{"value"},
 			},
 			slots:    make(map[string]interface{}),
@@ -95,7 +95,7 @@ func TestExecuteInstruction(t *testing.T) {
 			name: "let with no args is an error",
 			op: &parsers.Instruction{
 				Opcode:      "/gnd/let",
-				Destination: "x",
+				Destination: parsers.NewPropertyRef("x"),
 				Arguments:   []interface{}{},
 			},
 			slots:    map[string]interface{}{"_": "value"},
@@ -106,7 +106,7 @@ func TestExecuteInstruction(t *testing.T) {
 			name: "let with string literal",
 			op: &parsers.Instruction{
 				Opcode:      "/gnd/let",
-				Destination: "x",
+				Destination: parsers.NewPropertyRef("x"),
 				Arguments:   []interface{}{"Hello\nWorld"},
 			},
 			slots:    make(map[string]interface{}),
@@ -147,7 +147,7 @@ func TestExecuteInstruction_UnknownOpcode(t *testing.T) {
 
 	op := &parsers.Instruction{
 		Opcode:      "unknown",
-		Destination: "result",
+		Destination: parsers.NewPropertyRef("result"),
 		Arguments:   []interface{}{"test"},
 	}
 
@@ -163,7 +163,7 @@ func TestExecuteInstruction_UnknownOpcodeFile(t *testing.T) {
 
 	op := &parsers.Instruction{
 		Opcode:      "/gnd/unknown",
-		Destination: "result",
+		Destination: parsers.NewPropertyRef("result"),
 		Arguments:   []interface{}{"test"},
 	}
 
@@ -264,7 +264,7 @@ func TestExecuteInstructionBlock(t *testing.T) {
 			instructions: []*parsers.Instruction{
 				{
 					Opcode:      "/gnd/first",
-					Destination: "x",
+					Destination: parsers.NewPropertyRef("x"),
 					Arguments:   []interface{}{[]interface{}{"value"}},
 				},
 			},
@@ -278,12 +278,12 @@ func TestExecuteInstructionBlock(t *testing.T) {
 			instructions: []*parsers.Instruction{
 				{
 					Opcode:      "/gnd/let",
-					Destination: "x",
+					Destination: parsers.NewPropertyRef("x"),
 					Arguments:   []interface{}{"first"},
 				},
 				{
 					Opcode:      "/gnd/let",
-					Destination: "y",
+					Destination: parsers.NewPropertyRef("y"),
 					Arguments:   []interface{}{"second"},
 				},
 			},
@@ -297,7 +297,7 @@ func TestExecuteInstructionBlock(t *testing.T) {
 			instructions: []*parsers.Instruction{
 				{
 					Opcode:      "invalid",
-					Destination: "x",
+					Destination: parsers.NewPropertyRef("x"),
 					Arguments:   []interface{}{"value"},
 				},
 			},
@@ -312,12 +312,12 @@ func TestExecuteInstructionBlock(t *testing.T) {
 			instructions: []*parsers.Instruction{
 				{
 					Opcode:      "/gnd/return",
-					Destination: "_",
+					Destination: parsers.NewPropertyRef("_"),
 					Arguments:   []interface{}{"early return"},
 				},
 				{
 					Opcode:      "/gnd/let",
-					Destination: "x",
+					Destination: parsers.NewPropertyRef("x"),
 					Arguments:   []interface{}{"should not execute"},
 				},
 			},
