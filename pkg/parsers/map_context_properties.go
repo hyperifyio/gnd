@@ -2,7 +2,7 @@ package parsers
 
 import (
 	"fmt"
-	"github.com/hyperifyio/gnd/pkg/log"
+	"github.com/hyperifyio/gnd/pkg/loggers"
 )
 
 // MapContextProperty maps a token to its value in the context, if it exists
@@ -10,22 +10,45 @@ func MapContextProperty(source string, slots map[string]interface{}, arg interfa
 
 	// Handle nested arrays
 	if arr, ok := arg.([]interface{}); ok {
-		resolvedArr := make([]interface{}, len(arr))
-		for i, elem := range arr {
+		resolvedArr := make([]interface{}, 0, len(arr))
+		for _, elem := range arr {
+
+			// Handle property references
+			if ref, ok1 := GetPropertyRef(elem); ok1 {
+				if val, ok2 := slots[ref.Name]; ok2 {
+					loggers.Printf(loggers.Debug, "[%s]: MapContextProperty: Mapped as PropertyRef: %v", source, val)
+
+					if ref.Spread {
+
+						// If the property is a slice, spread it into the array
+						if slice, ok3 := val.([]interface{}); ok3 {
+							resolvedArr = append(resolvedArr, slice...)
+							continue
+						}
+
+						// If the property is not a slice, just append it
+					}
+
+					resolvedArr = append(resolvedArr, val)
+					continue
+				}
+				return nil, fmt.Errorf("[%s]: undefined property: %s", source, ref.Name)
+			}
+
 			val, err := MapContextProperty(source, slots, elem)
 			if err != nil {
 				return nil, err
 			}
-			resolvedArr[i] = val
+			resolvedArr = append(resolvedArr, val)
 		}
-		log.Printf(log.Debug, "[%s]: MapContextProperty: Mapped as array: %v", source, resolvedArr)
+		loggers.Printf(loggers.Debug, "[%s]: MapContextProperty: Mapped as array: %v", source, resolvedArr)
 		return resolvedArr, nil
 	}
 
 	// Handle property references
 	if ref, ok := GetPropertyRef(arg); ok {
-		if val, ok := slots[ref.Name]; ok {
-			log.Printf(log.Debug, "[%s]: MapContextProperty: Mapped as PropertyRef: %v", source, val)
+		if val, ok2 := slots[ref.Name]; ok2 {
+			loggers.Printf(loggers.Debug, "[%s]: MapContextProperty: Mapped as PropertyRef: %v", source, val)
 			return val, nil
 		}
 		return nil, fmt.Errorf("[%s]: undefined property: %s", source, ref.Name)
@@ -41,25 +64,48 @@ func MapContextProperty(source string, slots map[string]interface{}, arg interfa
 			}
 			resolvedMap[k] = val
 		}
-		log.Printf(log.Debug, "[%s]: MapContextProperty: Mapped as map: %v", source, resolvedMap)
+		loggers.Printf(loggers.Debug, "[%s]: MapContextProperty: Mapped as map: %v", source, resolvedMap)
 		return resolvedMap, nil
 	}
 
 	// Not a property reference, just return as-is
-	log.Printf(log.Debug, "[%s]: MapContextProperty: Not a property reference, mapped as: %s", source, arg)
+	loggers.Printf(loggers.Debug, "[%s]: MapContextProperty: Not a property reference, mapped as: %s", source, arg)
 	return arg, nil
 }
 
 // MapContextProperties maps an array of tokens to their values in the context
 func MapContextProperties(source string, slots map[string]interface{}, args []interface{}) ([]interface{}, error) {
-	resolvedArgs := make([]interface{}, len(args))
-	for j, arg := range args {
+	resolvedArgs := make([]interface{}, 0, len(args))
+	for _, arg := range args {
+
+		// Handle property references
+		if ref, ok1 := GetPropertyRef(arg); ok1 {
+			if val, ok2 := slots[ref.Name]; ok2 {
+				loggers.Printf(loggers.Debug, "[%s]: MapContextProperties: Mapped as PropertyRef: %v", source, val)
+
+				if ref.Spread {
+
+					// If the property is a slice, spread it into the array
+					if slice, ok3 := val.([]interface{}); ok3 {
+						resolvedArgs = append(resolvedArgs, slice...)
+						continue
+					}
+
+					// If the property is not a slice, just append it
+				}
+
+				resolvedArgs = append(resolvedArgs, val)
+				continue
+			}
+			return nil, fmt.Errorf("[%s]: undefined property: %s", source, ref.Name)
+		}
+
 		val, err := MapContextProperty(source, slots, arg)
 		if err != nil {
-			return nil, fmt.Errorf("[%s]: MapContextProperties: argument %d: %v", source, j, err)
+			return nil, fmt.Errorf("[%s]: MapContextProperties: argument: %v", source, err)
 		}
-		resolvedArgs[j] = val
+		resolvedArgs = append(resolvedArgs, val)
 	}
-	log.Printf(log.Debug, "[%s]: MapContextProperties: Mapped args: %v to %v", source, args, resolvedArgs)
+	loggers.Printf(loggers.Debug, "[%s]: MapContextProperties: Mapped args: %v to %v", source, args, resolvedArgs)
 	return resolvedArgs, nil
 }

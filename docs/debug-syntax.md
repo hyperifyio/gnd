@@ -7,7 +7,7 @@ destination or `_` if none is provided.
 
 The syntax of the `debug` operation is:
 
-  [ $destination ] debug [ value1 [ value2 … ] ]
+  [ $destination ] debug [ value1 [ value2 ... ] ]
 
 If no `$destination` or values are given, `debug` is equivalent to:
 
@@ -36,5 +36,5 @@ If `interimList` is `["a","b"]` and `statusFlag` is `true`, this writes:
 
 to stderr and then binds `true` to `result`.
 
-Any misuse—such as providing values without a destination—results in a parse or 
+Any misuse--such as providing values without a destination--results in a parse or 
 runtime error.

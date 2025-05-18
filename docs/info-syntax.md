@@ -7,7 +7,7 @@ specified destination or `_` if none is provided.
 
 The syntax of the `info` operation is:
 
-  [ $destination ] info [ value1 [ value2 … ] ]
+  [ $destination ] info [ value1 [ value2 ... ] ]
 
 If neither a destination nor values are given, `info` is equivalent to:
 
@@ -36,5 +36,5 @@ If `moduleCount` is `5`, this writes:
 
 to stderr and then binds `5` to `status`.
 
-Any misuse—such as providing values without a destination—results in a parse or 
+Any misuse--such as providing values without a destination--results in a parse or 
 runtime error.

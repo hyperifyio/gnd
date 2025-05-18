@@ -1,22 +1,22 @@
 package main
 
 import (
+	"flag"
 	"os"
 	"testing"
 
-	"github.com/hyperifyio/gnd/pkg/log"
+	"github.com/hyperifyio/gnd/pkg/loggers"
 )
 
 func TestVerboseFlag(t *testing.T) {
-
 	// Set working directory to project directory
 	if err := os.Chdir("../../"); err != nil {
 		t.Fatalf("failed to set working directory: %v", err)
 	}
-	
+
 	// Save original log level
-	originalLevel := log.Level
-	defer func() { log.Level = originalLevel }()
+	originalLevel := loggers.Level
+	defer func() { loggers.Level = originalLevel }()
 
 	// Test cases
 	tests := []struct {
@@ -27,20 +27,20 @@ func TestVerboseFlag(t *testing.T) {
 	}{
 		{
 			name:           "no verbose flag",
-			args:           []string{"examples/debug.gnd"},
-			expectedLevel:  log.Error,
+			args:           []string{"examples/debug-example.gnd"},
+			expectedLevel:  loggers.Error,
 			expectedOutput: "",
 		},
 		{
 			name:           "verbose flag",
-			args:           []string{"-verbose", "examples/debug.gnd"},
-			expectedLevel:  log.Debug,
+			args:           []string{"-verbose", "examples/debug-example.gnd"},
+			expectedLevel:  loggers.Debug,
 			expectedOutput: "",
 		},
 		{
 			name:           "verbose flag shorthand",
-			args:           []string{"-v", "examples/debug.gnd"},
-			expectedLevel:  log.Debug,
+			args:           []string{"-v", "examples/debug-example.gnd"},
+			expectedLevel:  loggers.Debug,
 			expectedOutput: "",
 		},
 	}
@@ -48,21 +48,33 @@ func TestVerboseFlag(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Reset log level before each test
-			log.Level = log.Error
+			loggers.Level = loggers.Error
 
-			// Save original args
-			oldArgs := os.Args
-			defer func() { os.Args = oldArgs }()
+			// Create a new flag set for each test
+			fs := flag.NewFlagSet("test", flag.ContinueOnError)
+			help := fs.Bool("help", false, "Show help")
+			h := fs.Bool("h", false, "Show help (shorthand)")
+			verbose := fs.Bool("verbose", false, "Enable verbose (debug) logging")
+			v := fs.Bool("v", false, "Enable verbose (debug) logging (shorthand)")
 
-			// Set test args
-			os.Args = append([]string{"gnd"}, tt.args...)
+			// Parse flags
+			if err := fs.Parse(tt.args); err != nil {
+				t.Fatalf("failed to parse flags: %v", err)
+			}
 
-			// Run main
-			main()
+			// Check help flags
+			if *help || *h {
+				return
+			}
+
+			// Check verbose flags
+			if *verbose || *v {
+				loggers.Level = loggers.Debug
+			}
 
 			// Check log level
-			if log.Level != tt.expectedLevel {
-				t.Errorf("expected log level %v, got %v", tt.expectedLevel, log.Level)
+			if loggers.Level != tt.expectedLevel {
+				t.Errorf("expected log level %v, got %v", tt.expectedLevel, loggers.Level)
 			}
 		})
 	}

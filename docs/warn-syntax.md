@@ -7,7 +7,7 @@ specified destination or `_` if none is provided.
 
 The syntax of the `warn` operation is:
 
-  [ $destination ] warn [ value1 [ value2 … ] ]
+  [ $destination ] warn [ value1 [ value2 ... ] ]
 
 If neither a destination nor values are given, `warn` is equivalent to:
 
@@ -36,5 +36,5 @@ If `cacheSize` is `1024`, this writes:
 
 to stderr and then binds `1024` to `warningCount`.
 
-Any misuse—such as providing values without a destination—results in a parse or 
+Any misuse--such as providing values without a destination--results in a parse or 
 runtime error.

@@ -24,12 +24,18 @@ The Gendo toolchain consists of three main executables:
 - [exec](exec-syntax.md) - Execute instructions
 - [compile](compile-syntax.md) - Compile instructions
 - [code](code-syntax.md) - Code block handling
+- [async](async-syntax.md) - Asynchronous execution
+- [await](await-syntax.md) - Wait for async operations
+- [wait](wait-syntax.md) - Wait for conditions
+- [throw](throw-syntax.md) - Error handling
+- [status](status-syntax.md) - Status checking
 
 #### String Operations
 - [concat](concat-syntax.md) - String concatenation
 - [trim](trim-syntax.md) - String trimming
 - [uppercase](uppercase-syntax.md) - Convert to uppercase
 - [lowercase](lowercase-syntax.md) - Convert to lowercase
+- [eq](eq-syntax.md) - Equality comparison
 
 #### Output and Logging
 - [print](print-syntax.md) - Standard output
@@ -41,6 +47,22 @@ The Gendo toolchain consists of three main executables:
 
 #### AI Integration
 - [prompt](prompt-syntax.md) - AI prompt handling
+
+#### Type Operations
+- [string](string-syntax.md) - String type operations
+- [bool](bool-syntax.md) - Boolean type operations
+- [int](int-syntax.md) - Integer type operations
+- [int8](int8-syntax.md) - 8-bit integer operations
+- [int16](int16-syntax.md) - 16-bit integer operations
+- [int32](int32-syntax.md) - 32-bit integer operations
+- [int64](int64-syntax.md) - 64-bit integer operations
+- [uint](uint-syntax.md) - Unsigned integer operations
+- [uint8](uint8-syntax.md) - 8-bit unsigned integer operations
+- [uint16](uint16-syntax.md) - 16-bit unsigned integer operations
+- [uint32](uint32-syntax.md) - 32-bit unsigned integer operations
+- [uint64](uint64-syntax.md) - 64-bit unsigned integer operations
+- [float32](float32-syntax.md) - 32-bit floating point operations
+- [float64](float64-syntax.md) - 64-bit floating point operations
 
 ## Getting Started
 

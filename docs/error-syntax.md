@@ -7,7 +7,7 @@ exception carrying the logged message.
 
 The syntax of the `error` operation is:
 
-  [ $destination ] error [ value1 [ value2 … ] ]
+  [ $destination ] error [ value1 [ value2 ... ] ]
 
 If neither a destination nor values are given, `error` is equivalent to:
 
@@ -29,14 +29,14 @@ to stderr and then terminates the pipeline with that message as the exception.
 
 To log multiple messages and bind the last one explicitly before aborting:
 
-  $errMsg error "Unable to open file" $fileName "– exiting"
+  $errMsg error "Unable to open file" $fileName "- exiting"
 
 If `fileName` is `"config.yml"`, this writes:
 
-  Unable to open file config.yml – exiting
+  Unable to open file config.yml - exiting
 
 to stderr, binds that string to `errMsg`, and then aborts with that message as 
 the exception payload.
 
-Any misuse—such as providing values without a destination—results in a parse or 
+Any misuse--such as providing values without a destination--results in a parse or 
 runtime error before logging.

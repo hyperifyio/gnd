@@ -16,8 +16,8 @@ instructions are returned. When **one or more** targets are supplied, each
 target must be one of:
 
 * `@` - represents the current routine's instructions
-* a string literal ending in `.gnd` – the file is loaded (and compiled if necessary);
-* an opcode identifier – returns a one-instruction array for that primitive;
+* a string literal ending in `.gnd` - the file is loaded (and compiled if necessary);
+* an opcode identifier - returns a one-instruction array for that primitive;
 * a `$variable` already bound to a routine value.
 
 Targets are resolved independently; the final result is a new instruction array 

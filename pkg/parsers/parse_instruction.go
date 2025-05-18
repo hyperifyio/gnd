@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hyperifyio/gnd/pkg/log"
+	"github.com/hyperifyio/gnd/pkg/loggers"
 )
 
 var DestinationMustBeAStringError = errors.New("destination must be a string literal")
@@ -16,7 +16,7 @@ var EmptyInstructionError = errors.New("empty instruction")
 func ParseInstruction(source, line string) (*Instruction, error) {
 	line = strings.TrimSpace(line)
 	if len(line) == 0 || IsHashtag(line[0]) {
-		log.Printf(log.Debug, "[%s]: Ignored line: %s", source, line)
+		loggers.Printf(loggers.Debug, "[%s]: Ignored line: %s", source, line)
 		return nil, nil
 	}
 
@@ -56,7 +56,7 @@ func ParseInstruction(source, line string) (*Instruction, error) {
 		args = []interface{}{NewPropertyRef("_")}
 	}
 
-	log.Printf(log.Debug, "[%s]: Parsed line: %s: %v %v %v", source, line, opcode, dest, args)
+	loggers.Printf(loggers.Debug, "[%s]: Parsed line: %s: %v %v %v", source, line, opcode, dest, args)
 	return &Instruction{
 		Opcode:      opcode,
 		Destination: dest,

@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/hyperifyio/gnd/pkg/log"
+	"github.com/hyperifyio/gnd/pkg/loggers"
 )
 
 // Message represents a chat message
@@ -93,12 +93,12 @@ func PromptClientImpl(client PromptClient, config PromptConfig, apiKey string, p
 	}
 
 	// Log the request details
-	log.Printf(log.Debug, "LLM Request:")
-	log.Printf(log.Debug, "URL: %s", config.BaseURL+"/chat/completions")
-	log.Printf(log.Debug, "Model: %s", config.Model)
-	log.Printf(log.Debug, "Temperature: %f", config.Temperature)
-	log.Printf(log.Debug, "MaxTokens: %d", config.MaxTokens)
-	log.Printf(log.Debug, "Messages: %+v", messages)
+	loggers.Printf(loggers.Debug, "LLM Request:")
+	loggers.Printf(loggers.Debug, "URL: %s", config.BaseURL+"/chat/completions")
+	loggers.Printf(loggers.Debug, "Model: %s", config.Model)
+	loggers.Printf(loggers.Debug, "Temperature: %f", config.Temperature)
+	loggers.Printf(loggers.Debug, "MaxTokens: %d", config.MaxTokens)
+	loggers.Printf(loggers.Debug, "Messages: %+v", messages)
 
 	req, err := http.NewRequest("POST", config.BaseURL+"/chat/completions", bytes.NewBuffer(jsonBody))
 	if err != nil {
@@ -120,9 +120,9 @@ func PromptClientImpl(client PromptClient, config PromptConfig, apiKey string, p
 	}
 
 	// Log the response details
-	log.Printf(log.Debug, "LLM Response:")
-	log.Printf(log.Debug, "Status: %s", resp.Status)
-	log.Printf(log.Debug, "Body: %s", string(body))
+	loggers.Printf(loggers.Debug, "LLM Response:")
+	loggers.Printf(loggers.Debug, "Status: %s", resp.Status)
+	loggers.Printf(loggers.Debug, "Body: %s", string(body))
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("API error: %s", body)
@@ -138,7 +138,7 @@ func PromptClientImpl(client PromptClient, config PromptConfig, apiKey string, p
 	}
 
 	// Log the final response content
-	log.Printf(log.Debug, "Response Content: %s", chatResp.Choices[0].Message.Content)
+	loggers.Printf(loggers.Debug, "Response Content: %s", chatResp.Choices[0].Message.Content)
 
 	return chatResp.Choices[0].Message.Content, nil
 }

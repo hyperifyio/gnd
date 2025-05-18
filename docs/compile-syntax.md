@@ -19,7 +19,7 @@ special slot `_`. At least one `source` token must be provided.
   compiled (or reused from a cache if an identical string has already been 
   compiled).
 
-* If a source is a `$variable`, the variable’s value must be an instruction 
+* If a source is a `$variable`, the variable's value must be an instruction 
   array, which is included unchanged.
 
 ### Examples
@@ -34,7 +34,7 @@ exec $helper
 Self-compile, then run the compiled version in parallel:
 
 ```
-$self code          # current routine’s instructions
+$self code          # current routine's instructions
 $opt  compile $self # optimised instruction array
 $task async   $opt
 await $task
