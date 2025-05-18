@@ -25,6 +25,7 @@ func (w *Wait) Name() string {
 
 // Execute runs the wait primitive
 func (w *Wait) Execute(args []interface{}) (interface{}, error) {
+
 	if len(args) == 0 {
 		return nil, WaitErrNoArguments
 	}

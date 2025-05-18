@@ -1,0 +1,4 @@
+debug Waiting for a moment
+$sec int 1000
+wait $sec
+debug Ready!
