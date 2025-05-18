@@ -14,7 +14,7 @@ func TestThrowPrimitive(t *testing.T) {
 		errMsg  string
 	}{
 		{
-			name:    "no arguments uses _",
+			name:    "no arguments",
 			args:    []interface{}{},
 			wantErr: true,
 			errMsg:  "throw: requires at least one argument",
@@ -23,7 +23,7 @@ func TestThrowPrimitive(t *testing.T) {
 			name:    "single argument is used as message",
 			args:    []interface{}{"division by zero"},
 			wantErr: true,
-			errMsg:  "division by zero",
+			errMsg:  "\"division by zero\"",
 		},
 		{
 			name:    "multiple arguments are joined with spaces",
@@ -35,7 +35,7 @@ func TestThrowPrimitive(t *testing.T) {
 			name:    "non-string arguments are converted to strings",
 			args:    []interface{}{"error code:", 500, "details:", []string{"not found"}},
 			wantErr: true,
-			errMsg:  "error code: 500 details: not found",
+			errMsg:  "\"error code:\" 500 details: [ \"not found\" ]",
 		},
 	}
 

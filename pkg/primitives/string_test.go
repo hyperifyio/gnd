@@ -16,9 +16,15 @@ func TestString_Execute(t *testing.T) {
 
 	tests := []testCase{
 		{
-			name:    "string value",
+			name:    "string value without escapable characters",
+			arg:     []interface{}{"hello"},
+			want:    "hello",
+			wantErr: false,
+		},
+		{
+			name:    "string value with spaces",
 			arg:     []interface{}{"hello world"},
-			want:    "hello world",
+			want:    "\"hello world\"",
 			wantErr: false,
 		},
 		{

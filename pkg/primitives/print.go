@@ -2,11 +2,11 @@ package primitives
 
 import (
 	"fmt"
-	"github.com/hyperifyio/gnd/pkg/primitive_services"
-	"github.com/hyperifyio/gnd/pkg/primitive_types"
 	"os"
 
 	"github.com/hyperifyio/gnd/pkg/parsers"
+	"github.com/hyperifyio/gnd/pkg/primitive_services"
+	"github.com/hyperifyio/gnd/pkg/primitive_types"
 )
 
 // Print represents the print primitive
@@ -21,12 +21,22 @@ func (p *Print) Name() string {
 
 // Execute runs the print primitive
 func (p *Print) Execute(args []interface{}) (interface{}, error) {
-	output, err := parsers.ParseString(args)
-	if err != nil {
-		return nil, fmt.Errorf("print: %v", err)
+	str := ""
+	l := len(args)
+	if l != 0 {
+		for i, arg := range args {
+			if i != 0 {
+				str += " "
+			}
+			s, err := parsers.ParseString(arg)
+			if err != nil {
+				return nil, fmt.Errorf("print: %v", err)
+			}
+			str += s
+		}
 	}
-	fmt.Fprint(os.Stdout, output)
-	return output, nil
+	fmt.Fprint(os.Stdout, str)
+	return str, nil
 }
 
 func init() {

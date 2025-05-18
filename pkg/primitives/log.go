@@ -60,14 +60,25 @@ func (l *Log) Execute(args []interface{}) (interface{}, error) {
 	}
 
 	// Convert remaining arguments to strings
-	output, err := parsers.ParseString(args[1:])
-	if err != nil {
-		return nil, fmt.Errorf("log: failed to parse log message: %w", err)
+	args = args[1:]
+
+	str := ""
+	if len(args) != 0 {
+		for i, arg := range args {
+			if i != 0 {
+				str += " "
+			}
+			s, e := parsers.ParseString(arg)
+			if e != nil {
+				return nil, fmt.Errorf("log: failed to parse log message: %w", e)
+			}
+			str += s
+		}
 	}
 
-	loggers.Printf(level, output)
+	loggers.Printf(level, str)
 
-	return output, nil
+	return str, nil
 }
 
 func init() {

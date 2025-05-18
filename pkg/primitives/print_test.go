@@ -1,8 +1,6 @@
 package primitives
 
 import (
-	"github.com/hyperifyio/gnd/pkg/loggers"
-	"github.com/hyperifyio/gnd/pkg/parsers"
 	"io"
 	"os"
 	"testing"
@@ -24,7 +22,7 @@ func TestPrint(t *testing.T) {
 		{
 			name:    "single string argument",
 			args:    []interface{}{"Hello, World!"},
-			want:    "Hello, World!",
+			want:    "\"Hello, World!\"",
 			wantErr: false,
 		},
 		{
@@ -36,25 +34,25 @@ func TestPrint(t *testing.T) {
 		{
 			name:    "multiple string arguments",
 			args:    []interface{}{"Our input is:", "Hello World"},
-			want:    "Our input is: Hello World",
+			want:    "\"Our input is:\" \"Hello World\"",
 			wantErr: false,
 		},
 		{
 			name:    "array argument",
 			args:    []interface{}{[]interface{}{"Our input is:", "args"}},
-			want:    "Our input is: args",
+			want:    "[ \"Our input is:\" args ]",
 			wantErr: false,
 		},
 		{
 			name:    "array with non-string",
 			args:    []interface{}{[]interface{}{"Our input is:", 123}},
-			want:    "Our input is: 123",
+			want:    "[ \"Our input is:\" 123 ]",
 			wantErr: false,
 		},
 		{
 			name:    "mixed string and array arguments",
 			args:    []interface{}{"First", []interface{}{"Second", "Third"}},
-			want:    "First Second Third",
+			want:    "First [ Second Third ]",
 			wantErr: false,
 		},
 	}
@@ -94,9 +92,8 @@ func TestPrint(t *testing.T) {
 				}
 
 				// Convert all arguments to strings and join them
-				expectedOutput, err := parsers.ParseString(tt.args)
-				if string(output) != expectedOutput {
-					t.Errorf("Print.Execute(%s) output = %v, want %v", tt.name, loggers.StringifyValue(string(output)), loggers.StringifyValue(expectedOutput))
+				if string(output) != tt.want {
+					t.Errorf("Print.Execute(%s) output = %v, want %v", tt.name, string(output), tt.want)
 				}
 			}
 		})

@@ -62,14 +62,14 @@ func TestLog(t *testing.T) {
 		{
 			name:           "level and array value",
 			args:           []interface{}{"info", []interface{}{"hello", "world"}},
-			expectedReturn: "hello world",
+			expectedReturn: "[ hello world ]",
 			expectError:    false,
-			expectedOutput: "[INFO]: hello world\n",
+			expectedOutput: "[INFO]: [ hello world ]\n",
 		},
 		{
 			name:           "array with non-string elements",
 			args:           []interface{}{"info", []interface{}{"hello", 123}},
-			expectedReturn: "hello 123",
+			expectedReturn: "[ hello 123 ]",
 			expectError:    false,
 		},
 	}

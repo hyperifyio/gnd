@@ -48,7 +48,13 @@ func TestParseString(t *testing.T) {
 		{
 			name:    "map",
 			input:   map[string]interface{}{"key": "value"},
-			want:    `{ key : value }`,
+			want:    `{ key value }`,
+			wantErr: false,
+		},
+		{
+			name:    "map with escapable characters",
+			input:   map[string]interface{}{"key": "hello world"},
+			want:    `{ key "hello world" }`,
 			wantErr: false,
 		},
 		{
@@ -60,13 +66,13 @@ func TestParseString(t *testing.T) {
 		{
 			name:    "nested array",
 			input:   []interface{}{"hello", []interface{}{"world", 123}},
-			want:    "[ hello world 123 ]",
+			want:    "[ hello [ world 123 ] ]",
 			wantErr: false,
 		},
 		{
 			name:    "nested array with spaces in string",
 			input:   []interface{}{"hi", []interface{}{"hello world", 123}},
-			want:    "[ hi \"hello world\" 123 ]",
+			want:    "[ hi [ \"hello world\" 123 ] ]",
 			wantErr: false,
 		},
 		{

@@ -31,14 +31,21 @@ func (t *Throw) Execute(args []interface{}) (interface{}, error) {
 	}
 
 	// Convert arguments to string using ParseString
-	message, err := parsers.ParseString(args)
-	if err != nil {
-		loggers.Printf(loggers.Error, "throw: invalid argument: %v", err)
-		return nil, ThrowInvalidArgument
+	str := ""
+	for i, arg := range args {
+		if i != 0 {
+			str += " "
+		}
+		s, err := parsers.ParseString(arg)
+		if err != nil {
+			loggers.Printf(loggers.Error, "throw: invalid argument: %v", err)
+			return nil, ThrowInvalidArgument
+		}
+		str += s
 	}
 
 	// Return an error with the composed message
-	return nil, errors.New(message)
+	return nil, errors.New(str)
 }
 
 func init() {
