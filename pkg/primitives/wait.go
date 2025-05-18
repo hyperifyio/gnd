@@ -36,23 +36,44 @@ func (w *Wait) Execute(args []interface{}) (interface{}, error) {
 	}
 
 	// Check if the argument is a number (duration in milliseconds)
-	if duration, ok := args[0].(float64); ok {
-		time.Sleep(time.Duration(duration) * time.Millisecond)
-		return true, nil
-	}
+	switch v := args[0].(type) {
+	case float64:
+		time.Sleep(time.Duration(v) * time.Millisecond)
+	case int:
+		time.Sleep(time.Duration(v) * time.Millisecond)
+	case int64:
+		time.Sleep(time.Duration(v) * time.Millisecond)
+	case int32:
+		time.Sleep(time.Duration(v) * time.Millisecond)
+	case int16:
+		time.Sleep(time.Duration(v) * time.Millisecond)
+	case int8:
+		time.Sleep(time.Duration(v) * time.Millisecond)
+	case uint:
+		time.Sleep(time.Duration(v) * time.Millisecond)
+	case uint64:
+		time.Sleep(time.Duration(v) * time.Millisecond)
+	case uint32:
+		time.Sleep(time.Duration(v) * time.Millisecond)
+	case uint16:
+		time.Sleep(time.Duration(v) * time.Millisecond)
+	case uint8:
+		time.Sleep(time.Duration(v) * time.Millisecond)
+	default:
+		// Check if the argument is a task
+		task, ok := args[0].(*Task)
+		if !ok {
+			return nil, WaitErrInvalidArgument
+		}
 
-	// Check if the argument is a task
-	task, ok := args[0].(*Task)
-	if !ok {
-		return nil, WaitErrInvalidArgument
+		// Wait for the task to complete and return its result
+		result, err := task.Await()
+		if err != nil {
+			return []interface{}{false, err.Error()}, nil
+		}
+		return []interface{}{true, result}, nil
 	}
-
-	// Wait for the task to complete and return its result
-	result, err := task.Await()
-	if err != nil {
-		return []interface{}{false, err.Error()}, nil
-	}
-	return []interface{}{true, result}, nil
+	return true, nil
 }
 
 func init() {
