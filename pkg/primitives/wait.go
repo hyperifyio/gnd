@@ -2,15 +2,17 @@ package primitives
 
 import (
 	"errors"
+	"time"
+
 	"github.com/hyperifyio/gnd/pkg/primitive_services"
 	"github.com/hyperifyio/gnd/pkg/primitive_types"
-	"time"
 )
 
 // Predefined errors
 var (
 	WaitErrNoArguments     = errors.New("wait: requires an argument")
 	WaitErrInvalidArgument = errors.New("wait: argument must be a task or number")
+	WaitErrTooManyArgs     = errors.New("wait: too many arguments")
 )
 
 // Wait represents the wait primitive
@@ -25,9 +27,12 @@ func (w *Wait) Name() string {
 
 // Execute runs the wait primitive
 func (w *Wait) Execute(args []interface{}) (interface{}, error) {
-
 	if len(args) == 0 {
 		return nil, WaitErrNoArguments
+	}
+
+	if len(args) > 1 {
+		return nil, WaitErrTooManyArgs
 	}
 
 	// Check if the argument is a number (duration in milliseconds)
@@ -42,22 +47,12 @@ func (w *Wait) Execute(args []interface{}) (interface{}, error) {
 		return nil, WaitErrInvalidArgument
 	}
 
-	// Wait for the task to complete
-	for {
-		task.Mu.Lock()
-		state := task.State
-		task.Mu.Unlock()
-
-		if state != TaskStatePending {
-			// Return [flag value] list
-			if state == TaskStateCompleted {
-				return []interface{}{true, task.Result}, nil
-			}
-			return []interface{}{false, task.Error}, nil
-		}
-
-		time.Sleep(10 * time.Millisecond)
+	// Wait for the task to complete and return its result
+	result, err := task.Await()
+	if err != nil {
+		return []interface{}{false, err.Error()}, nil
 	}
+	return []interface{}{true, result}, nil
 }
 
 func init() {

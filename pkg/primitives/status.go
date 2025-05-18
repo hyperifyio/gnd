@@ -2,6 +2,7 @@ package primitives
 
 import (
 	"errors"
+
 	"github.com/hyperifyio/gnd/pkg/primitive_services"
 	"github.com/hyperifyio/gnd/pkg/primitive_types"
 )
@@ -10,6 +11,7 @@ import (
 var (
 	StatusErrNoArguments     = errors.New("status: requires a task")
 	StatusErrInvalidArgument = errors.New("status: argument must be a task")
+	StatusErrTooManyArgs     = errors.New("status: too many arguments")
 )
 
 // Status represents the status primitive
@@ -28,6 +30,10 @@ func (s *Status) Execute(args []interface{}) (interface{}, error) {
 		return nil, StatusErrNoArguments
 	}
 
+	if len(args) > 1 {
+		return nil, StatusErrTooManyArgs
+	}
+
 	// Check if the argument is a task
 	task, ok := args[0].(*Task)
 	if !ok {
@@ -35,11 +41,7 @@ func (s *Status) Execute(args []interface{}) (interface{}, error) {
 	}
 
 	// Return the current state
-	task.Mu.Lock()
-	state := task.State
-	task.Mu.Unlock()
-
-	return string(state), nil
+	return task.GetState(), nil
 }
 
 func init() {

@@ -2,28 +2,24 @@ package primitives
 
 import (
 	"errors"
-	"github.com/hyperifyio/gnd/pkg/primitive_services"
-	"github.com/hyperifyio/gnd/pkg/primitive_types"
 
 	"github.com/hyperifyio/gnd/pkg/parsers"
+	"github.com/hyperifyio/gnd/pkg/primitive_services"
+	"github.com/hyperifyio/gnd/pkg/primitive_types"
 )
 
-// Predefined errors
 var (
 	AsyncErrNoArguments    = errors.New("async: requires a routine")
 	AsyncErrInvalidRoutine = errors.New("async: routine must be an instruction array")
 )
 
-// Async represents the async primitive
 type Async struct{}
 
 var _ primitive_types.Primitive = &Async{}
 var _ primitive_types.BlockSuccessResultHandler = &Async{}
 
 // Name returns the name of the primitive
-func (a *Async) Name() string {
-	return "/gnd/async"
-}
+func (a *Async) Name() string { return "/gnd/async" }
 
 // Execute runs the async primitive
 func (a *Async) Execute(args []interface{}) (interface{}, error) {
@@ -31,7 +27,6 @@ func (a *Async) Execute(args []interface{}) (interface{}, error) {
 		return nil, AsyncErrNoArguments
 	}
 
-	// Get the routine
 	var routine []*parsers.Instruction
 	switch v := args[0].(type) {
 	case []*parsers.Instruction:
@@ -42,60 +37,59 @@ func (a *Async) Execute(args []interface{}) (interface{}, error) {
 		return nil, AsyncErrInvalidRoutine
 	}
 
-	// Create a new task
-	task := NewTask(routine, args[1:])
-
-	return task, nil
+	return NewTask(routine, args[1:]), nil
 }
 
-func (a *Async) HandleBlockSuccessResult(result interface{}, interpreter primitive_types.Interpreter, destination *parsers.PropertyRef, block []*parsers.Instruction) (interface{}, error) {
-	if task, ok := GetTask(result); ok {
+// HandleBlockSuccessResult spawn the goroutine once the interpreter has the task in hand
+func (a *Async) HandleBlockSuccessResult(
+	result interface{},
+	i primitive_types.Interpreter,
+	_ *parsers.PropertyRef,
+	_ []*parsers.Instruction,
+) (interface{}, error) {
 
-		// Start the task in a goroutine
-		go func() {
-			// TODO: Execute the routine in the task's context
-			// This will be implemented when we have access to the interpreter
-			task.Mu.Lock()
-			task.State = TaskStateCompleted
-			task.Mu.Unlock()
-		}()
+	var source = a.Name()
 
-		return task, nil
+	task, ok := GetTask(result)
+	if !ok {
+		return result, nil // nothing to do
 	}
-	return result, nil
-}
 
-// HandleTaskResult processes a Task and returns the routine's output
-func HandleTaskResult(i primitive_types.Interpreter, source string, task *Task) (interface{}, error) {
-	i.LogDebug("[%s]: HandleTaskResult: executing routine with args: %v", source, task.Args)
-
-	// Create a new interpreter for the routine
-	interpreter := i.NewInterpreterWithParent(
+	// Spawn a child interpreter with "_" initialised to the argument list.
+	interp := i.NewInterpreterWithParent(
 		i.GetScriptDir(),
 		map[string]interface{}{
 			"_": task.Args,
 		},
 	)
 
-	// Execute the routine
-	result, err := interpreter.ExecuteInstructionBlock(source, task.Args, task.Routine)
-	if err != nil {
-		task.Mu.Lock()
-		task.State = TaskStateError
-		task.Error = err.Error()
-		task.Mu.Unlock()
-		return nil, err
-	}
+	// mark running, then launch worker
+	task.SetState(TaskStateRunning)
+	go func(childInterpreter primitive_types.Interpreter, name string, t *Task) {
+		val, err := HandleTaskResult(childInterpreter, name, t)
+		if err != nil {
+			t.SetError(err)
+		} else {
+			t.SetCompleted(val)
+		}
+	}(interp, source, task)
 
-	// Update task state
-	task.Mu.Lock()
-	task.State = TaskStateCompleted
-	task.Result = result
-	task.Mu.Unlock()
-
-	return result, nil
+	return task, nil
 }
 
-func init() {
-	primitive_services.RegisterPrimitive(&Async{})
+func init() { primitive_services.RegisterPrimitive(&Async{}) }
+
+// HandleTaskResult runs the task's instruction block and returns the routine's output.
+// It does NOT update task.State or write to task.done; the caller (the goroutine
+// created in Async.HandleBlockSuccessResult) handles those concerns.
+func HandleTaskResult(
+	i primitive_types.Interpreter,
+	source string,
+	task *Task,
+) (interface{}, error) {
+
+	i.LogDebug("[%s] HandleTaskResult: args=%v", source, task.Args)
+
+	// Run the instruction array and return its value or error exactly as is.
+	return i.ExecuteInstructionBlock(source, task.Args, task.Routine)
 }
