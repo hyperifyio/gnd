@@ -6,34 +6,12 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/hyperifyio/gnd/pkg/primitives"
-
 	"github.com/hyperifyio/gnd/pkg/interpreters"
 	"github.com/hyperifyio/gnd/pkg/loggers"
 	"github.com/hyperifyio/gnd/pkg/parsers"
+	"github.com/hyperifyio/gnd/pkg/primitive_services"
+	"github.com/hyperifyio/gnd/pkg/primitives"
 )
-
-// DefaultOpcodeMap Default opcode mapping
-var DefaultOpcodeMap = map[string]string{
-	"prompt":    "/gnd/prompt",
-	"let":       "/gnd/let",
-	"select":    "/gnd/select",
-	"first":     "/gnd/first",
-	"concat":    "/gnd/concat",
-	"lowercase": "/gnd/lowercase",
-	"uppercase": "/gnd/uppercase",
-	"trim":      "/gnd/trim",
-	"print":     "/gnd/print",
-	"println":   "/gnd/println",
-	"log":       "/gnd/log",
-	"error":     "/gnd/error",
-	"warn":      "/gnd/warn",
-	"info":      "/gnd/info",
-	"debug":     "/gnd/debug",
-	"exit":      "/gnd/exit",
-	"return":    "/gnd/return",
-	"code":      "/gnd/code",
-}
 
 func printHelp() {
 	fmt.Print(`Usage: gnd [options] <script.gnd>
@@ -82,7 +60,7 @@ func main() {
 	loggers.Printf(loggers.Debug, "script args: %v", scriptArgs)
 
 	// Create a new core interpreter
-	interpreterImpl := interpreters.NewInterpreter(scriptDir, DefaultOpcodeMap)
+	interpreterImpl := interpreters.NewInterpreter(scriptDir, primitive_services.GetDefaultOpcodeMap())
 	interpreterImpl.SetSlot("_", scriptArgs)
 
 	// Read the script file

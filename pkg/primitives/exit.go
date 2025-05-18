@@ -2,8 +2,9 @@ package primitives
 
 import (
 	"fmt"
-
 	"github.com/hyperifyio/gnd/pkg/parsers"
+	"github.com/hyperifyio/gnd/pkg/primitive_services"
+	"github.com/hyperifyio/gnd/pkg/primitive_types"
 )
 
 // Exit represents the exit primitive
@@ -31,7 +32,7 @@ func (e *Exit) Execute(args []interface{}) (interface{}, error) {
 }
 
 // HandleErrorResultBlock handles exit errors
-func (e *Exit) HandleErrorResultBlock(err error, i Interpreter, destination *parsers.PropertyRef, block []*parsers.Instruction) (interface{}, error) {
+func (e *Exit) HandleErrorResultBlock(err error, i primitive_types.Interpreter, destination *parsers.PropertyRef, block []*parsers.Instruction) (interface{}, error) {
 	if exitResult, ok := GetExitResult(err); ok {
 		i.LogDebug("[/gnd/exit]: exit result detected with code %d", exitResult.Code)
 		return nil, exitResult
@@ -40,5 +41,5 @@ func (e *Exit) HandleErrorResultBlock(err error, i Interpreter, destination *par
 }
 
 func init() {
-	RegisterPrimitive(&Exit{})
+	primitive_services.RegisterPrimitive(&Exit{})
 }

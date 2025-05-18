@@ -3,6 +3,7 @@ package primitives
 import (
 	"fmt"
 	"github.com/hyperifyio/gnd/pkg/loggers"
+	"github.com/hyperifyio/gnd/pkg/primitive_services"
 )
 
 var FirstExpectedArgsError = fmt.Errorf("first expects at least 1 argument, got 0")
@@ -37,5 +38,5 @@ func (t *First) Execute(args []interface{}) (interface{}, error) {
 }
 
 func init() {
-	RegisterPrimitive(&First{})
+	primitive_services.RegisterPrimitive(&First{})
 }

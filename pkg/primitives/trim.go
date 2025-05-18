@@ -2,6 +2,7 @@ package primitives
 
 import (
 	"fmt"
+	"github.com/hyperifyio/gnd/pkg/primitive_services"
 	"strings"
 )
 
@@ -31,5 +32,5 @@ func (t *Trim) Execute(args []interface{}) (interface{}, error) {
 }
 
 func init() {
-	RegisterPrimitive(&Trim{})
+	primitive_services.RegisterPrimitive(&Trim{})
 }

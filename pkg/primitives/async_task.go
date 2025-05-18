@@ -39,3 +39,9 @@ func NewTask(routine []*parsers.Instruction, args []interface{}) *Task {
 		Args:    args,
 	}
 }
+
+// GetTask extracts the Task from a value if it is one
+func GetTask(v interface{}) (*Task, bool) {
+	result, ok := v.(*Task)
+	return result, ok
+}

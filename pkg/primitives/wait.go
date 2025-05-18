@@ -2,6 +2,7 @@ package primitives
 
 import (
 	"errors"
+	"github.com/hyperifyio/gnd/pkg/primitive_services"
 	"time"
 )
 
@@ -56,5 +57,5 @@ func (w *Wait) Execute(args []interface{}) (interface{}, error) {
 }
 
 func init() {
-	RegisterPrimitive(&Wait{})
+	primitive_services.RegisterPrimitive(&Wait{})
 }

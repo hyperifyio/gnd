@@ -4,6 +4,8 @@ import (
 	"errors"
 	"github.com/hyperifyio/gnd/pkg/loggers"
 	"github.com/hyperifyio/gnd/pkg/parsers"
+	"github.com/hyperifyio/gnd/pkg/primitive_services"
+	primitive_types2 "github.com/hyperifyio/gnd/pkg/primitive_types"
 )
 
 var ExecRequiresRoutineError = errors.New("exec: requires a routine")
@@ -14,7 +16,7 @@ var ExecRoutineExecuteFailedError = errors.New("exec: routine execution failed")
 type Exec struct {
 }
 
-var _ BlockSuccessResultHandler = &Exec{}
+var _ primitive_types2.BlockSuccessResultHandler = &Exec{}
 
 // Name returns the name of the primitive
 func (c *Exec) Name() string {
@@ -49,7 +51,7 @@ func (c *Exec) Execute(args []interface{}) (interface{}, error) {
 }
 
 // HandleBlockSuccessResult handles exec results
-func (c *Exec) HandleBlockSuccessResult(result interface{}, i Interpreter, destination *parsers.PropertyRef, block []*parsers.Instruction) (interface{}, error) {
+func (c *Exec) HandleBlockSuccessResult(result interface{}, i primitive_types2.Interpreter, destination *parsers.PropertyRef, block []*parsers.Instruction) (interface{}, error) {
 	if execResult, ok := GetExecResult(result); ok {
 		i.LogDebug("[/gnd/exec]: ExecutePrimitive: exec result detected: %v", execResult)
 		res, err := HandleExecResult(i, execResult)
@@ -63,7 +65,7 @@ func (c *Exec) HandleBlockSuccessResult(result interface{}, i Interpreter, desti
 }
 
 // HandleExecResult processes an ExecResult and returns the routine's output
-func HandleExecResult(i Interpreter, execResult *ExecResult) (interface{}, error) {
+func HandleExecResult(i primitive_types2.Interpreter, execResult *ExecResult) (interface{}, error) {
 
 	var args = execResult.Args
 	var routine = execResult.Routine
@@ -89,5 +91,5 @@ func HandleExecResult(i Interpreter, execResult *ExecResult) (interface{}, error
 }
 
 func init() {
-	RegisterPrimitive(&Exec{})
+	primitive_services.RegisterPrimitive(&Exec{})
 }

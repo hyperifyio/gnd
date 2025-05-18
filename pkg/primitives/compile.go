@@ -3,8 +3,8 @@ package primitives
 import (
 	"errors"
 	"fmt"
-
 	"github.com/hyperifyio/gnd/pkg/parsers"
+	"github.com/hyperifyio/gnd/pkg/primitive_services"
 )
 
 var CompileRequiresAtLeastOneSource = errors.New("compile: requires at least one source")
@@ -50,5 +50,5 @@ func (c *Compile) Execute(args []interface{}) (interface{}, error) {
 }
 
 func init() {
-	RegisterPrimitive(&Compile{})
+	primitive_services.RegisterPrimitive(&Compile{})
 }

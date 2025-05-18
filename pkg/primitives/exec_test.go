@@ -4,7 +4,6 @@ import (
 	"github.com/hyperifyio/gnd/pkg/interpreters"
 	"github.com/hyperifyio/gnd/pkg/parsers"
 	"github.com/hyperifyio/gnd/pkg/primitives"
-
 	"reflect"
 	"testing"
 )

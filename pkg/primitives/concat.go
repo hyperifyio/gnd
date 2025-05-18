@@ -3,6 +3,7 @@ package primitives
 import (
 	"errors"
 	"fmt"
+	"github.com/hyperifyio/gnd/pkg/primitive_services"
 	"strings"
 )
 
@@ -61,5 +62,5 @@ func (c *Concat) concatStrings(args []interface{}) (interface{}, error) {
 }
 
 func init() {
-	RegisterPrimitive(&Concat{})
+	primitive_services.RegisterPrimitive(&Concat{})
 }

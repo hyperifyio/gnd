@@ -2,13 +2,14 @@ package primitives
 
 import (
 	"errors"
-	"fmt"
-
+	"github.com/hyperifyio/gnd/pkg/loggers"
 	"github.com/hyperifyio/gnd/pkg/parsers"
+	"github.com/hyperifyio/gnd/pkg/primitive_services"
 )
 
 // Predefined errors
 var ThrowErrNoArguments = errors.New("throw: requires at least one argument")
+var ThrowInvalidArgument = errors.New("throw: invalid argument")
 
 // Throw represents the throw primitive
 type Throw struct{}
@@ -29,7 +30,8 @@ func (t *Throw) Execute(args []interface{}) (interface{}, error) {
 	// Convert arguments to string using ParseString
 	message, err := parsers.ParseString(args)
 	if err != nil {
-		return nil, fmt.Errorf("invalid argument: %v", err)
+		loggers.Printf(loggers.Error, "throw: invalid argument: %v", err)
+		return nil, ThrowInvalidArgument
 	}
 
 	// Return an error with the composed message
@@ -37,5 +39,5 @@ func (t *Throw) Execute(args []interface{}) (interface{}, error) {
 }
 
 func init() {
-	RegisterPrimitive(&Throw{})
+	primitive_services.RegisterPrimitive(&Throw{})
 }

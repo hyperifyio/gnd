@@ -1,4 +1,4 @@
-package primitives
+package primitive_types
 
 import (
 	"github.com/hyperifyio/gnd/pkg/parsers"

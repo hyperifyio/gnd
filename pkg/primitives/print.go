@@ -2,6 +2,7 @@ package primitives
 
 import (
 	"fmt"
+	"github.com/hyperifyio/gnd/pkg/primitive_services"
 	"os"
 
 	"github.com/hyperifyio/gnd/pkg/parsers"
@@ -26,5 +27,5 @@ func (p *Print) Execute(args []interface{}) (interface{}, error) {
 }
 
 func init() {
-	RegisterPrimitive(&Print{})
+	primitive_services.RegisterPrimitive(&Print{})
 }

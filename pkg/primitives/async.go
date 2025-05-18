@@ -2,6 +2,8 @@ package primitives
 
 import (
 	"errors"
+	"github.com/hyperifyio/gnd/pkg/primitive_services"
+	primitive_types2 "github.com/hyperifyio/gnd/pkg/primitive_types"
 
 	"github.com/hyperifyio/gnd/pkg/parsers"
 )
@@ -15,7 +17,7 @@ var (
 // Async represents the async primitive
 type Async struct{}
 
-var _ BlockSuccessResultHandler = &Async{}
+var _ primitive_types2.BlockSuccessResultHandler = &Async{}
 
 // Name returns the name of the primitive
 func (a *Async) Name() string {
@@ -42,20 +44,28 @@ func (a *Async) Execute(args []interface{}) (interface{}, error) {
 	// Create a new task
 	task := NewTask(routine, args[1:])
 
-	// Start the task in a goroutine
-	go func() {
-		// TODO: Execute the routine in the task's context
-		// This will be implemented when we have access to the interpreter
-		task.Mu.Lock()
-		task.State = TaskStateCompleted
-		task.Mu.Unlock()
-	}()
-
 	return task, nil
 }
 
+func (a *Async) HandleBlockSuccessResult(result interface{}, interpreter primitive_types2.Interpreter, destination *parsers.PropertyRef, block []*parsers.Instruction) (interface{}, error) {
+	if task, ok := GetTask(result); ok {
+
+		// Start the task in a goroutine
+		go func() {
+			// TODO: Execute the routine in the task's context
+			// This will be implemented when we have access to the interpreter
+			task.Mu.Lock()
+			task.State = TaskStateCompleted
+			task.Mu.Unlock()
+		}()
+
+		return task, nil
+	}
+	return result, nil
+}
+
 // HandleTaskResult processes a Task and returns the routine's output
-func HandleTaskResult(i Interpreter, source string, task *Task) (interface{}, error) {
+func HandleTaskResult(i primitive_types2.Interpreter, source string, task *Task) (interface{}, error) {
 	i.LogDebug("[%s]: HandleTaskResult: executing routine with args: %v", source, task.Args)
 
 	// Create a new interpreter for the routine
@@ -86,5 +96,5 @@ func HandleTaskResult(i Interpreter, source string, task *Task) (interface{}, er
 }
 
 func init() {
-	RegisterPrimitive(&Async{})
+	primitive_services.RegisterPrimitive(&Async{})
 }

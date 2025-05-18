@@ -2,6 +2,7 @@ package primitives
 
 import (
 	"fmt"
+	"github.com/hyperifyio/gnd/pkg/primitive_services"
 	"strings"
 )
 
@@ -23,5 +24,5 @@ func (u *Uppercase) Execute(args []interface{}) (interface{}, error) {
 }
 
 func init() {
-	RegisterPrimitive(&Uppercase{})
+	primitive_services.RegisterPrimitive(&Uppercase{})
 }

@@ -2,6 +2,7 @@ package primitives
 
 import (
 	"errors"
+	"github.com/hyperifyio/gnd/pkg/primitive_services"
 )
 
 // Predefined errors
@@ -39,5 +40,5 @@ func (s *Status) Execute(args []interface{}) (interface{}, error) {
 }
 
 func init() {
-	RegisterPrimitive(&Status{})
+	primitive_services.RegisterPrimitive(&Status{})
 }

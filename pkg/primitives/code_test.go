@@ -2,13 +2,12 @@ package primitives_test
 
 import (
 	"fmt"
+	"github.com/hyperifyio/gnd/pkg/primitives"
 	"os"
 	"path/filepath"
 
 	"github.com/hyperifyio/gnd/pkg/interpreters"
 	"github.com/hyperifyio/gnd/pkg/parsers"
-	"github.com/hyperifyio/gnd/pkg/primitives"
-
 	"github.com/stretchr/testify/assert"
 	"testing"
 )

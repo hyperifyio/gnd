@@ -1,4 +1,4 @@
-package primitives
+package primitive_types
 
 // Primitive represents a GND primitive function
 type Primitive interface {

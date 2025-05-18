@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/hyperifyio/gnd/pkg/parsers"
+	"github.com/hyperifyio/gnd/pkg/primitive_services"
 	"strings"
 
 	"github.com/hyperifyio/gnd/pkg/loggers"
@@ -67,5 +68,5 @@ func (l *Log) Execute(args []interface{}) (interface{}, error) {
 }
 
 func init() {
-	RegisterPrimitive(&Log{})
+	primitive_services.RegisterPrimitive(&Log{})
 }

@@ -3,7 +3,9 @@ package primitives
 import (
 	"errors"
 	"fmt"
+	"github.com/hyperifyio/gnd/pkg/helpers"
 	"github.com/hyperifyio/gnd/pkg/parsers"
+	"github.com/hyperifyio/gnd/pkg/primitive_services"
 	"github.com/hyperifyio/gnd/pkg/prompts"
 	"net/http"
 )
@@ -29,14 +31,14 @@ func (p *Prompt) Execute(args []interface{}) (interface{}, error) {
 	}
 
 	// Get API key from environment
-	apiKey := GetEnv("OPENAI_API_KEY", "")
+	apiKey := helpers.GetEnv("OPENAI_API_KEY", "")
 	if apiKey == "" {
 		return nil, PromptApiKeyNotSet
 	}
 
 	config := prompts.DefaultConfig()
-	config.BaseURL = GetEnv("OPENAI_API_URL", config.BaseURL)
-	config.Model = GetEnv("OPENAI_MODEL", config.Model)
+	config.BaseURL = helpers.GetEnv("OPENAI_API_URL", config.BaseURL)
+	config.Model = helpers.GetEnv("OPENAI_MODEL", config.Model)
 
 	client := &http.Client{
 		Timeout: config.Timeout,
@@ -46,5 +48,5 @@ func (p *Prompt) Execute(args []interface{}) (interface{}, error) {
 }
 
 func init() {
-	RegisterPrimitive(&Prompt{})
+	primitive_services.RegisterPrimitive(&Prompt{})
 }
