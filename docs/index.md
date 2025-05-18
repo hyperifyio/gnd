@@ -48,6 +48,22 @@ The Gendo toolchain consists of three main executables:
 #### AI Integration
 - [prompt](prompt-syntax.md) - AI prompt handling
 
+#### Type Operations
+- [string](string-syntax.md) - String type operations
+- [bool](bool-syntax.md) - Boolean type operations
+- [int](int-syntax.md) - Integer type operations
+- [int8](int8-syntax.md) - 8-bit integer operations
+- [int16](int16-syntax.md) - 16-bit integer operations
+- [int32](int32-syntax.md) - 32-bit integer operations
+- [int64](int64-syntax.md) - 64-bit integer operations
+- [uint](uint-syntax.md) - Unsigned integer operations
+- [uint8](uint8-syntax.md) - 8-bit unsigned integer operations
+- [uint16](uint16-syntax.md) - 16-bit unsigned integer operations
+- [uint32](uint32-syntax.md) - 32-bit unsigned integer operations
+- [uint64](uint64-syntax.md) - 64-bit unsigned integer operations
+- [float32](float32-syntax.md) - 32-bit floating point operations
+- [float64](float64-syntax.md) - 64-bit floating point operations
+
 ## Getting Started
 
 To begin using Gendo:
