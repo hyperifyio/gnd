@@ -117,8 +117,14 @@ func (p *LineParser) ParseUnquotedTokenOrPropertyRef() (interface{}, error) {
 	if err != nil {
 		return "", err
 	}
+	if token == "*_" {
+		return NewSpreadPropertyRef("_"), nil
+	}
 	if token == "_" {
 		return NewPropertyRef("_"), nil
+	}
+	if len(token) > 1 && IsDollar(token[0]) && token[1] == '*' {
+		return NewSpreadPropertyRef(token[2:]), nil
 	}
 	if len(token) > 0 && IsDollar(token[0]) {
 		return NewPropertyRef(token[1:]), nil

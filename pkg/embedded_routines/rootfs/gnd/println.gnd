@@ -1,2 +1,1 @@
-concat _ "\n"
-print
+print *_ "\n"
