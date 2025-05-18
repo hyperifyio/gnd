@@ -45,7 +45,10 @@ func TestPrompt(t *testing.T) {
 					t.Errorf("Prompt.Execute() error = %v, wantErr %v", err2, tt.wantErr)
 					return
 				}
-				str = strings.ToLower(strings.Trim(str, " \n\t\r.,\"'"))
+
+				cutset := " \n\t\r.,\"'[]{}()"
+				arr := strings.Split(strings.Trim(str, cutset), " ")
+				str = strings.ToLower(strings.Trim(arr[0], cutset))
 
 				wantStr, err3 := parsers.ParseString(tt.want)
 				if err3 != nil {

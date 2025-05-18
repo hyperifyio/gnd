@@ -11,7 +11,7 @@ import (
 
 var (
 	Uint64NoArgumentsError     = fmt.Errorf("uint64: requires exactly one argument")
-	Uint64InvalidArgumentError = fmt.Errorf("uint64: argument must be a positive number")
+	Uint64InvalidArgumentError = fmt.Errorf("uint64: argument must be a positive number between 0 and 18446744073709551615")
 )
 
 type Uint64Type struct{}
@@ -66,6 +66,7 @@ func (u *Uint64Type) Execute(args []interface{}) (interface{}, error) {
 
 	// Handle string
 	if str, ok := arg.(string); ok {
+		str = strings.TrimSpace(str)
 		// Handle hex string
 		if strings.HasPrefix(str, "0x") || strings.HasPrefix(str, "0X") {
 			value, err := strconv.ParseUint(str, 0, 64)
@@ -87,17 +88,5 @@ func (u *Uint64Type) Execute(args []interface{}) (interface{}, error) {
 }
 
 func (u *Uint64Type) String() string {
-	return "uint64"
-}
-
-type Uint64Result struct {
-	Value uint64
-}
-
-func (r *Uint64Result) String() string {
-	return fmt.Sprintf("%d", r.Value)
-}
-
-func (r *Uint64Result) Type() string {
 	return "uint64"
 }
