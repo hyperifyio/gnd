@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/hyperifyio/gnd/pkg/log"
+	"github.com/hyperifyio/gnd/pkg/loggers"
 )
 
 func TestVerboseFlag(t *testing.T) {
@@ -13,10 +13,10 @@ func TestVerboseFlag(t *testing.T) {
 	if err := os.Chdir("../../"); err != nil {
 		t.Fatalf("failed to set working directory: %v", err)
 	}
-	
+
 	// Save original log level
-	originalLevel := log.Level
-	defer func() { log.Level = originalLevel }()
+	originalLevel := loggers.Level
+	defer func() { loggers.Level = originalLevel }()
 
 	// Test cases
 	tests := []struct {
@@ -28,19 +28,19 @@ func TestVerboseFlag(t *testing.T) {
 		{
 			name:           "no verbose flag",
 			args:           []string{"examples/debug.gnd"},
-			expectedLevel:  log.Error,
+			expectedLevel:  loggers.Error,
 			expectedOutput: "",
 		},
 		{
 			name:           "verbose flag",
 			args:           []string{"-verbose", "examples/debug.gnd"},
-			expectedLevel:  log.Debug,
+			expectedLevel:  loggers.Debug,
 			expectedOutput: "",
 		},
 		{
 			name:           "verbose flag shorthand",
 			args:           []string{"-v", "examples/debug.gnd"},
-			expectedLevel:  log.Debug,
+			expectedLevel:  loggers.Debug,
 			expectedOutput: "",
 		},
 	}
@@ -48,7 +48,7 @@ func TestVerboseFlag(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Reset log level before each test
-			log.Level = log.Error
+			loggers.Level = loggers.Error
 
 			// Save original args
 			oldArgs := os.Args
@@ -61,8 +61,8 @@ func TestVerboseFlag(t *testing.T) {
 			main()
 
 			// Check log level
-			if log.Level != tt.expectedLevel {
-				t.Errorf("expected log level %v, got %v", tt.expectedLevel, log.Level)
+			if loggers.Level != tt.expectedLevel {
+				t.Errorf("expected log level %v, got %v", tt.expectedLevel, loggers.Level)
 			}
 		})
 	}

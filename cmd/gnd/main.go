@@ -6,10 +6,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/hyperifyio/gnd/pkg/primitive"
+	"github.com/hyperifyio/gnd/pkg/primitives"
 
-	"github.com/hyperifyio/gnd/pkg/core"
-	"github.com/hyperifyio/gnd/pkg/log"
+	"github.com/hyperifyio/gnd/pkg/interpreters"
+	"github.com/hyperifyio/gnd/pkg/loggers"
 	"github.com/hyperifyio/gnd/pkg/parsers"
 )
 
@@ -63,7 +63,7 @@ func main() {
 	}
 
 	if *verbose || *v {
-		log.Level = log.Debug
+		loggers.Level = loggers.Debug
 	}
 
 	if len(flag.Args()) < 1 {
@@ -75,14 +75,14 @@ func main() {
 	args := flag.Args()
 	scriptPath := args[0]
 	scriptDir := filepath.Dir(scriptPath)
-	log.Printf(log.Debug, "script path: %v", scriptPath)
-	log.Printf(log.Debug, "script dir: %v", scriptDir)
+	loggers.Printf(loggers.Debug, "script path: %v", scriptPath)
+	loggers.Printf(loggers.Debug, "script dir: %v", scriptDir)
 
 	scriptArgs := args[1:]
-	log.Printf(log.Debug, "script args: %v", scriptArgs)
+	loggers.Printf(loggers.Debug, "script args: %v", scriptArgs)
 
 	// Create a new core interpreter
-	interpreterImpl := core.NewInterpreter(scriptDir, DefaultOpcodeMap)
+	interpreterImpl := interpreters.NewInterpreter(scriptDir, DefaultOpcodeMap)
 	interpreterImpl.SetSlot("_", scriptArgs)
 
 	// Read the script file
@@ -98,14 +98,14 @@ func main() {
 		fmt.Printf("Error parsing script: %v\n", err)
 		os.Exit(1)
 	}
-	log.Printf(log.Debug, "loaded %d instructions", len(instructions))
+	loggers.Printf(loggers.Debug, "loaded %d instructions", len(instructions))
 
 	// Execute each instruction
 	status := 0
 	var value interface{}
-	log.Printf(log.Debug, "Executing: %s %v", scriptPath, scriptArgs)
+	loggers.Printf(loggers.Debug, "Executing: %s %v", scriptPath, scriptArgs)
 	if value, err = interpreterImpl.ExecuteInstructionBlock(scriptPath, scriptArgs, instructions); err != nil {
-		if exitErr, ok := primitive.GetExitResult(err); ok {
+		if exitErr, ok := primitives.GetExitResult(err); ok {
 			value = exitErr.Value
 			status = exitErr.Code
 		} else {

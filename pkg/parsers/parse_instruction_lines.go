@@ -3,7 +3,7 @@ package parsers
 import (
 	"bufio"
 	"fmt"
-	"github.com/hyperifyio/gnd/pkg/log"
+	"github.com/hyperifyio/gnd/pkg/loggers"
 	"strings"
 )
 
@@ -17,7 +17,7 @@ func ParseInstructionLines(source, content string) ([]*Instruction, error) {
 		lineNum++
 		line := scanner.Text()
 
-		log.Printf(log.Debug, "[%s]: Parsed line %d: %s", source, lineNum, line)
+		loggers.Printf(loggers.Debug, "[%s]: Parsed line %d: %s", source, lineNum, line)
 
 		op, err := ParseInstruction(fmt.Sprintf("%s:%d", source, lineNum), line)
 		if err != nil {

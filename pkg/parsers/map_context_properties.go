@@ -2,7 +2,7 @@ package parsers
 
 import (
 	"fmt"
-	"github.com/hyperifyio/gnd/pkg/log"
+	"github.com/hyperifyio/gnd/pkg/loggers"
 )
 
 // MapContextProperty maps a token to its value in the context, if it exists
@@ -18,14 +18,14 @@ func MapContextProperty(source string, slots map[string]interface{}, arg interfa
 			}
 			resolvedArr[i] = val
 		}
-		log.Printf(log.Debug, "[%s]: MapContextProperty: Mapped as array: %v", source, resolvedArr)
+		loggers.Printf(loggers.Debug, "[%s]: MapContextProperty: Mapped as array: %v", source, resolvedArr)
 		return resolvedArr, nil
 	}
 
 	// Handle property references
 	if ref, ok := GetPropertyRef(arg); ok {
 		if val, ok := slots[ref.Name]; ok {
-			log.Printf(log.Debug, "[%s]: MapContextProperty: Mapped as PropertyRef: %v", source, val)
+			loggers.Printf(loggers.Debug, "[%s]: MapContextProperty: Mapped as PropertyRef: %v", source, val)
 			return val, nil
 		}
 		return nil, fmt.Errorf("[%s]: undefined property: %s", source, ref.Name)
@@ -41,12 +41,12 @@ func MapContextProperty(source string, slots map[string]interface{}, arg interfa
 			}
 			resolvedMap[k] = val
 		}
-		log.Printf(log.Debug, "[%s]: MapContextProperty: Mapped as map: %v", source, resolvedMap)
+		loggers.Printf(loggers.Debug, "[%s]: MapContextProperty: Mapped as map: %v", source, resolvedMap)
 		return resolvedMap, nil
 	}
 
 	// Not a property reference, just return as-is
-	log.Printf(log.Debug, "[%s]: MapContextProperty: Not a property reference, mapped as: %s", source, arg)
+	loggers.Printf(loggers.Debug, "[%s]: MapContextProperty: Not a property reference, mapped as: %s", source, arg)
 	return arg, nil
 }
 
@@ -60,6 +60,6 @@ func MapContextProperties(source string, slots map[string]interface{}, args []in
 		}
 		resolvedArgs[j] = val
 	}
-	log.Printf(log.Debug, "[%s]: MapContextProperties: Mapped args: %v to %v", source, args, resolvedArgs)
+	loggers.Printf(loggers.Debug, "[%s]: MapContextProperties: Mapped args: %v to %v", source, args, resolvedArgs)
 	return resolvedArgs, nil
 }
