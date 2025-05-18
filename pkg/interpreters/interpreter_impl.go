@@ -2,41 +2,41 @@ package interpreters
 
 import (
 	"fmt"
-	"github.com/hyperifyio/gnd/pkg/primitive_services"
-	primitive_types2 "github.com/hyperifyio/gnd/pkg/primitive_types"
-	"github.com/hyperifyio/gnd/pkg/primitives"
 	"io/fs"
 	"os"
 	"strings"
 
+	"github.com/hyperifyio/gnd/pkg/embedded_routines"
 	"github.com/hyperifyio/gnd/pkg/helpers"
 	"github.com/hyperifyio/gnd/pkg/loggers"
 	"github.com/hyperifyio/gnd/pkg/parsers"
-	"github.com/hyperifyio/gnd/pkg/units"
+	"github.com/hyperifyio/gnd/pkg/primitive_services"
+	"github.com/hyperifyio/gnd/pkg/primitive_types"
+	"github.com/hyperifyio/gnd/pkg/primitives"
 )
 
 // InterpreterImpl represents the execution environment
 type InterpreterImpl struct {
 	Slots       map[string]interface{}
 	Subroutines map[string][]*parsers.Instruction
-	ScriptDir   string                       // Directory of the currently executing script
-	LogIndent   int                          // Current log indentation level
-	UnitsFS     fs.FS                        // Embedded filesystem containing GND units
-	OpcodeMap   map[string]string            // Map of opcode aliases
-	parent      primitive_types2.Interpreter // Parent interpreter for nested calls
+	ScriptDir   string                      // Directory of the currently executing script
+	LogIndent   int                         // Current log indentation level
+	UnitsFS     fs.FS                       // Filesystem containing embedded GND routines
+	OpcodeMap   map[string]string           // Map of opcode aliases
+	parent      primitive_types.Interpreter // Parent interpreter for nested calls
 }
 
 // NewInterpreter creates a new core instance
 func NewInterpreter(
 	scriptDir string,
 	opcodeMap map[string]string,
-) primitive_types2.Interpreter {
+) primitive_types.Interpreter {
 	return &InterpreterImpl{
 		Slots:       make(map[string]interface{}),
 		Subroutines: make(map[string][]*parsers.Instruction),
 		ScriptDir:   scriptDir,
 		LogIndent:   0,
-		UnitsFS:     units.GetUnitsFS(),
+		UnitsFS:     embedded_routines.GetEmbeddedRoutinesFS(),
 		OpcodeMap:   opcodeMap,
 	}
 }
@@ -45,14 +45,14 @@ func NewInterpreter(
 func NewInterpreterWithParent(
 	scriptDir string,
 	initialSlots map[string]interface{},
-	parent primitive_types2.Interpreter,
-) primitive_types2.Interpreter {
+	parent primitive_types.Interpreter,
+) primitive_types.Interpreter {
 	return &InterpreterImpl{
 		Slots:       initialSlots,
 		Subroutines: make(map[string][]*parsers.Instruction),
 		ScriptDir:   scriptDir,
 		LogIndent:   0,
-		UnitsFS:     units.GetUnitsFS(),
+		UnitsFS:     embedded_routines.GetEmbeddedRoutinesFS(),
 		OpcodeMap:   make(map[string]string),
 		parent:      parent,
 	}
@@ -199,8 +199,8 @@ func (i *InterpreterImpl) ExecuteInstructionBlock(source string, input interface
 					i.LogDebug("[%s]: ExecuteInstructionBlock: primitive had error: %v <- %s %v: error: %v", opcode, destination, opcode, resolvedArgs, err)
 
 					var ok2 bool
-					var handler primitive_types2.BlockErrorResultHandler
-					if handler, ok2 = prim.(primitive_types2.BlockErrorResultHandler); ok2 {
+					var handler primitive_types.BlockErrorResultHandler
+					if handler, ok2 = prim.(primitive_types.BlockErrorResultHandler); ok2 {
 
 						i.LogDebug("[%s]: ExecuteInstructionBlock: handle error using BlockErrorResultHandler: %v <- %s %v", opcode, destination, opcode, resolvedArgs)
 						result, err = handler.HandleBlockErrorResult(err, i, destination, instructions)
@@ -223,8 +223,8 @@ func (i *InterpreterImpl) ExecuteInstructionBlock(source string, input interface
 
 				} else {
 
-					var handler primitive_types2.BlockSuccessResultHandler
-					if handler, ok = prim.(primitive_types2.BlockSuccessResultHandler); ok {
+					var handler primitive_types.BlockSuccessResultHandler
+					if handler, ok = prim.(primitive_types.BlockSuccessResultHandler); ok {
 						i.LogDebug("[%s]: ExecuteInstructionBlock: handle result using BlockSuccessResultHandler: %v <- %s %v: %v", opcode, destination, opcode, resolvedArgs, result)
 						result, err = handler.HandleBlockSuccessResult(result, i, destination, instructions)
 						if err != nil {
@@ -302,12 +302,12 @@ func (i *InterpreterImpl) ExecuteSubroutine(name string, args []interface{}) (in
 // ResolveOpcode resolves the opcode to its mapped value
 func (i *InterpreterImpl) ResolveOpcode(opcode string) string {
 	if mapped, exists := i.OpcodeMap[opcode]; exists {
-		i.LogDebug("[%s]: Resolved as: %s", opcode, mapped)
+		i.LogDebug("[%s]: ResolveOpcode: Resolved as: %s", opcode, mapped)
 		return mapped
 	}
 	if i.parent != nil {
 		p := i.parent.ResolveOpcode(opcode)
-		i.LogDebug("[%s]: Resolved from parent as: %s", opcode, p)
+		i.LogDebug("[%s]: ResolveOpcode: Resolved from parent as: %s", opcode, p)
 		return p
 	}
 	return opcode
@@ -349,6 +349,6 @@ func (i *InterpreterImpl) ExecuteSubroutineCall(opcode string, destination *pars
 func (i *InterpreterImpl) NewInterpreterWithParent(
 	scriptDir string,
 	initialSlots map[string]interface{},
-) primitive_types2.Interpreter {
+) primitive_types.Interpreter {
 	return NewInterpreterWithParent(scriptDir, initialSlots, i)
 }
