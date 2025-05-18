@@ -37,7 +37,7 @@ func main() {
 
 	if *help || *h {
 		printHelp()
-		os.Exit(0)
+		return
 	}
 
 	if *verbose || *v {
@@ -98,5 +98,7 @@ func main() {
 		os.Stdout.Sync()
 	}
 
-	os.Exit(status)
+	if status != 0 {
+		os.Exit(status)
+	}
 }

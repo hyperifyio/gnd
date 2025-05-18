@@ -9,7 +9,7 @@ import (
 func TestString_Execute(t *testing.T) {
 	type testCase struct {
 		name    string
-		arg     interface{}
+		arg     []interface{}
 		want    string
 		wantErr bool
 	}
@@ -17,56 +17,80 @@ func TestString_Execute(t *testing.T) {
 	tests := []testCase{
 		{
 			name:    "string value",
-			arg:     "hello world",
+			arg:     []interface{}{"hello world"},
 			want:    "hello world",
 			wantErr: false,
 		},
 		{
 			name:    "int value",
-			arg:     42,
+			arg:     []interface{}{42},
 			want:    "42",
 			wantErr: false,
 		},
 		{
 			name:    "float value",
-			arg:     3.14,
+			arg:     []interface{}{3.14},
 			want:    "3.14",
 			wantErr: false,
 		},
 		{
 			name:    "bool true",
-			arg:     true,
+			arg:     []interface{}{true},
 			want:    "true",
 			wantErr: false,
 		},
 		{
 			name:    "bool false",
-			arg:     false,
+			arg:     []interface{}{false},
 			want:    "false",
 			wantErr: false,
 		},
 		{
 			name:    "nil value",
-			arg:     nil,
-			want:    "",
+			arg:     []interface{}{nil},
+			want:    "nil",
+			wantErr: false,
+		},
+		{
+			name:    "slice without values",
+			arg:     []interface{}{[]int{}},
+			want:    "[]",
 			wantErr: false,
 		},
 		{
 			name:    "slice value",
-			arg:     []int{1, 2, 3},
-			want:    "[1 2 3]",
+			arg:     []interface{}{[]int{1}},
+			want:    "[ 1 ]",
 			wantErr: false,
 		},
 		{
-			name:    "map value",
-			arg:     map[string]int{"a": 1},
-			want:    "map[a:1]",
+			name:    "slice with values",
+			arg:     []interface{}{[]int{1, 2, 3}},
+			want:    "[ 1 2 3 ]",
 			wantErr: false,
 		},
 		{
-			name:    "no argument",
-			arg:     nil,
-			wantErr: true,
+			name:    "map without values",
+			arg:     []interface{}{map[string]int{}},
+			want:    "{}",
+			wantErr: false,
+		},
+		{
+			name:    "map with single value",
+			arg:     []interface{}{map[string]int{"a": 1}},
+			want:    "{ a 1 }",
+			wantErr: false,
+		},
+		{
+			name:    "map with multiple values",
+			arg:     []interface{}{map[string]int{"a": 1, "b": 2}},
+			want:    "{ a 1 b 2 }",
+			wantErr: false,
+		},
+		{
+			name: "no arguments",
+			arg:  []interface{}{},
+			want: "",
 		},
 	}
 
@@ -74,13 +98,7 @@ func TestString_Execute(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			var args []interface{}
-			if tc.name == "no argument" {
-				args = []interface{}{}
-			} else {
-				args = []interface{}{tc.arg}
-			}
-			res, err := op.Execute(args)
+			res, err := op.Execute(tc.arg)
 			if tc.wantErr {
 				assert.Error(t, err)
 				return

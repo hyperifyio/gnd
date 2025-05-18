@@ -1,7 +1,7 @@
 package primitives
 
 import (
-	"fmt"
+	"github.com/hyperifyio/gnd/pkg/parsers"
 
 	"github.com/hyperifyio/gnd/pkg/primitive_types"
 )
@@ -15,14 +15,23 @@ func (s *StringType) Name() string {
 }
 
 func (s *StringType) Execute(args []interface{}) (interface{}, error) {
-	if len(args) != 1 {
-		return nil, fmt.Errorf("string expects 1 argument, got %d", len(args))
-	}
-	arg := args[0]
-	if arg == nil {
+	l := len(args)
+	if l == 0 {
 		return "", nil
+	} else {
+		str := ""
+		for i, arg := range args {
+			if i != 0 {
+				str += "\n"
+			}
+			s, err := parsers.ParseString(arg)
+			if err != nil {
+				return nil, err
+			}
+			str += s
+		}
+		return str, nil
 	}
-	return fmt.Sprintf("%v", arg), nil
 }
 
 func (s *StringType) String() string {
