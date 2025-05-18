@@ -6,6 +6,7 @@ import (
 	"github.com/hyperifyio/gnd/pkg/helpers"
 	"github.com/hyperifyio/gnd/pkg/parsers"
 	"github.com/hyperifyio/gnd/pkg/primitive_services"
+	"github.com/hyperifyio/gnd/pkg/primitive_types"
 	"github.com/hyperifyio/gnd/pkg/prompts"
 	"net/http"
 )
@@ -15,6 +16,8 @@ var PromptApiKeyNotSet = errors.New("OPENAI_API_KEY environment variable not set
 
 // Prompt represents the prompt primitive
 type Prompt struct{}
+
+var _ primitive_types.Primitive = &Prompt{}
 
 func (p *Prompt) Name() string {
 	return "/gnd/prompt"

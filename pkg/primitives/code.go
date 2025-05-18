@@ -5,14 +5,15 @@ import (
 	"github.com/hyperifyio/gnd/pkg/helpers"
 	"github.com/hyperifyio/gnd/pkg/parsers"
 	"github.com/hyperifyio/gnd/pkg/primitive_services"
-	primitive_types2 "github.com/hyperifyio/gnd/pkg/primitive_types"
+	"github.com/hyperifyio/gnd/pkg/primitive_types"
 )
 
 // Code represents the code primitive
 type Code struct {
 }
 
-var _ primitive_types2.BlockSuccessResultHandler = &Code{}
+var _ primitive_types.Primitive = &Code{}
+var _ primitive_types.BlockSuccessResultHandler = &Code{}
 
 // Name returns the name of the primitive
 func (c *Code) Name() string {
@@ -45,7 +46,7 @@ func (c *Code) Execute(args []interface{}) (interface{}, error) {
 }
 
 // HandleBlockSuccessResult handles code results
-func (c *Code) HandleBlockSuccessResult(result interface{}, i primitive_types2.Interpreter, destination *parsers.PropertyRef, instructions []*parsers.Instruction) (interface{}, error) {
+func (c *Code) HandleBlockSuccessResult(result interface{}, i primitive_types.Interpreter, destination *parsers.PropertyRef, instructions []*parsers.Instruction) (interface{}, error) {
 	if codeResult, ok := GetCodeResult(result); ok {
 
 		codeInstructions, err := HandleCodeResult(i, "/gnd/code", codeResult, instructions)
@@ -67,7 +68,7 @@ func init() {
 }
 
 // HandleCodeResult processes a CodeResult and returns the concatenated instructions
-func HandleCodeResult(i primitive_types2.Interpreter, source string, codeResult *CodeResult, block []*parsers.Instruction) ([]*parsers.Instruction, error) {
+func HandleCodeResult(i primitive_types.Interpreter, source string, codeResult *CodeResult, block []*parsers.Instruction) ([]*parsers.Instruction, error) {
 
 	i.LogDebug("[%s]: HandleCodeResult: processing targets: %v", source, codeResult.Targets)
 	var allInstructions []*parsers.Instruction

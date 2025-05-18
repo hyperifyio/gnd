@@ -3,6 +3,7 @@ package primitives
 import (
 	"errors"
 	"github.com/hyperifyio/gnd/pkg/primitive_services"
+	"github.com/hyperifyio/gnd/pkg/primitive_types"
 )
 
 // Predefined errors
@@ -13,6 +14,8 @@ var (
 
 // Status represents the status primitive
 type Status struct{}
+
+var _ primitive_types.Primitive = &Status{}
 
 // Name returns the name of the primitive
 func (s *Status) Name() string {

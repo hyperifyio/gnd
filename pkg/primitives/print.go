@@ -3,6 +3,7 @@ package primitives
 import (
 	"fmt"
 	"github.com/hyperifyio/gnd/pkg/primitive_services"
+	"github.com/hyperifyio/gnd/pkg/primitive_types"
 	"os"
 
 	"github.com/hyperifyio/gnd/pkg/parsers"
@@ -10,6 +11,8 @@ import (
 
 // Print represents the print primitive
 type Print struct{}
+
+var _ primitive_types.Primitive = &Print{}
 
 // Name returns the name of the primitive
 func (p *Print) Name() string {

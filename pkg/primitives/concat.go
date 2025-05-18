@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/hyperifyio/gnd/pkg/primitive_services"
+	"github.com/hyperifyio/gnd/pkg/primitive_types"
 	"strings"
 )
 
@@ -11,6 +12,8 @@ var ConcatExpectsAtLeastOneArgument = errors.New("concat expects at least 1 argu
 
 // Concat represents the concat primitive
 type Concat struct{}
+
+var _ primitive_types.Primitive = &Concat{}
 
 func (c *Concat) Name() string {
 	return "/gnd/concat"

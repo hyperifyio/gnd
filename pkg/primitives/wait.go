@@ -3,6 +3,7 @@ package primitives
 import (
 	"errors"
 	"github.com/hyperifyio/gnd/pkg/primitive_services"
+	"github.com/hyperifyio/gnd/pkg/primitive_types"
 	"time"
 )
 
@@ -14,6 +15,8 @@ var (
 
 // Wait represents the wait primitive
 type Wait struct{}
+
+var _ primitive_types.Primitive = &Wait{}
 
 // Name returns the name of the primitive
 func (w *Wait) Name() string {

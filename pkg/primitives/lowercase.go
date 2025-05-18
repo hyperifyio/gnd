@@ -3,11 +3,14 @@ package primitives
 import (
 	"fmt"
 	"github.com/hyperifyio/gnd/pkg/primitive_services"
+	"github.com/hyperifyio/gnd/pkg/primitive_types"
 	"strings"
 )
 
 // Lowercase represents the lowercase primitive
 type Lowercase struct{}
+
+var _ primitive_types.Primitive = &Lowercase{}
 
 func (l *Lowercase) Name() string {
 	return "/gnd/lowercase"

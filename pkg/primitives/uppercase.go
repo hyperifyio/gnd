@@ -3,11 +3,14 @@ package primitives
 import (
 	"fmt"
 	"github.com/hyperifyio/gnd/pkg/primitive_services"
+	"github.com/hyperifyio/gnd/pkg/primitive_types"
 	"strings"
 )
 
 // Uppercase represents the uppercase primitive
 type Uppercase struct{}
+
+var _ primitive_types.Primitive = &Uppercase{}
 
 func (u *Uppercase) Name() string {
 	return "/gnd/uppercase"

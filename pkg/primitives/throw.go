@@ -5,6 +5,7 @@ import (
 	"github.com/hyperifyio/gnd/pkg/loggers"
 	"github.com/hyperifyio/gnd/pkg/parsers"
 	"github.com/hyperifyio/gnd/pkg/primitive_services"
+	"github.com/hyperifyio/gnd/pkg/primitive_types"
 )
 
 // Predefined errors
@@ -13,6 +14,8 @@ var ThrowInvalidArgument = errors.New("throw: invalid argument")
 
 // Throw represents the throw primitive
 type Throw struct{}
+
+var _ primitive_types.Primitive = &Throw{}
 
 // Name returns the name of the primitive
 func (t *Throw) Name() string {

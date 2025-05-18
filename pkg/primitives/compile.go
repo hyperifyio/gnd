@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"github.com/hyperifyio/gnd/pkg/parsers"
 	"github.com/hyperifyio/gnd/pkg/primitive_services"
+	"github.com/hyperifyio/gnd/pkg/primitive_types"
 )
 
 var CompileRequiresAtLeastOneSource = errors.New("compile: requires at least one source")
 
 // Compile represents the compile primitive
 type Compile struct{}
+
+var _ primitive_types.Primitive = &Compile{}
 
 // Name returns the name of the primitive
 func (c *Compile) Name() string {

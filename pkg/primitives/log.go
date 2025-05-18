@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/hyperifyio/gnd/pkg/parsers"
 	"github.com/hyperifyio/gnd/pkg/primitive_services"
+	"github.com/hyperifyio/gnd/pkg/primitive_types"
 	"strings"
 
 	"github.com/hyperifyio/gnd/pkg/loggers"
@@ -31,6 +32,8 @@ func ConvertLogLevel(levelStr string) (int, error) {
 
 // Log represents the log primitive
 type Log struct{}
+
+var _ primitive_types.Primitive = &Log{}
 
 // Name returns the name of the primitive
 func (l *Log) Name() string {

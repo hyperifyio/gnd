@@ -3,6 +3,7 @@ package primitives
 import (
 	"fmt"
 	"github.com/hyperifyio/gnd/pkg/primitive_services"
+	"github.com/hyperifyio/gnd/pkg/primitive_types"
 	"reflect"
 )
 
@@ -10,6 +11,8 @@ var EqRequiresAtLeastTwoArguments = fmt.Errorf("eq expects at least 2 arguments,
 
 // Eq represents the eq primitive
 type Eq struct{}
+
+var _ primitive_types.Primitive = &Eq{}
 
 func (e *Eq) Name() string {
 	return "/gnd/eq"

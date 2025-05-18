@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/hyperifyio/gnd/pkg/loggers"
 	"github.com/hyperifyio/gnd/pkg/primitive_services"
+	"github.com/hyperifyio/gnd/pkg/primitive_types"
 )
 
 var FirstExpectedArgsError = fmt.Errorf("first expects at least 1 argument, got 0")
@@ -11,6 +12,8 @@ var FirstExpectedItemsError = fmt.Errorf("first expects at least 1 item in an ar
 
 // First is a primitive which takes the first element out of a list argument
 type First struct{}
+
+var _ primitive_types.Primitive = &First{}
 
 func (t *First) Name() string {
 	return "/gnd/first"

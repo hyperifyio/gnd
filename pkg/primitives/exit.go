@@ -11,6 +11,9 @@ import (
 type Exit struct {
 }
 
+var _ primitive_types.Primitive = &Exit{}
+var _ primitive_types.BlockErrorResultHandler = &Exit{}
+
 // Name returns the name of the primitive
 func (e *Exit) Name() string {
 	return "/gnd/exit"
@@ -31,8 +34,8 @@ func (e *Exit) Execute(args []interface{}) (interface{}, error) {
 	return nil, NewExitResult(value, nil)
 }
 
-// HandleErrorResultBlock handles exit errors
-func (e *Exit) HandleErrorResultBlock(err error, i primitive_types.Interpreter, destination *parsers.PropertyRef, block []*parsers.Instruction) (interface{}, error) {
+// HandleBlockErrorResult handles exit errors
+func (e *Exit) HandleBlockErrorResult(err error, i primitive_types.Interpreter, destination *parsers.PropertyRef, block []*parsers.Instruction) (interface{}, error) {
 	if exitResult, ok := GetExitResult(err); ok {
 		i.LogDebug("[/gnd/exit]: exit result detected with code %d", exitResult.Code)
 		return nil, exitResult

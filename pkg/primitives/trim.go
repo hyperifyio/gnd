@@ -3,11 +3,14 @@ package primitives
 import (
 	"fmt"
 	"github.com/hyperifyio/gnd/pkg/primitive_services"
+	"github.com/hyperifyio/gnd/pkg/primitive_types"
 	"strings"
 )
 
 // Trim represents the trim primitive
 type Trim struct{}
+
+var _ primitive_types.Primitive = &Trim{}
 
 func (t *Trim) Name() string {
 	return "/gnd/trim"
