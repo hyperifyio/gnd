@@ -5,8 +5,13 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/hyperifyio/gnd/pkg/primitive_services"
 	"github.com/hyperifyio/gnd/pkg/primitive_types"
 )
+
+func init() {
+	primitive_services.RegisterPrimitive(&Int64Type{})
+}
 
 var (
 	Int64NoArgumentsError     = errors.New("int64: requires exactly one argument")

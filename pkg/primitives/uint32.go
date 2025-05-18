@@ -7,8 +7,13 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/hyperifyio/gnd/pkg/primitive_services"
 	"github.com/hyperifyio/gnd/pkg/primitive_types"
 )
+
+func init() {
+	primitive_services.RegisterPrimitive(&Uint32Type{})
+}
 
 var (
 	Uint32NoArgumentsError     = errors.New("uint32: requires exactly one argument")

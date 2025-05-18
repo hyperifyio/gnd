@@ -6,8 +6,13 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/hyperifyio/gnd/pkg/primitive_services"
 	"github.com/hyperifyio/gnd/pkg/primitive_types"
 )
+
+func init() {
+	primitive_services.RegisterPrimitive(&Int32Type{})
+}
 
 type Int32Type struct{}
 

@@ -6,8 +6,13 @@ import (
 	"math"
 	"strconv"
 
+	"github.com/hyperifyio/gnd/pkg/primitive_services"
 	"github.com/hyperifyio/gnd/pkg/primitive_types"
 )
+
+func init() {
+	primitive_services.RegisterPrimitive(&Float64Type{})
+}
 
 var (
 	Float64NoArgumentsError     = errors.New("float64: requires exactly one argument")

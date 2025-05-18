@@ -2,9 +2,13 @@ package primitives
 
 import (
 	"github.com/hyperifyio/gnd/pkg/parsers"
-
+	"github.com/hyperifyio/gnd/pkg/primitive_services"
 	"github.com/hyperifyio/gnd/pkg/primitive_types"
 )
+
+func init() {
+	primitive_services.RegisterPrimitive(&StringType{})
+}
 
 type StringType struct{}
 

@@ -7,8 +7,13 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/hyperifyio/gnd/pkg/primitive_services"
 	"github.com/hyperifyio/gnd/pkg/primitive_types"
 )
+
+func init() {
+	primitive_services.RegisterPrimitive(&Uint8Type{})
+}
 
 var (
 	Uint8NoArgumentsError     = errors.New("uint8: requires exactly one argument")

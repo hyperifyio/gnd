@@ -3,8 +3,13 @@ package primitives
 import (
 	"errors"
 
+	"github.com/hyperifyio/gnd/pkg/primitive_services"
 	"github.com/hyperifyio/gnd/pkg/primitive_types"
 )
+
+func init() {
+	primitive_services.RegisterPrimitive(&Await{})
+}
 
 var (
 	AwaitErrMissingTask    = errors.New("await: missing task argument")

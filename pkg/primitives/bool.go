@@ -4,8 +4,13 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/hyperifyio/gnd/pkg/primitive_services"
 	"github.com/hyperifyio/gnd/pkg/primitive_types"
 )
+
+func init() {
+	primitive_services.RegisterPrimitive(&BoolType{})
+}
 
 type BoolType struct {
 }

@@ -6,8 +6,13 @@ import (
 	"math"
 	"strconv"
 
+	"github.com/hyperifyio/gnd/pkg/primitive_services"
 	"github.com/hyperifyio/gnd/pkg/primitive_types"
 )
+
+func init() {
+	primitive_services.RegisterPrimitive(&Float32Type{})
+}
 
 var (
 	Float32NoArgumentsError     = errors.New("float32: requires exactly one argument")

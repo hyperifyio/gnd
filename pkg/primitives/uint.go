@@ -5,8 +5,13 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/hyperifyio/gnd/pkg/primitive_services"
 	"github.com/hyperifyio/gnd/pkg/primitive_types"
 )
+
+func init() {
+	primitive_services.RegisterPrimitive(&UintType{})
+}
 
 var (
 	UintNoArgumentsError     = errors.New("uint: requires exactly one argument")
