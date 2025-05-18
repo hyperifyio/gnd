@@ -8,7 +8,6 @@ import (
 )
 
 type BoolType struct {
-	Value bool
 }
 
 var _ primitive_types.Primitive = &BoolType{}
@@ -61,8 +60,4 @@ func (b *BoolType) Execute(args []interface{}) (interface{}, error) {
 
 	// For any other type, return false
 	return false, nil
-}
-
-func (b *BoolType) String() string {
-	return fmt.Sprintf("bool %v", b.Value)
 }

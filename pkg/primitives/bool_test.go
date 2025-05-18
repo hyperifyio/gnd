@@ -144,31 +144,3 @@ func TestBoolType_Name(t *testing.T) {
 		t.Errorf("BoolType.Name() = %v, want %v", got, "/gnd/bool")
 	}
 }
-
-func TestBoolType_String(t *testing.T) {
-	tests := []struct {
-		name  string
-		value bool
-		want  string
-	}{
-		{
-			name:  "true value",
-			value: true,
-			want:  "bool true",
-		},
-		{
-			name:  "false value",
-			value: false,
-			want:  "bool false",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			boolType := &BoolType{Value: tt.value}
-			if got := boolType.String(); got != tt.want {
-				t.Errorf("BoolType.String() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
