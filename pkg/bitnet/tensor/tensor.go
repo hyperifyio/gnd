@@ -28,9 +28,12 @@ type Tensor struct {
 // workerPool manages a pool of worker goroutines
 var workerPool = sync.Pool{
 	New: func() interface{} {
-		return make(chan struct{}, 1)
+		return make([]int, 0, 32) // Pre-allocate slice with capacity
 	},
 }
+
+// batchSize determines how many indices to process in each batch
+const batchSize = 32
 
 // NewTensor creates a new tensor with the given shape
 func NewTensor(shape ...int) *Tensor {
@@ -110,8 +113,8 @@ func (t *Tensor) ParallelForEach(fn func(indices []int, value float64)) {
 		return
 	}
 
-	// Create work channels
-	workChan := make(chan []int, numCPU*2)
+	// Create work channels with buffering
+	workChan := make(chan []int, numCPU*4)
 	doneChan := make(chan struct{}, numCPU)
 
 	// Start worker goroutines
@@ -120,18 +123,42 @@ func (t *Tensor) ParallelForEach(fn func(indices []int, value float64)) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for indices := range workChan {
-				fn(indices, t.Get(indices...))
+			// Get indices slice from pool
+			indices := workerPool.Get().([]int)
+			defer workerPool.Put(indices)
+
+			for batch := range workChan {
+				// Process batch
+				for _, idx := range batch {
+					// Reuse indices slice
+					indices = indices[:0]
+					// Convert linear index to multi-dimensional indices
+					linearToIndices(idx, t.shape, t.stride, &indices)
+					fn(indices, t.data[idx])
+				}
 			}
 			doneChan <- struct{}{}
 		}()
 	}
 
-	// Generate work
+	// Generate work in batches
 	go func() {
-		t.forEach(func(indices []int, _ float64) {
-			workChan <- indices
-		})
+		batch := make([]int, 0, batchSize)
+		totalSize := 1
+		for _, s := range t.shape {
+			totalSize *= s
+		}
+
+		for i := 0; i < totalSize; i++ {
+			batch = append(batch, i)
+			if len(batch) == batchSize {
+				workChan <- batch
+				batch = make([]int, 0, batchSize)
+			}
+		}
+		if len(batch) > 0 {
+			workChan <- batch
+		}
 		close(workChan)
 	}()
 
@@ -143,6 +170,14 @@ func (t *Tensor) ParallelForEach(fn func(indices []int, value float64)) {
 
 	// Wait for all workers to finish
 	for range doneChan {
+	}
+}
+
+// linearToIndices converts a linear index to multi-dimensional indices
+func linearToIndices(idx int, shape, stride []int, indices *[]int) {
+	*indices = (*indices)[:len(shape)]
+	for i := 0; i < len(shape); i++ {
+		(*indices)[i] = (idx / stride[i]) % shape[i]
 	}
 }
 
