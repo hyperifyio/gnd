@@ -1,0 +1,9 @@
+Create a Gendo subroutine named generate_candidates that takes a single string 
+parameter called question and returns an array of three candidate answers. 
+Inside the subroutine call prompt with model gpt-4, temperature 0.7 and n set 
+to 3. The prompt must instruct the LLM to think step by step, label its 
+reasoning with the exact tag THOUGHT and its conclusion with the exact tag 
+ANSWER, and to follow that format without any extra text. Each of the three 
+completions should be collected into a list so the caller receives 
+candidates[0], candidates[1] and candidates[2] as separate strings in 
+THOUGHT / ANSWER format.

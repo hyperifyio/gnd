@@ -1,0 +1,9 @@
+Create a Gendo subroutine called refine_answer that takes two string 
+parameters, candidate and critique, and returns a revised candidate. If the 
+critique text equals No issues found. the subroutine should bypass any LLM call 
+and return the original candidate unchanged. Otherwise call prompt with model 
+gpt-4, temperature 0.5 and include both the original candidate and the critique 
+in the prompt. Instruct the LLM to rewrite the answer fixing every listed issue 
+while preserving as much correct reasoning as possible, and to output the 
+result in the exact THOUGHT / ANSWER template. The revised text becomes the 
+return value.

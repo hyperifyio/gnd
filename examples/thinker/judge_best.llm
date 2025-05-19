@@ -1,0 +1,9 @@
+Create a Gendo subroutine named judge_best that receives an array called 
+candidates containing three candidate strings and returns the best candidate’s 
+ANSWER text. Call prompt with model gpt-4 and temperature 0.0, giving the LLM 
+the three numbered candidates and asking it to choose which is most correct and 
+logically sound. Instruct it to respond in two lines where the first begins 
+with BEST_ANSWER: followed by the full THOUGHT / ANSWER content of the chosen 
+candidate and the second begins with REASON: followed by a brief justification. 
+After the prompt call extract only the text after BEST_ANSWER: and return that 
+as the final answer.
