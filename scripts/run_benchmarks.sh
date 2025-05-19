@@ -56,3 +56,17 @@ cd "$(dirname "$0")/.." && go test -bench=. -benchmem "$BENCH_DIR" | while read 
 done
 
 echo -e "\n${GREEN}Performance testing complete!${NC}" 
+
+# Run memory benchmarks
+echo -e "\033[1;33mRunning memory benchmarks...\033[0m"
+go test -bench=. -benchmem ./pkg/bitnet/tensor/...
+
+# Run CPU benchmarks
+echo -e "\033[1;33mRunning CPU benchmarks...\033[0m"
+go test -bench=. ./pkg/bitnet/tensor/...
+
+# Run performance checks
+echo -e "\033[1;33mRunning performance checks...\033[0m"
+go test -bench=. -benchmem ./pkg/bitnet/tensor/...
+
+echo -e "\033[0;32mPerformance testing complete!\033[0m" 
