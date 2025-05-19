@@ -11,3 +11,6 @@ tensor.test
 profiles/
 *.prof
 tensor.test
+
+# BitNet model files
+assets/bitnet/models/
