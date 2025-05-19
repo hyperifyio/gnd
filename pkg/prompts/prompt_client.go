@@ -60,7 +60,7 @@ func DefaultConfig() PromptConfig {
 		Model:       "bitnet",
 		Temperature: 0.7,
 		MaxTokens:   1000,
-		Timeout:     30 * time.Second,
+		Timeout:     120 * time.Second,
 	}
 }
 
