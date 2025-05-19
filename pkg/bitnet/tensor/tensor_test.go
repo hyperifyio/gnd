@@ -1,6 +1,7 @@
 package tensor
 
 import (
+	"fmt"
 	"math"
 	"testing"
 )
@@ -272,4 +273,169 @@ func floatEquals(a, b float32) bool {
 func TestTensor_InterfaceCompliance(t *testing.T) {
 	var _ TensorType = &Tensor{}
 	var _ ParallelProcessor = &Tensor{}
+}
+
+// BenchmarkNewTensor tests tensor creation performance
+func BenchmarkNewTensor(b *testing.B) {
+	shapes := [][]int{
+		{100},            // 1D
+		{100, 100},       // 2D
+		{50, 50, 50},     // 3D
+		{20, 20, 20, 20}, // 4D
+	}
+
+	for _, shape := range shapes {
+		b.Run(fmt.Sprintf("shape_%v", shape), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				NewTensor(shape...)
+			}
+		})
+	}
+}
+
+// BenchmarkTensor_Get tests value retrieval performance
+func BenchmarkTensor_Get(b *testing.B) {
+	tensor := NewTensor(100, 100)
+	// Initialize with test values
+	for i := 0; i < 100; i++ {
+		for j := 0; j < 100; j++ {
+			tensor.Set(float32(i*100+j), i, j)
+		}
+	}
+
+	b.Run("2D_access", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			tensor.Get(50, 50)
+		}
+	})
+
+	b.Run("2D_access_sequential", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			for j := 0; j < 100; j++ {
+				tensor.Get(i%100, j)
+			}
+		}
+	})
+}
+
+// BenchmarkTensor_Set tests value assignment performance
+func BenchmarkTensor_Set(b *testing.B) {
+	tensor := NewTensor(100, 100)
+
+	b.Run("2D_assignment", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			tensor.Set(float32(i), 50, 50)
+		}
+	})
+
+	b.Run("2D_assignment_sequential", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			for j := 0; j < 100; j++ {
+				tensor.Set(float32(i*100+j), i%100, j)
+			}
+		}
+	})
+}
+
+// BenchmarkTensor_ParallelForEach tests parallel processing performance
+func BenchmarkTensor_ParallelForEach(b *testing.B) {
+	sizes := []struct {
+		name  string
+		shape []int
+	}{
+		{"100x100", []int{100, 100}},
+		{"1000x1000", []int{1000, 1000}},
+		{"100x100x100", []int{100, 100, 100}},
+	}
+
+	for _, size := range sizes {
+		tensor := NewTensor(size.shape...)
+		// Initialize with test values
+		for i := 0; i < size.shape[0]; i++ {
+			for j := 0; j < size.shape[1]; j++ {
+				tensor.Set(float32(i*size.shape[1]+j), i, j)
+			}
+		}
+
+		b.Run(size.name, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				tensor.ParallelForEach(func(value float32, indices ...int) float32 {
+					return value * 2
+				})
+			}
+		})
+	}
+}
+
+// BenchmarkTensor_Data tests data array access performance
+func BenchmarkTensor_Data(b *testing.B) {
+	tensor := NewTensor(100, 100)
+	// Initialize with test values
+	for i := 0; i < 100; i++ {
+		for j := 0; j < 100; j++ {
+			tensor.Set(float32(i*100+j), i, j)
+		}
+	}
+
+	b.Run("data_access", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_ = tensor.Data()
+		}
+	})
+
+	b.Run("data_iteration", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			data := tensor.Data()
+			sum := float32(0)
+			for _, v := range data {
+				sum += v
+			}
+		}
+	})
+}
+
+// BenchmarkTensor_Shape tests shape retrieval performance
+func BenchmarkTensor_Shape(b *testing.B) {
+	shapes := [][]int{
+		{100},            // 1D
+		{100, 100},       // 2D
+		{50, 50, 50},     // 3D
+		{20, 20, 20, 20}, // 4D
+	}
+
+	for _, shape := range shapes {
+		tensor := NewTensor(shape...)
+		b.Run(fmt.Sprintf("shape_%v", shape), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				_ = tensor.Shape()
+			}
+		})
+	}
+}
+
+// BenchmarkTensor_Operations tests common tensor operations
+func BenchmarkTensor_Operations(b *testing.B) {
+	tensor := NewTensor(100, 100)
+	// Initialize with test values
+	for i := 0; i < 100; i++ {
+		for j := 0; j < 100; j++ {
+			tensor.Set(float32(i*100+j), i, j)
+		}
+	}
+
+	b.Run("get_set_cycle", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			val := tensor.Get(50, 50)
+			tensor.Set(val+1, 50, 50)
+		}
+	})
+
+	b.Run("sequential_access", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			for j := 0; j < 100; j++ {
+				val := tensor.Get(i%100, j)
+				tensor.Set(val+1, i%100, j)
+			}
+		}
+	})
 }
