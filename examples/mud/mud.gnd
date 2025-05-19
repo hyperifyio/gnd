@@ -1,0 +1,26 @@
+# Setup the character's name (could be user-provided in a real game)
+$name        let "Arin"
+
+# Generate a backstory for the character using the LLM
+$backstoryPrompt concat "You are a Dungeon Master creating a backstory for a hero named " $name ". The backstory should be immersive and personal, written in second person as the hero. " "Include hints that $name has latent magical abilities that even $name is not fully aware of."
+$backstory   prompt $backstoryPrompt    # LLM returns the hero's backstory
+println $backstory
+
+# Describe the starting location (a village) and foreshadow an event
+$scenePrompt concat "Now continue as Dungeon Master. " "$name has arrived in $name's home village at dawn. " "Describe the quiet village and its surroundings in second person, " "hinting that something unusual or dangerous is stirring in the nearby forest."
+$scene       prompt $scenePrompt       # LLM returns the scene description
+println $scene
+
+# Prompt the player for an action (in a real game, you'd wait for user input here)
+println "What do you do?"    # Dungeon Master asks for the player's command
+
+# Simulate a player's natural language command (in practice this would come from the user)
+$playerAction let "venture into the forest to investigate the strange happenings"
+println ">> " $playerAction  # Echo the player's input (optional, for display)
+
+# Use the LLM to narrate the outcome of the player's action
+$actionPrompt concat "Hero Backstory:\n" $backstory "\n\n" "Current Scene:\n" $scene "\n\n" "Player Action: " $playerAction "\n\n" "As the Dungeon Master, narrate what happens next in second person. " "The hero enters the forest. Introduce a sense of danger (e.g., a creature or threat appears) and hint at $name's hidden magic awakening in response."
+$response    prompt $actionPrompt      # LLM returns the outcome narrative
+println $response
+
+# End of game (could loop or continue for a full game)
