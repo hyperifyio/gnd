@@ -1,0 +1,142 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# BitNet Project Overview
+
+## Project Structure
+- Main package: `pkg/bitnet/`
+- Tensor implementation: `pkg/bitnet/tensor/`
+- Examples: `examples/`
+- Documentation: `docs/`
+
+## Development Guidelines
+1. **Code Organization**
+   - Follow Go standard project layout
+   - Keep packages focused and cohesive
+   - Use clear, descriptive names
+
+2. **Documentation**
+   - Document all public APIs
+   - Include examples for complex operations
+   - Keep documentation up to date
+
+3. **Testing**
+   - Follow TDD practices
+   - Write comprehensive unit tests
+   - Include benchmarks for performance-critical code
+
+## Related Rules
+- [bitnet-environment.mdc](mdc:.cursor/rules/bitnet-environment.mdc): Development environment and Mac-specific considerations
+- [bitnet-tdd.mdc](mdc:.cursor/rules/bitnet-tdd.mdc): Test-Driven Development practices
+- [bitnet-performance.mdc](mdc:.cursor/rules/bitnet-performance.mdc): Performance requirements and benchmarks
+- [bitnet-development.mdc](mdc:.cursor/rules/bitnet-development.mdc): Development workflow and standards
+- [bitnet-tensor.mdc](mdc:.cursor/rules/bitnet-tensor.mdc): Tensor implementation guidelines
+- [bitnet-interfaces.mdc](mdc:.cursor/rules/bitnet-interfaces.mdc): Interface design and implementation
+- [bitnet-testing.mdc](mdc:.cursor/rules/bitnet-testing.mdc): Testing standards and practices
+- [bitnet-benchmarks.mdc](mdc:.cursor/rules/bitnet-benchmarks.mdc): Benchmarking guidelines
+- [bitnet-branching.mdc](mdc:.cursor/rules/bitnet-branching.mdc): Git branching strategy
+- [bitnet-pr-updates.mdc](mdc:.cursor/rules/bitnet-pr-updates.mdc): PR update process
+- [bitnet-pr-reviews.mdc](mdc:.cursor/rules/bitnet-pr-reviews.mdc): PR review guidelines
+- [bitnet-issues.mdc](mdc:.cursor/rules/bitnet-issues.mdc): Issue tracking and management
+- [bitnet-feature.mdc](mdc:.cursor/rules/bitnet-feature.mdc): Feature development process
+
+## Project Goal
+
+This project implements a highly efficient, pure-Go inference engine for Microsoft's BitNet b1.58-2B-4T model, optimized for CPU environments with future GPU acceleration support. The implementation focuses on:
+
+1. Core Capabilities:
+   - 4096-token context window
+   - Text generation and completion
+   - Binary-weight quantization
+   - Multi-core CPU utilization
+
+2. Technical Excellence:
+   - Pure Go implementation
+   - Native bitwise operations
+   - Goroutine-based concurrency
+   - Memory-efficient processing
+
+3. Deployment Flexibility:
+   - Edge device compatibility
+   - Cloud deployment ready
+   - Lightweight footprint
+   - Scalable architecture
+
+## Key Resources
+
+1. Model:
+   - [BitNet-b1.58-2B-4T](https://huggingface.co/microsoft/BitNet-b1.58-2B-4T) on Hugging Face
+   - 1.58-bit quantized weights
+   - 2B parameter model
+   - 4T token training
+
+2. Research:
+   - [Research Paper](https://arxiv.org/abs/2310.11453)
+   - Implementation details
+   - Performance characteristics
+   - Architecture specifications
+
+3. Development:
+   - Main branch: [`bitnet`](https://github.com/hyperifyio/gnd/tree/bitnet)
+   - Parent issue: [Issue #170](https://github.com/hyperifyio/gnd/issues/170)
+   - Implementation roadmap: Issues #171-192
+
+## Technical Requirements
+
+1. Pure Go Implementation:
+   - No CGo or external C/C++ dependencies
+   - Native bitwise operations
+   - Memory-efficient processing
+   - Future GPU support preparation
+
+2. Performance Targets:
+   - Multi-core CPU utilization
+   - Low memory footprint
+   - High inference throughput
+   - Scalable processing
+
+3. Model Specifications:
+   - 4096-token context window
+   - 1.58-bit quantization
+   - 2B parameters
+   - 4T training tokens
+
+## Implementation Strategy
+
+1. Sequential Development:
+   - Follow issues #171-192 in order
+   - Each issue represents a specific component
+   - Build upon previous implementations
+   - Maintain performance focus
+
+2. Code Organization:
+   - Package structure in [pkg/bitnet/](mdc:pkg/bitnet/)
+   - Core components in [internal/](mdc:pkg/bitnet/internal/)
+   - Public API in root package
+
+3. Development Process:
+   - Follow branching strategy in [bitnet-branching.mdc](mdc:.cursor/rules/bitnet-branching.mdc)
+   - Adhere to PR process in [bitnet-development.mdc](mdc:.cursor/rules/bitnet-development.mdc)
+   - Track progress in [bitnet-issues.mdc](mdc:.cursor/rules/bitnet-issues.mdc)
+
+## Key Features
+
+1. Model Architecture:
+   - Pure Go implementation
+   - Binary-weight quantization
+   - Multi-head attention
+   - Layer normalization
+
+2. Performance Optimizations:
+   - Goroutine-based parallelism
+   - Bitwise operation optimizations
+   - Memory-efficient processing
+   - Multi-core utilization
+
+3. Inference Capabilities:
+   - 4096-token context
+   - Text generation
+   - Completion tasks
+   - Efficient token processing

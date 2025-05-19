@@ -1,0 +1,93 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# BitNet Development Environment and Best Practices
+
+## Environment
+- Development is performed on macOS (darwin) systems
+- Shell: `/bin/bash`
+- Go version: Latest stable (as of 2024)
+- Architecture: arm64 (Apple Silicon)
+
+## Mac-Specific Considerations
+1. **Port Binding**
+   - Ports 8080 and 8081 are commonly used by macOS services
+   - When running profiling tools, consider using different ports or checking port availability
+   - Example: `go tool pprof -http=:8082` instead of default ports
+
+2. **Performance Testing**
+   - Use `go test -bench=. -benchmem` for benchmarking
+   - Profile files are generated in the `profiles/` directory
+   - CPU and memory profiles are in `.prof` format
+   - These files should be git-ignored
+
+3. **File System**
+   - Case-sensitive by default
+   - Path separators use forward slashes
+   - Hidden files start with a dot (.)
+
+## Development Workflow
+1. **Code Organization**
+   - Main tensor implementation: [pkg/bitnet/tensor/tensor.go](mdc:pkg/bitnet/tensor/tensor.go)
+   - Tests: [pkg/bitnet/tensor/tensor_test.go](mdc:pkg/bitnet/tensor/tensor_test.go)
+   - Benchmark script: [scripts/run_benchmarks.sh](mdc:scripts/run_benchmarks.sh)
+
+2. **Testing Standards**
+   - All code must have unit tests
+   - Benchmarks are required for performance-critical code
+   - Use table-driven tests for multiple test cases
+   - Follow TDD practices
+
+3. **Performance Requirements**
+   - Single operations should complete in < 1000 ns/op
+   - Memory allocations should be < 1024 B/op
+   - Allocation count should be < 10 allocs/op
+   - Parallel operations should scale with tensor size
+
+4. **Git Workflow**
+   - Use semantic commit messages
+   - Keep commits small and focused
+   - Document changes in commit messages
+   - Push changes to feature branches
+
+## Benchmark Results (M2 Max)
+1. **Tensor Creation**
+   - 1D (100): ~190 ns/op, 904 B/op, 2 allocs/op
+   - 2D (100x100): ~6800 ns/op, 81936 B/op, 2 allocs/op
+   - 3D (50x50x50): ~83000 ns/op, 1007643 B/op, 2 allocs/op
+   - 4D (20x20x20x20): ~39000 ns/op, 1286177 B/op, 2 allocs/op
+
+2. **Operations**
+   - Get (2D access): ~2.2 ns/op, 0 B/op, 0 allocs/op
+   - Set (2D access): ~2.5 ns/op, 0 B/op, 0 allocs/op
+   - ParallelForEach (100x100): ~1.4 ms/op, 1403 B/op, 17 allocs/op
+   - Data access: ~0.3 ns/op, 0 B/op, 0 allocs/op
+
+## Best Practices
+1. **Type Safety**
+   - Use `float64` consistently for tensor values
+   - Avoid type conversions in hot paths
+   - Document type requirements in interfaces
+
+2. **Memory Management**
+   - Minimize allocations in hot paths
+   - Use sync.Pool for frequently allocated objects
+   - Profile memory usage regularly
+
+3. **Automation**
+   - Use automated benchmark scripts
+   - Avoid interactive prompts in scripts
+   - Generate and analyze profiles automatically
+
+4. **Documentation**
+   - Document performance characteristics
+   - Include benchmark results in documentation
+   - Maintain clear interface documentation
+
+## Related Rules
+- [bitnet-tdd.mdc](mdc:.cursor/rules/bitnet-tdd.mdc): TDD and unit testing practices
+- [bitnet-benchmarks.mdc](mdc:.cursor/rules/bitnet-benchmarks.mdc): Benchmark testing standards
+- [bitnet-performance.mdc](mdc:.cursor/rules/bitnet-performance.mdc): Performance thresholds
+- [bitnet-pr-updates.mdc](mdc:.cursor/rules/bitnet-pr-updates.mdc): PR update guidelines

@@ -1,0 +1,80 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# BitNet Development Process
+
+## Branching Strategy
+
+1. Main development branch: `bitnet`
+   - All feature branches should be created from and merged into this branch
+   - This branch serves as the integration branch for the BitNet implementation
+
+2. Feature Branch Naming:
+   - Format: `feat/bitnet-{issue_number}-{short-description}`
+   - Example: `feat/bitnet-171-project-setup`
+
+## Pull Request Process
+
+1. PR Creation:
+   - Create PRs against the `bitnet` branch
+   - Use conventional commit format in PR titles: `feat(bitnet): description`
+   - Include detailed description of changes
+   - Link related issues in PR description
+
+2. PR States:
+   - Regular PR: Complete implementation ready for review
+   - Draft PR: Work in progress, not ready for review
+
+## Implementation Order
+
+The implementation follows a specific order based on GitHub issues:
+1. Project Setup (171)
+2. Model Weights & Tokenizer (172)
+3. Core Components (173-192)
+
+Each issue should be implemented in its own branch and merged through PRs.
+
+## Code Organization
+
+The BitNet implementation is organized under `pkg/bitnet/`:
+- [pkg/bitnet/internal/config/config.go](mdc:pkg/bitnet/internal/config/config.go): Configuration and constants
+- [pkg/bitnet/internal/math/ops.go](mdc:pkg/bitnet/internal/math/ops.go): Math operations
+- [pkg/bitnet/tensor/tensor.go](mdc:pkg/bitnet/tensor/tensor.go): Tensor operations
+
+## Development Guidelines
+
+1. Pure Go Implementation:
+   - No external C/C++ dependencies
+   - No CGo usage
+   - Focus on Go-native performance optimization
+
+2. Testing:
+   - Each component should have corresponding tests
+   - Benchmark critical operations
+   - Document performance characteristics
+
+3. Documentation:
+   - Keep [pkg/bitnet/README.md](mdc:pkg/bitnet/README.md) updated
+   - Document public APIs
+   - Include usage examples
+
+4. Performance:
+   - Utilize goroutines for parallel processing
+   - Optimize memory usage
+   - Profile critical paths
+
+## Review Process
+
+1. Code Review Requirements:
+   - Implementation matches issue requirements
+   - No external dependencies introduced
+   - Performance considerations addressed
+   - Tests included
+   - Documentation updated
+
+2. Merge Process:
+   - PR must be approved
+   - All checks must pass
+   - Squash and merge to maintain clean history
