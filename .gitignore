@@ -10,3 +10,4 @@ tensor.test
 # Profiles
 profiles/
 *.prof
+tensor.test
