@@ -3,3 +3,63 @@ description:
 globs:
 alwaysApply: false
 ---
+# Tensor Implementation Guidelines
+
+## Core Concepts
+1. **Data Types**
+   - Use `float64` for all tensor values
+   - Avoid type conversions in hot paths
+   - Document type requirements in interfaces
+
+2. **Memory Management**
+   - Minimize allocations in hot paths
+   - Use sync.Pool for frequently allocated objects
+   - Profile memory usage regularly
+
+3. **Performance Requirements**
+   - Single operations: < 1000 ns/op
+   - Memory allocations: < 1024 B/op
+   - Allocation count: < 10 allocs/op
+   - Parallel operations should scale with tensor size
+
+## Implementation Details
+1. **Core Operations**
+   - Get/Set operations should be O(1)
+   - Shape operations should be O(1)
+   - Data access should be O(1)
+   - Parallel operations should scale with cores
+
+2. **Interface Design**
+   - Keep interfaces small and focused
+   - Document all public methods
+   - Include examples for complex operations
+   - Verify interface compliance with tests
+
+3. **Error Handling**
+   - Use panic for out-of-bounds access
+   - Document error conditions
+   - Include error cases in tests
+
+## Testing Requirements
+1. **Unit Tests**
+   - Test all public methods
+   - Include edge cases
+   - Test error conditions
+   - Verify interface compliance
+
+2. **Benchmarks**
+   - Benchmark all operations
+   - Include memory profiling
+   - Test different tensor sizes
+   - Verify performance requirements
+
+## Related Files
+- [pkg/bitnet/tensor/tensor.go](mdc:pkg/bitnet/tensor/tensor.go): Main implementation
+- [pkg/bitnet/tensor/tensor_test.go](mdc:pkg/bitnet/tensor/tensor_test.go): Tests and benchmarks
+- [scripts/run_benchmarks.sh](mdc:scripts/run_benchmarks.sh): Benchmark automation
+
+## Related Rules
+- [bitnet-performance.mdc](mdc:.cursor/rules/bitnet-performance.mdc): Performance requirements
+- [bitnet-benchmarks.mdc](mdc:.cursor/rules/bitnet-benchmarks.mdc): Benchmarking guidelines
+- [bitnet-testing.mdc](mdc:.cursor/rules/bitnet-testing.mdc): Testing standards
+- [bitnet-interfaces.mdc](mdc:.cursor/rules/bitnet-interfaces.mdc): Interface design
