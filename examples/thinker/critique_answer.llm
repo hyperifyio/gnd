@@ -1,0 +1,8 @@
+Create a Gendo subroutine called critique_answer that accepts one string 
+parameter named candidate and returns a critique string. Inside use prompt with 
+model gpt-4 and temperature 0.0 asking the LLM to act as a strict logician who 
+inspects the supplied candidate for logical, factual or reasoning errors. If 
+the candidate is flawless the LLM must reply exactly with No issues found. 
+Otherwise it must list the problems it detects in plain text sentences. The 
+subroutine simply outputs whatever the LLM returns so later stages can decide 
+whether refinement is required.

@@ -1,0 +1,9 @@
+Create a top-level Gendo routine called reasoning_loop that accepts the user’s 
+question string and produces a final answer string. The routine must call 
+generate_candidates to obtain an array of candidates, map critique_answer 
+across that array to gather critiques, iterate through the indexes 0 to 2 and 
+for each position either keep the original candidate if its critique is No 
+issues found. or call refine_answer to replace it with a corrected version, 
+collect the resulting candidates into a new array and pass that array to 
+judge_best, then output the string returned by judge_best. The routine ends by 
+printing the final answer so users see only the selected, vetted ANSWER.
