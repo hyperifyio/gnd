@@ -1,0 +1,84 @@
+[1;33mRunning performance tests...[0m
+
+[1;33mRunning memory benchmarks...[0m
+goos: darwin
+goarch: arm64
+pkg: github.com/hyperifyio/gnd/pkg/bitnet/tensor
+cpu: Apple M2 Max (Virtual)
+BenchmarkNewTensor/shape_[100]-10     	 6467433	       190.7 ns/op	     904 B/op	       2 allocs/op
+BenchmarkNewTensor/shape_[100_100]-10 	  163849	      6981 ns/op	   81936 B/op	       2 allocs/op
+BenchmarkNewTensor/shape_[50_50_50]-10         	   15756	     76104 ns/op	 1007643 B/op	       2 allocs/op
+BenchmarkNewTensor/shape_[20_20_20_20]-10      	   13806	     75522 ns/op	 1286179 B/op	       2 allocs/op
+BenchmarkTensor_Get/2D_access-10               	552604812	         2.172 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTensor_Get/2D_access_sequential-10    	 4714297	       254.3 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTensor_Set/2D_assignment-10           	482788262	         2.476 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTensor_Set/2D_assignment_sequential-10         	 4630510	       266.4 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTensor_ParallelForEach/100x100-10              	     847	   1441463 ns/op	    1339 B/op	      17 allocs/op
+BenchmarkTensor_ParallelForEach/1000x1000-10            	       8	 143581578 ns/op	    1492 B/op	      19 allocs/op
+BenchmarkTensor_ParallelForEach/100x100#01-10           	       7	 146656101 ns/op	    2186 B/op	      19 allocs/op
+BenchmarkTensor_Data/data_access-10                     	1000000000	         0.3088 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTensor_Data/data_iteration-10                  	  384110	      3107 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTensor_Shape/shape_[100]-10                    	1000000000	         0.3091 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTensor_Shape/shape_[100_100]-10                	1000000000	         0.3092 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTensor_Shape/shape_[50_50_50]-10               	1000000000	         0.3082 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTensor_Shape/shape_[20_20_20_20]-10            	1000000000	         0.3093 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTensor_Operations/get_set_cycle-10             	255969646	         4.685 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTensor_Operations/sequential_access-10         	   26671	     44833 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/hyperifyio/gnd/pkg/bitnet/tensor	22.512s
+
+[1;33mRunning CPU benchmarks...[0m
+goos: darwin
+goarch: arm64
+pkg: github.com/hyperifyio/gnd/pkg/bitnet/tensor
+cpu: Apple M2 Max (Virtual)
+BenchmarkNewTensor/shape_[100]-10     	 5518369	       219.0 ns/op
+BenchmarkNewTensor/shape_[100_100]-10 	  172950	      7119 ns/op
+BenchmarkNewTensor/shape_[50_50_50]-10         	   11439	     97986 ns/op
+BenchmarkNewTensor/shape_[20_20_20_20]-10      	   29407	     35219 ns/op
+BenchmarkTensor_Get/2D_access-10               	552798600	         2.175 ns/op
+BenchmarkTensor_Get/2D_access_sequential-10    	 4717388	       255.0 ns/op
+BenchmarkTensor_Set/2D_assignment-10           	482335549	         2.488 ns/op
+BenchmarkTensor_Set/2D_assignment_sequential-10         	 4615381	       259.2 ns/op
+BenchmarkTensor_ParallelForEach/100x100-10              	     847	   1431502 ns/op
+BenchmarkTensor_ParallelForEach/1000x1000-10            	       8	 142992594 ns/op
+BenchmarkTensor_ParallelForEach/100x100#01-10           	       7	 145289256 ns/op
+BenchmarkTensor_Data/data_access-10                     	1000000000	         0.3127 ns/op
+BenchmarkTensor_Data/data_iteration-10                  	  381548	      3112 ns/op
+BenchmarkTensor_Shape/shape_[100]-10                    	1000000000	         0.3101 ns/op
+BenchmarkTensor_Shape/shape_[100_100]-10                	1000000000	         0.3109 ns/op
+BenchmarkTensor_Shape/shape_[50_50_50]-10               	1000000000	         0.3093 ns/op
+BenchmarkTensor_Shape/shape_[20_20_20_20]-10            	1000000000	         0.3097 ns/op
+BenchmarkTensor_Operations/get_set_cycle-10             	257391238	         4.670 ns/op
+BenchmarkTensor_Operations/sequential_access-10         	   26739	     44689 ns/op
+PASS
+ok  	github.com/hyperifyio/gnd/pkg/bitnet/tensor	23.329s
+
+[1;33mRunning performance checks...[0m
+goos: darwin
+goarch: arm64
+pkg: github.com/hyperifyio/gnd/pkg/bitnet/tensor
+cpu: Apple M2 Max (Virtual)
+[0;32mBenchmarkNewTensor/shape_[100]-10     	 5988250	       191.9 ns/op	     904 B/op	       2 allocs/op[0m
+[0;32mBenchmarkNewTensor/shape_[100_100]-10 	  174758	      7143 ns/op	   81936 B/op	       2 allocs/op[0m
+[0;32mBenchmarkNewTensor/shape_[50_50_50]-10         	   15958	     77784 ns/op	 1007643 B/op	       2 allocs/op[0m
+[0;32mBenchmarkNewTensor/shape_[20_20_20_20]-10      	   13771	     81600 ns/op	 1286180 B/op	       2 allocs/op[0m
+[0;32mBenchmarkTensor_Get/2D_access-10               	552073677	         2.179 ns/op	       0 B/op	       0 allocs/op[0m
+[0;32mBenchmarkTensor_Get/2D_access_sequential-10    	 4752694	       253.0 ns/op	       0 B/op	       0 allocs/op[0m
+[0;32mBenchmarkTensor_Set/2D_assignment-10           	484958866	         2.470 ns/op	       0 B/op	       0 allocs/op[0m
+[0;32mBenchmarkTensor_Set/2D_assignment_sequential-10         	 4652288	       258.1 ns/op	       0 B/op	       0 allocs/op[0m
+[0;32mBenchmarkTensor_ParallelForEach/100x100-10              	     836	   1429137 ns/op	    1359 B/op	      17 allocs/op[0m
+[0;32mBenchmarkTensor_ParallelForEach/1000x1000-10            	       8	 143916156 ns/op	    1264 B/op	      17 allocs/op[0m
+[0;32mBenchmarkTensor_ParallelForEach/100x100#01-10           	       7	 147701607 ns/op	    1272 B/op	      17 allocs/op[0m
+[0;32mBenchmarkTensor_Data/data_access-10                     	1000000000	         0.3094 ns/op	       0 B/op	       0 allocs/op[0m
+[0;32mBenchmarkTensor_Data/data_iteration-10                  	  384399	      3120 ns/op	       0 B/op	       0 allocs/op[0m
+[0;32mBenchmarkTensor_Shape/shape_[100]-10                    	1000000000	         0.3096 ns/op	       0 B/op	       0 allocs/op[0m
+[0;32mBenchmarkTensor_Shape/shape_[100_100]-10                	1000000000	         0.3106 ns/op	       0 B/op	       0 allocs/op[0m
+[0;32mBenchmarkTensor_Shape/shape_[50_50_50]-10               	1000000000	         0.3117 ns/op	       0 B/op	       0 allocs/op[0m
+[0;32mBenchmarkTensor_Shape/shape_[20_20_20_20]-10            	1000000000	         0.3112 ns/op	       0 B/op	       0 allocs/op[0m
+[0;32mBenchmarkTensor_Operations/get_set_cycle-10             	257600834	         4.654 ns/op	       0 B/op	       0 allocs/op[0m
+[0;32mBenchmarkTensor_Operations/sequential_access-10         	   27244	     44113 ns/op	       0 B/op	       0 allocs/op[0m
+PASS
+ok  	github.com/hyperifyio/gnd/pkg/bitnet/tensor	23.814s
+
+[0;32mPerformance testing complete![0m
