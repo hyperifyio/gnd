@@ -6,9 +6,9 @@ Gendo is a locally executed, AI-assisted programming system designed for offline
 
 The Gendo toolchain consists of three main executables:
 
-- **`gndc`**: The compiler front-end that processes natural language headers and generates implementation files
-- **`gnd`**: The runtime interpreter for executing `.gnd` scripts
-- **`gndtest`**: The test runner for evaluating test cases
+- **`gnd`**: The runtime interpreter for executing `.gnd` scripts ([Roadmap](https://github.com/hyperifyio/gnd/issues/31))
+- **`gndc`**: The compiler front-end that processes natural language headers and generates implementation files ([Roadmap](https://github.com/hyperifyio/gnd/issues/24))
+- **`gndtest`**: The test runner for evaluating test cases ([Roadmap](https://github.com/hyperifyio/gnd/issues/23))
 
 ## Language Documentation
 
