@@ -1,0 +1,10 @@
+$args let
+debug "Our input is:" $args
+$persona let "You are a helpful assistant.\n---\n"
+$instruction let "\n---\nIs the previous input acceptable? Reply 'true' or 'false'."
+$fullPrompt concat $persona $args $instruction
+prompt $fullPrompt
+normalize
+$isValid let
+$validationMessage select $isValid "Input is acceptable." "Input is not acceptable."
+let $validationMessage
