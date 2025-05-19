@@ -1,47 +1,44 @@
 package tensor
 
 import (
+	"runtime"
 	"sync"
 )
 
-// TensorType defines the core operations for a tensor
+// TensorType defines the core tensor operations
 type TensorType interface {
-	// Get returns the value at the specified indices
-	Get(indices ...int) float32
-	// Set sets the value at the specified indices
-	Set(value float32, indices ...int)
-	// Shape returns the dimensions of the tensor
+	Get(indices ...int) float64
+	Set(value float64, indices ...int)
 	Shape() []int
-	// Data returns the underlying data array
-	Data() []float32
+	Data() []float64
 }
 
 // ParallelProcessor defines operations that can be executed in parallel
 type ParallelProcessor interface {
-	// ParallelForEach applies the given function to each element in parallel
-	ParallelForEach(fn func(value float32, indices ...int) float32)
+	ParallelForEach(fn func(indices []int, value float64))
 }
 
 // Tensor represents a multi-dimensional array
 type Tensor struct {
-	data   []float32
+	data   []float64
 	shape  []int
 	stride []int
 }
 
-// Verify interface implementation
-var (
-	_ TensorType        = &Tensor{}
-	_ ParallelProcessor = &Tensor{}
-)
+// workerPool manages a pool of worker goroutines
+var workerPool = sync.Pool{
+	New: func() interface{} {
+		return make(chan struct{}, 1)
+	},
+}
 
 // NewTensor creates a new tensor with the given shape
 func NewTensor(shape ...int) *Tensor {
 	if len(shape) == 0 {
-		panic("tensor must have at least one dimension")
+		return nil
 	}
 
-	// Calculate total size and strides
+	// Calculate total size and stride
 	size := 1
 	stride := make([]int, len(shape))
 	for i := len(shape) - 1; i >= 0; i-- {
@@ -49,69 +46,127 @@ func NewTensor(shape ...int) *Tensor {
 		size *= shape[i]
 	}
 
+	// Create tensor
 	return &Tensor{
-		data:   make([]float32, size),
+		data:   make([]float64, size),
 		shape:  shape,
 		stride: stride,
 	}
 }
 
-// Get returns the value at the specified indices
-func (t *Tensor) Get(indices ...int) float32 {
-	idx := 0
-	for i, pos := range indices {
-		idx += pos * t.stride[i]
+// Get returns the value at the given indices
+func (t *Tensor) Get(indices ...int) float64 {
+	if len(indices) != len(t.shape) {
+		panic("invalid number of indices")
 	}
+
+	// Calculate linear index
+	idx := 0
+	for i, v := range indices {
+		if v < 0 || v >= t.shape[i] {
+			panic("index out of range")
+		}
+		idx += v * t.stride[i]
+	}
+
 	return t.data[idx]
 }
 
-// Set sets the value at the specified indices
-func (t *Tensor) Set(value float32, indices ...int) {
-	idx := 0
-	for i, pos := range indices {
-		idx += pos * t.stride[i]
+// Set sets the value at the given indices
+func (t *Tensor) Set(value float64, indices ...int) {
+	if len(indices) != len(t.shape) {
+		panic("invalid number of indices")
 	}
+
+	// Calculate linear index
+	idx := 0
+	for i, v := range indices {
+		if v < 0 || v >= t.shape[i] {
+			panic("index out of range")
+		}
+		idx += v * t.stride[i]
+	}
+
 	t.data[idx] = value
 }
 
-// Shape returns the dimensions of the tensor
+// Shape returns the shape of the tensor
 func (t *Tensor) Shape() []int {
 	return t.shape
 }
 
 // Data returns the underlying data array
-func (t *Tensor) Data() []float32 {
+func (t *Tensor) Data() []float64 {
 	return t.data
 }
 
 // ParallelForEach applies the given function to each element in parallel
-func (t *Tensor) ParallelForEach(fn func(value float32, indices ...int) float32) {
+func (t *Tensor) ParallelForEach(fn func(indices []int, value float64)) {
+	// Get number of CPU cores
+	numCPU := runtime.NumCPU()
+	if numCPU < 2 {
+		// Fall back to sequential processing for single CPU
+		t.forEach(fn)
+		return
+	}
+
+	// Create work channels
+	workChan := make(chan []int, numCPU*2)
+	doneChan := make(chan struct{}, numCPU)
+
+	// Start worker goroutines
 	var wg sync.WaitGroup
-	chunkSize := len(t.data) / 4 // Divide work into 4 chunks
-	if chunkSize == 0 {
-		chunkSize = 1
-	}
-
-	for i := 0; i < len(t.data); i += chunkSize {
+	for i := 0; i < numCPU; i++ {
 		wg.Add(1)
-		go func(start int) {
+		go func() {
 			defer wg.Done()
-			end := start + chunkSize
-			if end > len(t.data) {
-				end = len(t.data)
+			for indices := range workChan {
+				fn(indices, t.Get(indices...))
 			}
-
-			for j := start; j < end; j++ {
-				// Convert linear index to multi-dimensional indices
-				indices := make([]int, len(t.shape))
-				remaining := j
-				for k := len(t.shape) - 1; k >= 0; k-- {
-					indices[k] = remaining / t.stride[k]
-					remaining %= t.stride[k]
-				}
-				t.data[j] = fn(t.data[j], indices...)
-			}
-		}(i)
+			doneChan <- struct{}{}
+		}()
 	}
-	wg.Wait()
+
+	// Generate work
+	go func() {
+		t.forEach(func(indices []int, _ float64) {
+			workChan <- indices
+		})
+		close(workChan)
+	}()
+
+	// Wait for completion
+	go func() {
+		wg.Wait()
+		close(doneChan)
+	}()
+
+	// Wait for all workers to finish
+	for range doneChan {
+	}
 }
+
+// forEach applies the given function to each element sequentially
+func (t *Tensor) forEach(fn func(indices []int, value float64)) {
+	indices := make([]int, len(t.shape))
+	t.forEachRecursive(0, indices, fn)
+}
+
+// forEachRecursive recursively traverses the tensor
+func (t *Tensor) forEachRecursive(dim int, indices []int, fn func(indices []int, value float64)) {
+	if dim == len(t.shape) {
+		fn(indices, t.Get(indices...))
+		return
+	}
+
+	for i := 0; i < t.shape[dim]; i++ {
+		indices[dim] = i
+		t.forEachRecursive(dim+1, indices, fn)
+	}
+}
+
+// Verify interface implementation
+var (
+	_ TensorType        = (*Tensor)(nil)
+	_ ParallelProcessor = (*Tensor)(nil)
+)
