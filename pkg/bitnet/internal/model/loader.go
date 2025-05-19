@@ -12,8 +12,22 @@ type ModelLoader struct {
 
 // NewModelLoader creates a new ModelLoader instance.
 func NewModelLoader() *ModelLoader {
+	// Try to find the model file in different possible locations
+	possiblePaths := []string{
+		filepath.Join("assets", "bitnet", "models", "BitNet-b1.58-2B-4T", "ggml-model-i2_s.gguf"),
+		filepath.Join("..", "..", "..", "..", "assets", "bitnet", "models", "BitNet-b1.58-2B-4T", "ggml-model-i2_s.gguf"),
+		filepath.Join("..", "..", "..", "assets", "bitnet", "models", "BitNet-b1.58-2B-4T", "ggml-model-i2_s.gguf"),
+	}
+
+	for _, path := range possiblePaths {
+		if _, err := os.Stat(path); err == nil {
+			return &ModelLoader{modelPath: path}
+		}
+	}
+
+	// Default to the first path if none found
 	return &ModelLoader{
-		modelPath: filepath.Join("assets", "bitnet", "models", "BitNet-b1.58-2B-4T", "ggml-model-i2_s.gguf"),
+		modelPath: possiblePaths[0],
 	}
 }
 
@@ -30,4 +44,9 @@ func (l *ModelLoader) GetModelSize() (int64, error) {
 		return 0, err
 	}
 	return info.Size(), nil
+}
+
+// GetModelPath returns the current model file path.
+func (l *ModelLoader) GetModelPath() string {
+	return l.modelPath
 }
