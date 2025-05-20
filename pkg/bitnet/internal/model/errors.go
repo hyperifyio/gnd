@@ -19,4 +19,5 @@ var (
 	ErrUnknownToken      = errors.New("unknown token")
 	ErrUnknownTokenID    = errors.New("unknown token ID")
 	ErrDecodeFailed      = errors.New("failed to decode tokenizer file")
+	ErrSequenceTooLong   = errors.New("token sequence exceeds maximum length")
 )

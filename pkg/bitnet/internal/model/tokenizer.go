@@ -1,9 +1,11 @@
 package model
 
 import (
+	"bufio"
 	"encoding/json"
 	"io/fs"
 	"strings"
+	"unicode/utf8"
 )
 
 // Tokenizer handles loading and using the BitNet tokenizer.
@@ -13,6 +15,7 @@ type Tokenizer struct {
 	Vocab         map[string]int    `json:"vocab"`
 	Merges        map[string]string `json:"merges"`
 	SpecialTokens map[string]int    `json:"special_tokens"`
+	MaxTokens     int               `json:"max_tokens"`
 }
 
 // NewTokenizer creates a new Tokenizer instance.
@@ -28,6 +31,7 @@ func NewTokenizer(filesystem fs.FS, modelPath string) (*Tokenizer, error) {
 	tokenizer := &Tokenizer{
 		fs:        filesystem,
 		modelPath: modelPath,
+		MaxTokens: 4096, // Default max sequence length
 	}
 
 	if err := tokenizer.load(); err != nil {
@@ -37,29 +41,66 @@ func NewTokenizer(filesystem fs.FS, modelPath string) (*Tokenizer, error) {
 	return tokenizer, nil
 }
 
-// load reads and decodes the tokenizer file
+// load reads and decodes the tokenizer files
 func (t *Tokenizer) load() error {
-	file, err := t.fs.Open(t.modelPath)
+	// Load vocabulary
+	vocabFile, err := t.fs.Open(t.modelPath + "/vocab.json")
 	if err != nil {
 		return ErrTokenizerNotFound
 	}
-	defer file.Close()
+	defer vocabFile.Close()
 
-	if err := json.NewDecoder(file).Decode(t); err != nil {
+	if err := json.NewDecoder(vocabFile).Decode(&t.Vocab); err != nil {
+		return ErrDecodeFailed
+	}
+
+	// Load merges
+	mergesFile, err := t.fs.Open(t.modelPath + "/merges.txt")
+	if err != nil {
+		return ErrTokenizerNotFound
+	}
+	defer mergesFile.Close()
+
+	t.Merges = make(map[string]string)
+	scanner := bufio.NewScanner(mergesFile)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.Split(line, " ")
+		if len(parts) != 2 {
+			continue
+		}
+		t.Merges[parts[0]] = parts[1]
+	}
+
+	if err := scanner.Err(); err != nil {
+		return ErrDecodeFailed
+	}
+
+	// Load special tokens
+	specialFile, err := t.fs.Open(t.modelPath + "/special_tokens.json")
+	if err != nil {
+		return ErrTokenizerNotFound
+	}
+	defer specialFile.Close()
+
+	if err := json.NewDecoder(specialFile).Decode(&t.SpecialTokens); err != nil {
 		return ErrDecodeFailed
 	}
 
 	return nil
 }
 
-// Tokenize converts text into token IDs
+// Tokenize converts text into token IDs using BPE
 func (t *Tokenizer) Tokenize(text string) ([]int, error) {
 	if t.Vocab == nil {
 		return nil, ErrVocabNotLoaded
 	}
 
-	// Split text into words
-	words := strings.Fields(text)
+	// Split text into words and handle special tokens
+	words := t.splitText(text)
 	tokens := make([]int, 0, len(words))
 
 	for _, word := range words {
@@ -82,13 +123,104 @@ func (t *Tokenizer) Tokenize(text string) ([]int, error) {
 		}
 	}
 
+	// Check sequence length
+	if len(tokens) > t.MaxTokens {
+		return nil, ErrSequenceTooLong
+	}
+
 	return tokens, nil
+}
+
+// splitText splits text into words and handles special tokens
+func (t *Tokenizer) splitText(text string) []string {
+	var words []string
+	var current strings.Builder
+
+	for i := 0; i < len(text); {
+		r, size := utf8.DecodeRuneInString(text[i:])
+		i += size
+
+		// Handle special tokens
+		if r == '[' {
+			// Check for special token
+			end := strings.Index(text[i:], "]")
+			if end != -1 {
+				token := text[i-1 : i+end+1]
+				if _, ok := t.SpecialTokens[token]; ok {
+					if current.Len() > 0 {
+						words = append(words, current.String())
+						current.Reset()
+					}
+					words = append(words, token)
+					i += end + 1
+					continue
+				}
+			}
+		}
+
+		// Handle whitespace
+		if r == ' ' || r == '\t' || r == '\n' {
+			if current.Len() > 0 {
+				words = append(words, current.String())
+				current.Reset()
+			}
+			continue
+		}
+
+		current.WriteRune(r)
+	}
+
+	if current.Len() > 0 {
+		words = append(words, current.String())
+	}
+
+	return words
 }
 
 // applyBPE applies Byte Pair Encoding to split unknown words
 func (t *Tokenizer) applyBPE(word string) []string {
-	// TODO: Implement BPE algorithm
-	return []string{word}
+	if len(word) == 0 {
+		return nil
+	}
+
+	// Convert word to bytes for BPE
+	bytes := []byte(word)
+	subwords := make([]string, 0, len(bytes))
+
+	// Start with individual bytes
+	for i := 0; i < len(bytes); i++ {
+		subwords = append(subwords, string(bytes[i:i+1]))
+	}
+
+	// Apply merges
+	for {
+		bestScore := 0
+		bestPos := -1
+		bestMerge := ""
+
+		// Find the best merge
+		for i := 0; i < len(subwords)-1; i++ {
+			pair := subwords[i] + subwords[i+1]
+			if merge, ok := t.Merges[pair]; ok {
+				score := len(merge)
+				if score > bestScore {
+					bestScore = score
+					bestPos = i
+					bestMerge = merge
+				}
+			}
+		}
+
+		if bestPos == -1 {
+			break
+		}
+
+		// Apply the best merge
+		subwords[bestPos] = bestMerge
+		subwords = append(subwords[:bestPos+1], subwords[bestPos+2:]...)
+	}
+
+	return subwords
 }
 
 // Detokenize converts token IDs back into text
@@ -113,7 +245,12 @@ func (t *Tokenizer) Detokenize(ids []int) (string, error) {
 		}
 	}
 
-	return strings.Join(tokens, " "), nil
+	// Join tokens and handle special cases
+	text := strings.Join(tokens, "")
+	text = strings.ReplaceAll(text, "▁", " ") // Replace special space token
+	text = strings.TrimSpace(text)
+
+	return text, nil
 }
 
 // GetVocab returns the tokenizer vocabulary.
