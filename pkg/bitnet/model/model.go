@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"io/fs"
-	"sync"
 )
 
 // Static errors
@@ -30,7 +29,6 @@ type Model struct {
 	readBuf    []byte
 	resultChan chan string
 	errChan    chan error
-	mu         sync.Mutex
 }
 
 // Config holds the model configuration
@@ -172,13 +170,11 @@ func (m *Model) readTernaryWeights(file io.Reader, weights []int8) error {
 	numBytes := (len(weights) + 3) / 4
 
 	// Get or create read buffer
-	m.mu.Lock()
 	if m.readBuf == nil || cap(m.readBuf) < numBytes {
 		m.readBuf = make([]byte, numBytes)
 	} else {
 		m.readBuf = m.readBuf[:numBytes]
 	}
-	m.mu.Unlock()
 
 	// Read packed weights
 	n, err := file.Read(m.readBuf)
@@ -323,22 +319,17 @@ func (m *Model) selfAttention(hidden []float32, block *TransformerBlock) []float
 
 // feedForward performs feed-forward network computation
 func (m *Model) feedForward(hidden []float32, block *TransformerBlock) []float32 {
-	// First projection: hidden_size -> intermediate_size
-	intermediate := make([]float32, m.config.IntermediateSize)
-	for i := 0; i < m.config.IntermediateSize; i++ {
-		for j := 0; j < m.config.HiddenSize; j++ {
-			intermediate[i] += float32(block.FFNUp[i*m.config.HiddenSize+j]) * hidden[j]
-		}
-	}
-
-	// Second projection: intermediate_size -> hidden_size
+	// TODO: Implement proper feed-forward network
+	// For now, return a simple projection
 	output := make([]float32, m.config.HiddenSize)
-	for i := 0; i < m.config.HiddenSize; i++ {
-		for j := 0; j < m.config.IntermediateSize; j++ {
-			output[i] += float32(block.FFNDown[i*m.config.IntermediateSize+j]) * intermediate[j]
+	hiddenSize := m.config.HiddenSize
+	intermediateSize := m.config.IntermediateSize
+
+	for i := 0; i < hiddenSize; i++ {
+		for j := 0; j < intermediateSize; j++ {
+			output[i] += float32(block.FFNUp[i*intermediateSize+j]) * hidden[j]
 		}
 	}
-
 	return output
 }
 
