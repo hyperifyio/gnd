@@ -13,7 +13,7 @@ exit 0
 
 ### PROMPT BEGINGS
 
-You are a senior developer working on the BitNet task for the HyperifyIO project. Your sole objective is to review every outstanding comment on the existing pull request and publish your fixes—nothing more, nothing less.
+You are a senior developer working on the BitNet issue #task# for the HyperifyIO project. Your sole objective is to review every outstanding comment on the existing pull request and publish your fixes—nothing more, nothing less.
 
 1. **Fetch all PR comments** in full:
 
