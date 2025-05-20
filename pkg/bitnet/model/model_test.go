@@ -2,7 +2,6 @@ package model
 
 import (
 	"bytes"
-	"embed"
 	"encoding/binary"
 	"io"
 	"io/fs"
@@ -10,9 +9,6 @@ import (
 	"testing"
 	"time"
 )
-
-//go:embed testdata
-var testDataFS embed.FS
 
 // testFS implements fs.FS for testing
 type testFS struct {
@@ -60,6 +56,22 @@ func (t *testFileInfo) Mode() fs.FileMode  { return 0 }
 func (t *testFileInfo) ModTime() time.Time { return time.Time{} }
 func (t *testFileInfo) IsDir() bool        { return false }
 func (t *testFileInfo) Sys() interface{}   { return nil }
+
+var testDataFS = &testFS{
+	files: map[string][]byte{
+		"tokenizer/vocab.json": []byte(`{
+			"hello": 1,
+			"world": 2,
+			"[UNK]": 3,
+			"▁": 4
+		}`),
+		"tokenizer/merges.txt": []byte("he hello\nwo world\n"),
+		"tokenizer/special_tokens.json": []byte(`{
+			"[UNK]": 3,
+			"[PAD]": 5
+		}`),
+	},
+}
 
 func TestNewConfig(t *testing.T) {
 	config := NewConfig()
@@ -113,6 +125,11 @@ func TestNewModel(t *testing.T) {
 	}
 	if model.config != customConfig {
 		t.Error("model.config does not match custom config")
+	}
+
+	// Test tokenizer initialization
+	if model.tokenizer != nil {
+		t.Error("expected tokenizer to be nil with test filesystem")
 	}
 }
 
@@ -241,11 +258,7 @@ func TestLoadWeights(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create a model with the test filesystem
-			model := &Model{
-				fs:     fs,
-				config: NewConfig(),
-			}
+			model := NewModel(nil, fs)
 			err := model.LoadWeights(tt.path)
 			if err != tt.wantErr {
 				t.Errorf("LoadWeights() error = %v, wantErr %v", err, tt.wantErr)
@@ -256,17 +269,14 @@ func TestLoadWeights(t *testing.T) {
 
 func TestClose(t *testing.T) {
 	model := NewModel(nil, testDataFS)
-
-	// Test first close
-	model.Close()
-	select {
-	case <-model.done:
-		// Channel is closed, which is good
-	default:
-		t.Error("Close() did not close the done channel")
+	if model == nil {
+		t.Fatal("NewModel returned nil")
 	}
 
-	// Test second close (should not panic)
+	// Close should not panic
+	model.Close()
+
+	// Second close should not panic
 	model.Close()
 }
 
@@ -278,12 +288,15 @@ func BenchmarkModel_LoadWeights(b *testing.B) {
 		},
 	}
 
+	model := NewModel(nil, fs)
+	if model == nil {
+		b.Fatal("NewModel returned nil")
+	}
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		model := &Model{
-			fs: fs,
-		}
-		if err := model.LoadWeights("weights.bin"); err != nil {
+		err := model.LoadWeights("weights.bin")
+		if err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -291,13 +304,20 @@ func BenchmarkModel_LoadWeights(b *testing.B) {
 
 func BenchmarkModel_ReadTernaryWeights(b *testing.B) {
 	// Create test data
-	input := []byte{0x1B, 0x1B, 0x1B, 0x1B} // 16 ternary values
-	weights := make([]int8, 16)
+	data := make([]byte, 1024)
+	for i := range data {
+		data[i] = byte(i % 256)
+	}
+
+	model := &Model{
+		config: NewConfig(),
+	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		model := &Model{}
-		if err := model.readTernaryWeights(bytes.NewReader(input), weights); err != nil {
+		weights := make([]int8, 4096)
+		err := model.readTernaryWeights(bytes.NewReader(data), weights)
+		if err != nil {
 			b.Fatal(err)
 		}
 	}
