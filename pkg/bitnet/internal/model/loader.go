@@ -20,9 +20,9 @@ type ModelLoader struct {
 func NewModelLoader() (*ModelLoader, error) {
 	// Try to find the model file in different possible locations
 	possiblePaths := []string{
-		filepath.Join("assets", "bitnet", "models", "BitNet-b1.58-2B-4T", "model.bin"),
-		filepath.Join("..", "..", "..", "..", "assets", "bitnet", "models", "BitNet-b1.58-2B-4T", "model.bin"),
-		filepath.Join("..", "..", "..", "assets", "bitnet", "models", "BitNet-b1.58-2B-4T", "model.bin"),
+		filepath.Join("pkg", "bitnet", "internal", "assets", "models", "BitNet-b1.58-2B-4T", "model.bin"),
+		filepath.Join("..", "..", "..", "..", "pkg", "bitnet", "internal", "assets", "models", "BitNet-b1.58-2B-4T", "model.bin"),
+		filepath.Join("..", "..", "..", "pkg", "bitnet", "internal", "assets", "models", "BitNet-b1.58-2B-4T", "model.bin"),
 	}
 
 	var foundPath string
