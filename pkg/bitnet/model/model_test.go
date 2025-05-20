@@ -56,3 +56,28 @@ func TestModelSize(t *testing.T) {
 		t.Errorf("Expected model size > 0, got %d", size)
 	}
 }
+
+func TestModelWeights(t *testing.T) {
+	config := &Config{
+		VocabSize:     4,
+		HiddenSize:    3,
+		NumLayers:     1,
+		NumHeads:      2,
+		MaxSeqLength:  512,
+		ModelPath:     "embedded",
+		TokenizerPath: "embedded",
+	}
+
+	model, err := NewModel(config)
+	if err != nil {
+		t.Fatalf("Failed to create model: %v", err)
+	}
+
+	if model.Weights == nil {
+		t.Fatal("Model weights not loaded")
+	}
+
+	if len(model.Weights.RawData) == 0 {
+		t.Error("Model weights raw data is empty")
+	}
+}

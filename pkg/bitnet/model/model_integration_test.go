@@ -29,6 +29,10 @@ func TestModelPipeline(t *testing.T) {
 		t.Fatal("Model weights not loaded")
 	}
 
+	if len(model.Weights.RawData) == 0 {
+		t.Error("Model weights raw data is empty")
+	}
+
 	// Test tokenizer
 	if model.Tokenizer == nil {
 		t.Fatal("Tokenizer not loaded")

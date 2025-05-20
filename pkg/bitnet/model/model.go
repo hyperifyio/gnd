@@ -35,6 +35,9 @@ type Weights struct {
 
 	// Layer weights
 	Layers []LayerWeights `json:"layers"`
+
+	// Raw binary data
+	RawData []byte `json:"-"`
 }
 
 // LayerWeights represents weights for a single transformer layer
@@ -99,13 +102,15 @@ func (m *Model) loadWeights() error {
 	}
 	defer file.Close()
 
+	// Read the entire file into memory
 	data, err := io.ReadAll(file)
 	if err != nil {
 		return fmt.Errorf("failed to read weights file: %w", err)
 	}
 
-	if err := json.Unmarshal(data, &m.Weights); err != nil {
-		return fmt.Errorf("failed to unmarshal weights: %w", err)
+	// Store the raw data
+	m.Weights = &Weights{
+		RawData: data,
 	}
 
 	return nil
