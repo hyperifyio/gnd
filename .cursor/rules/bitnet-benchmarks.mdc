@@ -13,7 +13,7 @@ alwaysApply: false
 ```
 pkg/bitnet/
 ├─ mycomponent.go
-└─ mycomponent\_test.go   # must contain both unit and benchmark tests
+└─ mycomponent_test.go   # must contain both unit and benchmark tests
 ```
 
 ## Benchmark function names
