@@ -5,8 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
-	"os"
-	"path/filepath"
+	"io/fs"
 	"sync"
 )
 
@@ -27,6 +26,7 @@ type GGUFHeader struct {
 
 // ModelLoader handles loading and managing the BitNet model file in GGUF format.
 type ModelLoader struct {
+	fs         fs.FS
 	modelPath  string
 	bufferSize int
 	chunkPool  sync.Pool
@@ -34,16 +34,12 @@ type ModelLoader struct {
 }
 
 // NewModelLoader creates a new ModelLoader instance.
-func NewModelLoader() (*ModelLoader, error) {
-	// Get the absolute path to the model file
-	modelPath := filepath.Join("pkg", "bitnet", "internal", "assets", "models", "BitNet-b1.58-2B-4T", "model.bin")
-	absPath, err := filepath.Abs(modelPath)
-	if err != nil {
-		return nil, err
+func NewModelLoader(filesystem fs.FS, modelPath string) (*ModelLoader, error) {
+	if filesystem == nil {
+		return nil, errors.New("filesystem cannot be nil")
 	}
-
-	if _, err := os.Stat(absPath); err != nil {
-		return nil, ErrModelNotFound
+	if modelPath == "" {
+		return nil, errors.New("model path cannot be empty")
 	}
 
 	// Create a memory pool for chunks
@@ -55,7 +51,8 @@ func NewModelLoader() (*ModelLoader, error) {
 	}
 
 	loader := &ModelLoader{
-		modelPath:  absPath,
+		fs:         filesystem,
+		modelPath:  modelPath,
 		bufferSize: 1024 * 1024, // 1MB buffer size
 		chunkPool:  chunkPool,
 	}
@@ -70,9 +67,9 @@ func NewModelLoader() (*ModelLoader, error) {
 
 // loadHeader reads and validates the GGUF file header
 func (l *ModelLoader) loadHeader() error {
-	file, err := os.Open(l.modelPath)
+	file, err := l.fs.Open(l.modelPath)
 	if err != nil {
-		return err
+		return ErrModelNotFound
 	}
 	defer file.Close()
 
@@ -92,16 +89,22 @@ func (l *ModelLoader) loadHeader() error {
 
 // LoadModel opens the model file and returns a file handle.
 // The caller is responsible for closing the file.
-func (l *ModelLoader) LoadModel() (*os.File, error) {
+func (l *ModelLoader) LoadModel() (fs.File, error) {
 	if l.modelPath == "" {
 		return nil, ErrModelNotSet
 	}
-	return os.Open(l.modelPath)
+	return l.fs.Open(l.modelPath)
 }
 
 // GetModelSize returns the size of the model file in bytes.
 func (l *ModelLoader) GetModelSize() (int64, error) {
-	info, err := os.Stat(l.modelPath)
+	file, err := l.fs.Open(l.modelPath)
+	if err != nil {
+		return 0, err
+	}
+	defer file.Close()
+
+	info, err := file.Stat()
 	if err != nil {
 		return 0, err
 	}
@@ -120,12 +123,12 @@ func (l *ModelLoader) GetHeader() *GGUFHeader {
 
 // LoadModelStream returns a buffered reader for the model file.
 // The caller is responsible for closing the reader.
-func (l *ModelLoader) LoadModelStream() (*bufio.Reader, *os.File, error) {
+func (l *ModelLoader) LoadModelStream() (*bufio.Reader, fs.File, error) {
 	if l.modelPath == "" {
 		return nil, nil, ErrModelNotSet
 	}
 
-	file, err := os.Open(l.modelPath)
+	file, err := l.fs.Open(l.modelPath)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -139,27 +142,11 @@ func (l *ModelLoader) LoadModelChunk(reader *bufio.Reader, chunkSize int) ([]byt
 		return nil, ErrReaderNil
 	}
 
-	bufPtr := l.chunkPool.Get()
-	if bufPtr == nil {
-		buf := make([]byte, chunkSize)
-		bufPtr = &buf
-	}
-	buf := *(bufPtr.(*[]byte))
-
-	if cap(buf) < chunkSize {
-		buf = make([]byte, chunkSize)
-	}
-	buf = buf[:chunkSize]
-
-	n, err := io.ReadFull(reader, buf)
-	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
-		l.chunkPool.Put(&buf)
+	chunk := make([]byte, chunkSize)
+	n, err := reader.Read(chunk)
+	if err != nil && err != io.EOF {
 		return nil, err
 	}
 
-	chunk := make([]byte, n)
-	copy(chunk, buf[:n])
-	l.chunkPool.Put(&buf)
-
-	return chunk, nil
+	return chunk[:n], nil
 }

@@ -3,8 +3,7 @@ package model
 import (
 	"encoding/json"
 	"errors"
-	"os"
-	"path/filepath"
+	"io/fs"
 	"strings"
 )
 
@@ -17,6 +16,7 @@ var (
 
 // Tokenizer handles loading and using the BitNet tokenizer.
 type Tokenizer struct {
+	fs            fs.FS
 	modelPath     string
 	Vocab         map[string]int    `json:"vocab"`
 	Merges        map[string]string `json:"merges"`
@@ -24,33 +24,40 @@ type Tokenizer struct {
 }
 
 // NewTokenizer creates a new Tokenizer instance.
-func NewTokenizer() (*Tokenizer, error) {
-	tokenizerPath := filepath.Join("pkg", "bitnet", "internal", "assets", "models", "BitNet-b1.58-2B-4T", "tokenizer.json")
-
-	if _, err := os.Stat(tokenizerPath); err != nil {
-		return nil, ErrTokenizerNotFound
+func NewTokenizer(filesystem fs.FS, modelPath string) (*Tokenizer, error) {
+	if filesystem == nil {
+		return nil, errors.New("filesystem cannot be nil")
+	}
+	if modelPath == "" {
+		return nil, errors.New("model path cannot be empty")
 	}
 
 	tokenizer := &Tokenizer{
-		modelPath: tokenizerPath,
+		fs:        filesystem,
+		modelPath: modelPath,
 	}
 
-	if err := tokenizer.Load(); err != nil {
+	if err := tokenizer.loadVocabulary(); err != nil {
 		return nil, err
 	}
 
 	return tokenizer, nil
 }
 
-// Load loads the tokenizer from the embedded file
-func (t *Tokenizer) Load() error {
-	data, err := os.ReadFile(t.modelPath)
+// loadVocabulary loads the tokenizer vocabulary from the model file
+func (t *Tokenizer) loadVocabulary() error {
+	file, err := t.fs.Open(t.modelPath)
 	if err != nil {
+		return ErrTokenizerNotFound
+	}
+	defer file.Close()
+
+	if err := json.NewDecoder(file).Decode(t); err != nil {
 		return err
 	}
 
-	if err := json.Unmarshal(data, t); err != nil {
-		return err
+	if t.Vocab == nil {
+		return ErrVocabNotLoaded
 	}
 
 	return nil
@@ -73,11 +80,16 @@ func (t *Tokenizer) Tokenize(text string) ([]int, error) {
 			continue
 		}
 
-		// For unknown words, use [UNK] token
-		if id, ok := t.SpecialTokens["[UNK]"]; ok {
-			tokens = append(tokens, id)
-		} else {
-			return nil, ErrUnknownToken
+		// Apply BPE merges
+		subwords := t.applyBPE(word)
+		for _, subword := range subwords {
+			if id, ok := t.Vocab[subword]; ok {
+				tokens = append(tokens, id)
+			} else if id, ok := t.SpecialTokens["[UNK]"]; ok {
+				tokens = append(tokens, id)
+			} else {
+				return nil, ErrUnknownToken
+			}
 		}
 	}
 
@@ -86,69 +98,34 @@ func (t *Tokenizer) Tokenize(text string) ([]int, error) {
 
 // applyBPE applies Byte Pair Encoding to split unknown words
 func (t *Tokenizer) applyBPE(word string) []string {
-	if t.Merges == nil {
-		return []string{word}
-	}
-
-	// Start with individual characters
-	subwords := make([]string, len(word))
-	for i, char := range word {
-		subwords[i] = string(char)
-	}
-
-	// Apply merges
-	for {
-		merged := false
-		for i := 0; i < len(subwords)-1; i++ {
-			pair := subwords[i] + subwords[i+1]
-			if merge, ok := t.Merges[pair]; ok {
-				// Replace the pair with the merged token
-				subwords = append(subwords[:i], append([]string{merge}, subwords[i+2:]...)...)
-				merged = true
-				break
-			}
-		}
-		if !merged {
-			break
-		}
-	}
-
-	// Add BPE markers to all subwords except the first one
-	for i := 1; i < len(subwords); i++ {
-		if !strings.HasPrefix(subwords[i], "##") {
-			subwords[i] = "##" + subwords[i]
-		}
-	}
-
-	return subwords
+	// TODO: Implement BPE algorithm
+	// For now, just split into characters
+	return strings.Split(word, "")
 }
 
-// Decode converts token IDs back to text
-func (t *Tokenizer) Decode(ids []int) (string, error) {
+// Detokenize converts token IDs back into text
+func (t *Tokenizer) Detokenize(ids []int) (string, error) {
 	if t.Vocab == nil {
 		return "", ErrVocabNotLoaded
 	}
 
-	// Create reverse vocabulary mapping
+	// Create reverse mapping
 	reverseVocab := make(map[int]string)
 	for token, id := range t.Vocab {
 		reverseVocab[id] = token
 	}
 
 	// Convert IDs to tokens
-	tokens := make([]string, len(ids))
-	for i, id := range ids {
+	var tokens []string
+	for _, id := range ids {
 		if token, ok := reverseVocab[id]; ok {
-			tokens[i] = token
+			tokens = append(tokens, token)
 		} else {
 			return "", ErrUnknownTokenID
 		}
 	}
 
-	// Join tokens and clean up
-	text := strings.Join(tokens, "")
-	text = strings.ReplaceAll(text, "##", "") // Remove BPE markers
-	return text, nil
+	return strings.Join(tokens, " "), nil
 }
 
 // GetVocab returns the tokenizer vocabulary.

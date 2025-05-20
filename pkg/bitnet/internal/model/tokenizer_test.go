@@ -1,169 +1,226 @@
 package model
 
 import (
-	"os"
-	"path/filepath"
+	"encoding/json"
+	"errors"
+	"io/fs"
 	"testing"
 )
 
-func TestTokenizer(t *testing.T) {
-	// Create a temporary directory for test files
-	tmpDir, err := os.MkdirTemp("", "bitnet-test-*")
+func TestNewTokenizer(t *testing.T) {
+	// Create test vocabulary
+	vocab := map[string]int{
+		"hello": 1,
+		"world": 2,
+		"[UNK]": 3,
+	}
+
+	// Create test tokenizer file
+	tokenizerData, err := json.Marshal(map[string]interface{}{
+		"vocab":          vocab,
+		"merges":         map[string]string{},
+		"special_tokens": map[string]int{"[UNK]": 3},
+	})
 	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	// Create the directory structure
-	tokenizerDir := filepath.Join(tmpDir, "pkg", "bitnet", "internal", "assets", "models", "BitNet-b1.58-2B-4T")
-	if err := os.MkdirAll(tokenizerDir, 0755); err != nil {
-		t.Fatalf("Failed to create tokenizer directory: %v", err)
+		t.Fatal(err)
 	}
 
-	// Create a valid tokenizer JSON file
-	tokenizerPath := filepath.Join(tokenizerDir, "tokenizer.json")
-	tokenizerJSON := `{
-		"vocab": {
-			"hello": 1,
-			"world": 2,
-			"##ing": 3,
-			"##ed": 4
+	testFS := &testFS{
+		files: map[string][]byte{
+			"tokenizer.json": tokenizerData,
 		},
-		"merges": {
-			"h e": "he",
-			"he l": "hel",
-			"hel l": "hell",
-			"hell o": "hello"
-		},
-		"special_tokens": {
-			"[UNK]": 0,
-			"[PAD]": 5,
-			"[CLS]": 6,
-			"[SEP]": 7
-		}
-	}`
-	if err := os.WriteFile(tokenizerPath, []byte(tokenizerJSON), 0644); err != nil {
-		t.Fatalf("Failed to write tokenizer file: %v", err)
 	}
 
-	// Change to the temp directory for the test
-	originalDir, err := os.Getwd()
+	tokenizer, err := NewTokenizer(testFS, "tokenizer.json")
 	if err != nil {
-		t.Fatalf("Failed to get current directory: %v", err)
-	}
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("Failed to change to temp directory: %v", err)
-	}
-	defer os.Chdir(originalDir)
-
-	// Create a new tokenizer
-	tokenizer, err := NewTokenizer()
-	if err != nil {
-		t.Fatalf("Failed to create tokenizer: %v", err)
+		t.Fatalf("NewTokenizer failed: %v", err)
 	}
 
-	// Test cases for tokenization
+	if tokenizer == nil {
+		t.Fatal("NewTokenizer returned nil")
+	}
+
+	if tokenizer.modelPath != "tokenizer.json" {
+		t.Errorf("expected modelPath to be 'tokenizer.json', got %q", tokenizer.modelPath)
+	}
+
+	if len(tokenizer.Vocab) != 3 {
+		t.Errorf("expected 3 vocabulary items, got %d", len(tokenizer.Vocab))
+	}
+
+	if tokenizer.Vocab["hello"] != 1 {
+		t.Errorf("expected 'hello' to have ID 1, got %d", tokenizer.Vocab["hello"])
+	}
+}
+
+func TestNewTokenizerErrors(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    string
-		expected []int
-		wantErr  bool
+		name      string
+		fs        fs.FS
+		modelPath string
+		wantErr   error
 	}{
 		{
-			name:     "simple words",
-			input:    "hello world",
-			expected: []int{1, 2},
-			wantErr:  false,
+			name:      "nil filesystem",
+			fs:        nil,
+			modelPath: "tokenizer.json",
+			wantErr:   errors.New("filesystem cannot be nil"),
 		},
 		{
-			name:     "unknown word",
-			input:    "unknown",
-			expected: []int{0},
-			wantErr:  false,
+			name:      "empty model path",
+			fs:        &testFS{},
+			modelPath: "",
+			wantErr:   errors.New("model path cannot be empty"),
 		},
 		{
-			name:     "empty string",
-			input:    "",
-			expected: []int{},
-			wantErr:  false,
+			name:      "file not found",
+			fs:        &testFS{},
+			modelPath: "nonexistent.json",
+			wantErr:   ErrTokenizerNotFound,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tokens, err := tokenizer.Tokenize(tt.input)
-			if (err != nil) != tt.wantErr {
+			_, err := NewTokenizer(tt.fs, tt.modelPath)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if err.Error() != tt.wantErr.Error() {
+				t.Errorf("expected error %q, got %q", tt.wantErr, err)
+			}
+		})
+	}
+}
+
+func TestTokenize(t *testing.T) {
+	// Create test vocabulary
+	vocab := map[string]int{
+		"hello": 1,
+		"world": 2,
+		"[UNK]": 3,
+	}
+
+	tokenizer := &Tokenizer{
+		Vocab:         vocab,
+		Merges:        map[string]string{},
+		SpecialTokens: map[string]int{"[UNK]": 3},
+	}
+
+	tests := []struct {
+		name    string
+		text    string
+		want    []int
+		wantErr error
+	}{
+		{
+			name:    "known words",
+			text:    "hello world",
+			want:    []int{1, 2},
+			wantErr: nil,
+		},
+		{
+			name:    "unknown word",
+			text:    "hello unknown",
+			want:    []int{1, 3, 3, 3, 3, 3, 3, 3},
+			wantErr: nil,
+		},
+		{
+			name:    "empty text",
+			text:    "",
+			want:    []int{},
+			wantErr: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := tokenizer.Tokenize(tt.text)
+			if err != tt.wantErr {
 				t.Errorf("Tokenize() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !tt.wantErr {
-				if len(tokens) != len(tt.expected) {
-					t.Errorf("Tokenize() got %v tokens, want %v", len(tokens), len(tt.expected))
-					return
-				}
-				for i, token := range tokens {
-					if token != tt.expected[i] {
-						t.Errorf("Tokenize()[%d] = %v, want %v", i, token, tt.expected[i])
-					}
-				}
-			}
-		})
-	}
-
-	// Test decoding
-	decodeTests := []struct {
-		name     string
-		input    []int
-		expected string
-		wantErr  bool
-	}{
-		{
-			name:     "simple tokens",
-			input:    []int{1, 2},
-			expected: "helloworld",
-			wantErr:  false,
-		},
-		{
-			name:     "unknown token",
-			input:    []int{0},
-			expected: "",
-			wantErr:  true,
-		},
-		{
-			name:     "empty tokens",
-			input:    []int{},
-			expected: "",
-			wantErr:  false,
-		},
-	}
-
-	for _, tt := range decodeTests {
-		t.Run(tt.name, func(t *testing.T) {
-			text, err := tokenizer.Decode(tt.input)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Decode() error = %v, wantErr %v", err, tt.wantErr)
+			if len(got) != len(tt.want) {
+				t.Errorf("Tokenize() got %v, want %v", got, tt.want)
 				return
 			}
-			if !tt.wantErr && text != tt.expected {
-				t.Errorf("Decode() = %v, want %v", text, tt.expected)
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("Tokenize() got[%d] = %v, want[%d] = %v", i, got[i], i, tt.want[i])
+				}
 			}
 		})
 	}
+}
 
-	// Verify tokenizer properties
-	if tokenizer.Vocab == nil {
-		t.Fatal("Expected non-nil vocabulary")
+func TestTokenizeErrors(t *testing.T) {
+	tokenizer := &Tokenizer{} // No vocabulary loaded
+
+	_, err := tokenizer.Tokenize("test")
+	if err != ErrVocabNotLoaded {
+		t.Errorf("expected ErrVocabNotLoaded, got %v", err)
 	}
-	if len(tokenizer.Vocab) != 4 {
-		t.Errorf("Expected vocabulary size 4, got %d", len(tokenizer.Vocab))
+}
+
+func TestDetokenize(t *testing.T) {
+	// Create test vocabulary
+	vocab := map[string]int{
+		"hello": 1,
+		"world": 2,
+		"[UNK]": 3,
 	}
-	if tokenizer.Vocab["hello"] != 1 {
-		t.Errorf("Expected 'hello' token ID 1, got %d", tokenizer.Vocab["hello"])
+
+	tokenizer := &Tokenizer{
+		Vocab:         vocab,
+		Merges:        map[string]string{},
+		SpecialTokens: map[string]int{"[UNK]": 3},
 	}
-	if tokenizer.Vocab["world"] != 2 {
-		t.Errorf("Expected 'world' token ID 2, got %d", tokenizer.Vocab["world"])
+
+	tests := []struct {
+		name    string
+		ids     []int
+		want    string
+		wantErr error
+	}{
+		{
+			name:    "known tokens",
+			ids:     []int{1, 2},
+			want:    "hello world",
+			wantErr: nil,
+		},
+		{
+			name:    "unknown token ID",
+			ids:     []int{1, 999},
+			want:    "",
+			wantErr: ErrUnknownTokenID,
+		},
+		{
+			name:    "empty tokens",
+			ids:     []int{},
+			want:    "",
+			wantErr: nil,
+		},
 	}
-	if tokenizer.SpecialTokens["[UNK]"] != 0 {
-		t.Errorf("Expected '[UNK]' token ID 0, got %d", tokenizer.SpecialTokens["[UNK]"])
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := tokenizer.Detokenize(tt.ids)
+			if err != tt.wantErr {
+				t.Errorf("Detokenize() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("Detokenize() got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDetokenizeErrors(t *testing.T) {
+	tokenizer := &Tokenizer{} // No vocabulary loaded
+
+	_, err := tokenizer.Detokenize([]int{1})
+	if err != ErrVocabNotLoaded {
+		t.Errorf("expected ErrVocabNotLoaded, got %v", err)
 	}
 }

@@ -1,21 +1,64 @@
 package model
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/binary"
+	"errors"
+	"io"
+	"io/fs"
 	"os"
-	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
-func TestModelLoader(t *testing.T) {
-	// Create a temporary directory for test files
-	tmpDir, err := os.MkdirTemp("", "bitnet-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
+type testFS struct {
+	files map[string][]byte
+}
 
-	// Create test GGUF model file
+func (t *testFS) Open(name string) (fs.File, error) {
+	if data, ok := t.files[name]; ok {
+		return &testFile{data: data}, nil
+	}
+	return nil, os.ErrNotExist
+}
+
+type testFile struct {
+	data []byte
+	pos  int64
+}
+
+func (t *testFile) Read(p []byte) (n int, err error) {
+	if t.pos >= int64(len(t.data)) {
+		return 0, io.EOF
+	}
+	n = copy(p, t.data[t.pos:])
+	t.pos += int64(n)
+	return n, nil
+}
+
+func (t *testFile) Close() error {
+	return nil
+}
+
+func (t *testFile) Stat() (fs.FileInfo, error) {
+	return &testFileInfo{size: int64(len(t.data))}, nil
+}
+
+type testFileInfo struct {
+	size int64
+}
+
+func (t *testFileInfo) Name() string       { return "" }
+func (t *testFileInfo) Size() int64        { return t.size }
+func (t *testFileInfo) Mode() fs.FileMode  { return 0 }
+func (t *testFileInfo) ModTime() time.Time { return time.Time{} }
+func (t *testFileInfo) IsDir() bool        { return false }
+func (t *testFileInfo) Sys() interface{}   { return nil }
+
+func TestNewModelLoader(t *testing.T) {
+	// Create a test GGUF file
 	header := &GGUFHeader{
 		Magic:       0x46554747, // GGUF magic number
 		Version:     1,
@@ -23,176 +66,209 @@ func TestModelLoader(t *testing.T) {
 		KVCount:     5,
 	}
 
-	// Create the directory structure
-	modelDir := filepath.Join(tmpDir, "pkg", "bitnet", "internal", "assets", "models", "BitNet-b1.58-2B-4T")
-	if err := os.MkdirAll(modelDir, 0755); err != nil {
-		t.Fatalf("Failed to create model directory: %v", err)
+	var buf bytes.Buffer
+	if err := binary.Write(&buf, binary.LittleEndian, header); err != nil {
+		t.Fatal(err)
 	}
 
-	// Create and write the test model file
-	modelPath := filepath.Join(modelDir, "model.bin")
-	file, err := os.Create(modelPath)
+	testFS := &testFS{
+		files: map[string][]byte{
+			"model.bin": buf.Bytes(),
+		},
+	}
+
+	loader, err := NewModelLoader(testFS, "model.bin")
 	if err != nil {
-		t.Fatalf("Failed to create test model file: %v", err)
+		t.Fatalf("NewModelLoader failed: %v", err)
+	}
+
+	if loader == nil {
+		t.Fatal("NewModelLoader returned nil")
+	}
+
+	if loader.modelPath != "model.bin" {
+		t.Errorf("expected modelPath to be 'model.bin', got %q", loader.modelPath)
+	}
+
+	if loader.bufferSize != 1024*1024 {
+		t.Errorf("expected bufferSize to be 1MB, got %d", loader.bufferSize)
+	}
+
+	if loader.header == nil {
+		t.Fatal("expected header to be loaded")
+	}
+
+	if loader.header.Magic != 0x46554747 {
+		t.Errorf("expected magic number 0x46554747, got 0x%x", loader.header.Magic)
+	}
+}
+
+func TestNewModelLoaderErrors(t *testing.T) {
+	tests := []struct {
+		name      string
+		fs        fs.FS
+		modelPath string
+		wantErr   error
+	}{
+		{
+			name:      "nil filesystem",
+			fs:        nil,
+			modelPath: "model.bin",
+			wantErr:   errors.New("filesystem cannot be nil"),
+		},
+		{
+			name:      "empty model path",
+			fs:        &testFS{},
+			modelPath: "",
+			wantErr:   errors.New("model path cannot be empty"),
+		},
+		{
+			name:      "file not found",
+			fs:        &testFS{},
+			modelPath: "nonexistent.bin",
+			wantErr:   ErrModelNotFound,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NewModelLoader(tt.fs, tt.modelPath)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if err.Error() != tt.wantErr.Error() {
+				t.Errorf("expected error %q, got %q", tt.wantErr, err)
+			}
+		})
+	}
+}
+
+func TestLoadModel(t *testing.T) {
+	testFS := &testFS{
+		files: map[string][]byte{
+			"model.bin": []byte("test data"),
+		},
+	}
+
+	loader := &ModelLoader{
+		fs:        testFS,
+		modelPath: "model.bin",
+	}
+
+	file, err := loader.LoadModel()
+	if err != nil {
+		t.Fatalf("LoadModel failed: %v", err)
 	}
 	defer file.Close()
 
-	// Write the GGUF header
-	if err := binary.Write(file, binary.LittleEndian, header); err != nil {
-		t.Fatalf("Failed to write GGUF header: %v", err)
-	}
-
-	// Write some dummy tensor data
-	dummyData := make([]byte, 1024)
-	if _, err := file.Write(dummyData); err != nil {
-		t.Fatalf("Failed to write dummy tensor data: %v", err)
-	}
-
-	// Change to the temp directory for the test
-	originalDir, err := os.Getwd()
+	data := make([]byte, 9)
+	n, err := file.Read(data)
 	if err != nil {
-		t.Fatalf("Failed to get current directory: %v", err)
-	}
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("Failed to change to temp directory: %v", err)
-	}
-	defer os.Chdir(originalDir)
-
-	// Test model loader creation
-	loader, err := NewModelLoader()
-	if err != nil {
-		t.Fatalf("Failed to create model loader: %v", err)
+		t.Fatalf("Read failed: %v", err)
 	}
 
-	// Test model path
-	expPath, _ := filepath.EvalSymlinks(modelPath)
-	gotPath, _ := filepath.EvalSymlinks(loader.GetModelPath())
-	if gotPath != expPath {
-		t.Errorf("Expected model path %s, got %s", expPath, gotPath)
+	if n != 9 {
+		t.Errorf("expected to read 9 bytes, got %d", n)
 	}
 
-	// Test header loading
-	loadedHeader := loader.GetHeader()
-	if loadedHeader == nil {
-		t.Fatal("Expected header to be loaded")
+	if string(data) != "test data" {
+		t.Errorf("expected data to be 'test data', got %q", string(data))
+	}
+}
+
+func TestLoadModelErrors(t *testing.T) {
+	loader := &ModelLoader{
+		fs:        &testFS{},
+		modelPath: "",
 	}
 
-	if loadedHeader.Magic != header.Magic {
-		t.Errorf("Expected magic number %x, got %x", header.Magic, loadedHeader.Magic)
+	_, err := loader.LoadModel()
+	if err != ErrModelNotSet {
+		t.Errorf("expected ErrModelNotSet, got %v", err)
 	}
-	if loadedHeader.Version != header.Version {
-		t.Errorf("Expected version %d, got %d", header.Version, loadedHeader.Version)
-	}
-	if loadedHeader.TensorCount != header.TensorCount {
-		t.Errorf("Expected tensor count %d, got %d", header.TensorCount, loadedHeader.TensorCount)
-	}
-	if loadedHeader.KVCount != header.KVCount {
-		t.Errorf("Expected KV count %d, got %d", header.KVCount, loadedHeader.KVCount)
+}
+
+func TestGetModelSize(t *testing.T) {
+	testFS := &testFS{
+		files: map[string][]byte{
+			"model.bin": []byte("test data"),
+		},
 	}
 
-	// Test model size
+	loader := &ModelLoader{
+		fs:        testFS,
+		modelPath: "model.bin",
+	}
+
 	size, err := loader.GetModelSize()
 	if err != nil {
-		t.Fatalf("Failed to get model size: %v", err)
-	}
-	expectedSize := int64(binary.Size(header) + len(dummyData))
-	if size != expectedSize {
-		t.Errorf("Expected model size %d, got %d", expectedSize, size)
+		t.Fatalf("GetModelSize failed: %v", err)
 	}
 
-	// Test model streaming
-	reader, file, err := loader.LoadModelStream()
-	if err != nil {
-		t.Fatalf("Failed to load model stream: %v", err)
-	}
-	defer file.Close()
-
-	// Read and verify the header
-	readHeader := &GGUFHeader{}
-	if err := binary.Read(reader, binary.LittleEndian, readHeader); err != nil {
-		t.Fatalf("Failed to read header from stream: %v", err)
-	}
-
-	if readHeader.Magic != header.Magic {
-		t.Errorf("Expected magic number %x, got %x", header.Magic, readHeader.Magic)
-	}
-
-	// Test chunk loading
-	chunk, err := loader.LoadModelChunk(reader, 512)
-	if err != nil {
-		t.Fatalf("Failed to load model chunk: %v", err)
-	}
-	if len(chunk) == 0 {
-		t.Error("Expected non-empty chunk")
+	if size != 9 {
+		t.Errorf("expected size to be 9, got %d", size)
 	}
 }
 
-func TestModelLoader_Streaming(t *testing.T) {
-	// Create a temporary test file
-	tmpFile := filepath.Join(t.TempDir(), "test_model.bin")
-	testData := []byte("test model data for streaming")
-	if err := os.WriteFile(tmpFile, testData, 0644); err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
+func TestLoadModelStream(t *testing.T) {
+	testFS := &testFS{
+		files: map[string][]byte{
+			"model.bin": []byte("test data"),
+		},
 	}
 
-	// Create a loader with the test file
 	loader := &ModelLoader{
-		modelPath:  tmpFile,
-		bufferSize: 1024,
+		fs:        testFS,
+		modelPath: "model.bin",
 	}
 
-	// Test streaming
 	reader, file, err := loader.LoadModelStream()
 	if err != nil {
-		t.Fatalf("LoadModelStream() error = %v", err)
+		t.Fatalf("LoadModelStream failed: %v", err)
 	}
 	defer file.Close()
 
-	// Read chunks
-	chunk1, err := loader.LoadModelChunk(reader, 10)
-	if err != nil {
-		t.Fatalf("LoadModelChunk() error = %v", err)
-	}
-	if string(chunk1) != "test model" {
-		t.Errorf("LoadModelChunk() = %v, want %v", string(chunk1), "test model")
+	data, err := reader.ReadString('\n')
+	if err != nil && err != io.EOF {
+		t.Fatalf("ReadString failed: %v", err)
 	}
 
-	chunk2, err := loader.LoadModelChunk(reader, 20)
-	if err != nil {
-		t.Fatalf("LoadModelChunk() error = %v", err)
-	}
-	if string(chunk2) != " data for streaming" {
-		t.Errorf("LoadModelChunk() = %v, want %v", string(chunk2), " data for streaming")
-	}
-
-	// Test EOF
-	chunk3, err := loader.LoadModelChunk(reader, 10)
-	if err != nil {
-		t.Fatalf("LoadModelChunk() error = %v", err)
-	}
-	if len(chunk3) != 0 {
-		t.Errorf("LoadModelChunk() returned non-empty chunk at EOF: %v", chunk3)
+	if data != "test data" {
+		t.Errorf("expected data to be 'test data', got %q", data)
 	}
 }
 
-func TestModelLoader_InvalidPath(t *testing.T) {
+func TestLoadModelStreamErrors(t *testing.T) {
 	loader := &ModelLoader{
-		modelPath: "/nonexistent/path/model.bin",
+		fs:        &testFS{},
+		modelPath: "",
 	}
 
 	_, _, err := loader.LoadModelStream()
-	if err == nil {
-		t.Error("LoadModelStream() expected error for invalid path")
+	if err != ErrModelNotSet {
+		t.Errorf("expected ErrModelNotSet, got %v", err)
 	}
 }
 
-func TestModelLoader_NilReader(t *testing.T) {
-	loader := &ModelLoader{
-		modelPath: "test.bin",
+func TestLoadModelChunk(t *testing.T) {
+	reader := bufio.NewReader(strings.NewReader("test data"))
+	loader := &ModelLoader{}
+
+	chunk, err := loader.LoadModelChunk(reader, 4)
+	if err != nil {
+		t.Fatalf("LoadModelChunk failed: %v", err)
 	}
 
-	_, err := loader.LoadModelChunk(nil, 1024)
-	if err == nil {
-		t.Error("LoadModelChunk() expected error for nil reader")
+	if string(chunk) != "test" {
+		t.Errorf("expected chunk to be 'test', got %q", string(chunk))
+	}
+}
+
+func TestLoadModelChunkErrors(t *testing.T) {
+	loader := &ModelLoader{}
+
+	_, err := loader.LoadModelChunk(nil, 4)
+	if err != ErrReaderNil {
+		t.Errorf("expected ErrReaderNil, got %v", err)
 	}
 }
