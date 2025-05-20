@@ -1,0 +1,66 @@
+---
+description: "Define the procedures for updating Pull Requests in the BitNet project, ensuring commits, pushes, and conflict resolution follow standards."
+globs: pkg/bitnet/**
+alwaysApply: true
+---
+
+'# PR Update Procedures
+
+**Purpose:** Keep PRs up-to-date with latest changes and feedback in a safe, documented manner.
+
+## Committing Updates
+
+* Stage changes:
+
+  ```bash
+  git add <files>
+  ```
+* Commit with conventional message:
+
+  ```bash
+  git commit -m "<type>(bitnet): <short description>"
+  ```
+* Use `--amend` only for trivial fixes before first review.
+
+## Pushing Updates
+
+* Push to feature branch:
+
+  ```bash
+  git push origin HEAD
+  ```
+* For rebased branches, force push safely:
+
+  ```bash
+  git push --force-with-lease origin HEAD
+  ```
+
+## Handling Conflicts
+
+* Pull and rebase:
+
+  ```bash
+  git pull --rebase origin bitnet
+  ```
+* Resolve conflicts in code, then:
+
+  ```bash
+  git add <resolved files>
+  git rebase --continue
+  ```
+* Force push updated history:
+
+  ```bash
+  git push --force-with-lease origin HEAD
+  ```
+
+## Best Practices
+
+* Run tests and benchmarks before push.
+* Keep commits focused: one purpose per commit.
+* Document why force-push was needed in the commit message or PR comment.
+* Notify reviewers if significant updates occur.
+
+## Merging After Updates
+
+* Never merge (product manager does that)

@@ -1,0 +1,45 @@
+---
+description: "Define the Pull Request review workflow and best practices for the bitnet branch."
+globs: pkg/bitnet/**
+alwaysApply: true
+---
+
+# PR Review Workflow
+
+**Purpose:** Ensure thorough, consistent reviews and clear communication.
+
+## Viewing PRs
+
+Use GitHub CLI or API:
+
+```bash
+# View basic info
+gh pr view <PR_NUMBER>
+# View comments
+gh pr view <PR_NUMBER> --comments
+# Detailed JSON
+gh pr view <PR_NUMBER> --json reviews,comments
+# Fetch all review comments via API
+gh api \
+  -H "Accept: application/vnd.github+json" \
+  /repos/OWNER/REPO/pulls/<PR_NUMBER>/comments
+```
+
+## Addressing Feedback
+
+* Make changes in the same branch.
+* Commit with conventional message: `fix(bitnet): address review feedback`
+* Push updates; GitHub auto-updates the PR.
+* Mark comments as resolved when addressed.
+* Request re-review via GitHub.
+
+## Best Practices
+
+* Keep reviews small and focused.
+* Be respectful and constructive.
+* Provide examples or suggested changes.
+* Follow project conventions (naming, formatting, tests).
+
+## Merging
+
+* Never merge (product manager does that)
