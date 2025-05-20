@@ -38,7 +38,8 @@ func NewModelLoader(filesystem fs.FS, modelPath string) (*ModelLoader, error) {
 	// Create a memory pool for chunks
 	chunkPool := sync.Pool{
 		New: func() interface{} {
-			return make([]byte, 1024*1024) // 1MB default chunk size
+			buf := make([]byte, 1024*1024) // 1MB default chunk size
+			return &buf
 		},
 	}
 

@@ -30,15 +30,15 @@ func NewTokenizer(filesystem fs.FS, modelPath string) (*Tokenizer, error) {
 		modelPath: modelPath,
 	}
 
-	if err := tokenizer.loadVocab(); err != nil {
+	if err := tokenizer.load(); err != nil {
 		return nil, err
 	}
 
 	return tokenizer, nil
 }
 
-// loadVocab loads the vocabulary from the tokenizer file
-func (t *Tokenizer) loadVocab() error {
+// load reads and decodes the tokenizer file
+func (t *Tokenizer) load() error {
 	file, err := t.fs.Open(t.modelPath)
 	if err != nil {
 		return ErrTokenizerNotFound
