@@ -14,6 +14,7 @@ var (
 	ErrInvalidGGUF   = errors.New("invalid GGUF magic number")
 	ErrModelNotSet   = errors.New("model path not set")
 	ErrReaderNil     = errors.New("reader is nil")
+	ErrFSIsNil       = errors.New("filesystem cannot be nil")
 )
 
 // GGUFHeader represents the header of a GGUF format file
@@ -36,17 +37,17 @@ type ModelLoader struct {
 // NewModelLoader creates a new ModelLoader instance.
 func NewModelLoader(filesystem fs.FS, modelPath string) (*ModelLoader, error) {
 	if filesystem == nil {
-		return nil, errors.New("filesystem cannot be nil")
+		return nil, ErrFSIsNil
 	}
+
 	if modelPath == "" {
-		return nil, errors.New("model path cannot be empty")
+		return nil, ErrModelNotSet
 	}
 
 	// Create a memory pool for chunks
 	chunkPool := sync.Pool{
 		New: func() interface{} {
-			buf := make([]byte, 1024*1024) // 1MB default chunk size
-			return &buf
+			return make([]byte, 1024*1024) // 1MB default chunk size
 		},
 	}
 
@@ -100,7 +101,7 @@ func (l *ModelLoader) LoadModel() (fs.File, error) {
 func (l *ModelLoader) GetModelSize() (int64, error) {
 	file, err := l.fs.Open(l.modelPath)
 	if err != nil {
-		return 0, err
+		return 0, ErrModelNotFound
 	}
 	defer file.Close()
 
@@ -130,7 +131,7 @@ func (l *ModelLoader) LoadModelStream() (*bufio.Reader, fs.File, error) {
 
 	file, err := l.fs.Open(l.modelPath)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, ErrModelNotFound
 	}
 
 	return bufio.NewReaderSize(file, l.bufferSize), file, nil

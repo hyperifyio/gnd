@@ -26,10 +26,11 @@ type Tokenizer struct {
 // NewTokenizer creates a new Tokenizer instance.
 func NewTokenizer(filesystem fs.FS, modelPath string) (*Tokenizer, error) {
 	if filesystem == nil {
-		return nil, errors.New("filesystem cannot be nil")
+		return nil, ErrFSIsNil
 	}
+
 	if modelPath == "" {
-		return nil, errors.New("model path cannot be empty")
+		return nil, ErrTokenizerNotFound
 	}
 
 	tokenizer := &Tokenizer{
