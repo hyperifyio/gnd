@@ -2,17 +2,8 @@ package model
 
 import (
 	"encoding/json"
-	"errors"
 	"io/fs"
 	"strings"
-)
-
-var (
-	ErrTokenizerNotFound = errors.New("tokenizer file not found")
-	ErrVocabNotLoaded    = errors.New("vocabulary not loaded")
-	ErrUnknownToken      = errors.New("unknown token")
-	ErrUnknownTokenID    = errors.New("unknown token ID")
-	ErrDecodeFailed      = errors.New("failed to decode tokenizer file")
 )
 
 // Tokenizer handles loading and using the BitNet tokenizer.
@@ -27,11 +18,11 @@ type Tokenizer struct {
 // NewTokenizer creates a new Tokenizer instance.
 func NewTokenizer(filesystem fs.FS, modelPath string) (*Tokenizer, error) {
 	if filesystem == nil {
-		return nil, errors.New("filesystem cannot be nil")
+		return nil, ErrFSNotSet
 	}
 
 	if modelPath == "" {
-		return nil, errors.New("model path cannot be empty")
+		return nil, ErrPathEmpty
 	}
 
 	tokenizer := &Tokenizer{
@@ -39,15 +30,15 @@ func NewTokenizer(filesystem fs.FS, modelPath string) (*Tokenizer, error) {
 		modelPath: modelPath,
 	}
 
-	if err := tokenizer.loadVocabulary(); err != nil {
+	if err := tokenizer.loadVocab(); err != nil {
 		return nil, err
 	}
 
 	return tokenizer, nil
 }
 
-// loadVocabulary loads the tokenizer vocabulary from the model file
-func (t *Tokenizer) loadVocabulary() error {
+// loadVocab loads the vocabulary from the tokenizer file
+func (t *Tokenizer) loadVocab() error {
 	file, err := t.fs.Open(t.modelPath)
 	if err != nil {
 		return ErrTokenizerNotFound
@@ -56,10 +47,6 @@ func (t *Tokenizer) loadVocabulary() error {
 
 	if err := json.NewDecoder(file).Decode(t); err != nil {
 		return ErrDecodeFailed
-	}
-
-	if t.Vocab == nil {
-		return ErrVocabNotLoaded
 	}
 
 	return nil
@@ -101,8 +88,7 @@ func (t *Tokenizer) Tokenize(text string) ([]int, error) {
 // applyBPE applies Byte Pair Encoding to split unknown words
 func (t *Tokenizer) applyBPE(word string) []string {
 	// TODO: Implement BPE algorithm
-	// For now, just split into characters
-	return strings.Split(word, "")
+	return []string{word}
 }
 
 // Detokenize converts token IDs back into text

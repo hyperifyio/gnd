@@ -1,0 +1,184 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# BitNet Interfaces Rule
+
+This rule describes the interface design standards and requirements for the BitNet project, ensuring consistency and maintainability across all components.
+
+## Interface Design Principles
+
+1. Core Interfaces:
+   - Define clear, semantic interfaces for each component
+   - Use interface verification to ensure implementation
+   - Keep interfaces focused and cohesive
+   - Document all interface methods
+
+2. Interface Verification:
+   ```go
+   // Example from [pkg/bitnet/tensor/tensor.go](mdc:pkg/bitnet/tensor/tensor.go)
+   var _ TensorType = &Tensor{}
+   ```
+
+3. Interface Organization:
+   - Group related operations into semantic interfaces
+   - Split large interfaces into smaller, focused ones
+   - Use composition to build complex interfaces
+   - Keep implementation details private
+
+## Code Organization
+
+1. Package Structure:
+   - Core interfaces in package root
+   - Implementation in internal packages
+   - Clear separation of concerns
+   - Well-documented public API
+
+2. Field Visibility:
+   - Keep implementation fields private
+   - Provide public methods for access
+   - Use getters/setters when needed
+   - Document public methods
+
+3. Documentation:
+   - Document all interfaces
+   - Explain interface purposes
+   - Provide usage examples
+   - Include implementation notes
+
+## Best Practices
+
+1. Interface Design:
+   - Keep interfaces small and focused
+   - Use semantic naming
+   - Document behavior
+   - Consider future extensibility
+
+2. Implementation:
+   - Verify interface compliance
+   - Keep fields private
+   - Provide clear access methods
+   - Document implementation details
+
+3. Testing:
+   - Test interface compliance
+   - Verify behavior
+   - Document test cases
+   - Include edge cases
+
+## Example Structure
+
+```go
+// Core interface
+type ComponentType interface {
+    // Core operations
+    Operation() error
+}
+
+// Specialized interface
+type SpecializedType interface {
+    // Specialized operations
+    SpecialOperation() error
+}
+
+// Implementation
+type Component struct {
+    // Private fields
+    data []byte
+}
+
+// Interface verification
+var (
+    _ ComponentType    = &Component{}
+    _ SpecializedType = &Component{}
+)
+```
+
+## Implementation Guidelines
+
+1. Field Access:
+   - Use private fields
+   - Provide public methods
+   - Document access patterns
+   - Consider thread safety
+
+2. Method Design:
+   - Clear purpose
+   - Well-documented
+   - Error handling
+   - Performance considerations
+
+3. Documentation:
+   - Interface purpose
+   - Method behavior
+   - Usage examples
+   - Implementation notes
+
+# Interface Design and Implementation Guidelines
+
+## Core Principles
+1. **Interface Segregation**
+   - Keep interfaces small and focused
+   - Split large interfaces into smaller ones
+   - Group related functionality
+   - Avoid interface bloat
+
+2. **Documentation**
+   - Document all public interfaces
+   - Include usage examples
+   - Specify pre/post conditions
+   - Document error cases
+
+3. **Implementation Verification**
+   - Use interface compliance tests
+   - Document implementation requirements
+   - Include edge cases in tests
+   - Verify error handling
+
+## Tensor Interfaces
+1. **Core Operations**
+   ```go
+   // From [pkg/bitnet/tensor/tensor.go](mdc:pkg/bitnet/tensor/tensor.go)
+   type TensorType interface {
+       Get(indices ...int) float64
+       Set(value float64, indices ...int)
+       Shape() []int
+       Data() []float64
+   }
+   ```
+
+2. **Parallel Processing**
+   ```go
+   type ParallelProcessor interface {
+       ParallelForEach(fn func(indices []int, value float64))
+   }
+   ```
+
+## Best Practices
+1. **Interface Design**
+   - Use clear, descriptive names
+   - Keep methods focused
+   - Document type requirements
+   - Consider future extensibility
+
+2. **Implementation**
+   - Verify interface compliance
+   - Include comprehensive tests
+   - Document implementation details
+   - Consider performance implications
+
+3. **Error Handling**
+   - Document error conditions
+   - Use appropriate error types
+   - Include error cases in tests
+   - Consider recovery strategies
+
+## Related Files
+- [pkg/bitnet/tensor/tensor.go](mdc:pkg/bitnet/tensor/tensor.go): Interface definitions
+- [pkg/bitnet/tensor/tensor_test.go](mdc:pkg/bitnet/tensor/tensor_test.go): Interface tests
+
+## Related Rules
+- [bitnet-tensor.mdc](mdc:.cursor/rules/bitnet-tensor.mdc): Tensor implementation
+- [bitnet-testing.mdc](mdc:.cursor/rules/bitnet-testing.mdc): Testing standards
+- [bitnet-performance.mdc](mdc:.cursor/rules/bitnet-performance.mdc): Performance requirements

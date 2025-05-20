@@ -3,19 +3,9 @@ package model
 import (
 	"bufio"
 	"encoding/binary"
-	"errors"
 	"io"
 	"io/fs"
 	"sync"
-)
-
-var (
-	ErrModelNotFound = errors.New("model file not found")
-	ErrInvalidGGUF   = errors.New("invalid GGUF magic number")
-	ErrModelNotSet   = errors.New("model path cannot be empty")
-	ErrReaderNil     = errors.New("reader is nil")
-	ErrFSIsNil       = errors.New("filesystem cannot be nil")
-	ErrReadFailed    = errors.New("failed to read model chunk")
 )
 
 // GGUFHeader represents the header of a GGUF format file
@@ -38,11 +28,11 @@ type ModelLoader struct {
 // NewModelLoader creates a new ModelLoader instance.
 func NewModelLoader(filesystem fs.FS, modelPath string) (*ModelLoader, error) {
 	if filesystem == nil {
-		return nil, ErrFSIsNil
+		return nil, ErrFSNotSet
 	}
 
 	if modelPath == "" {
-		return nil, ErrModelNotSet
+		return nil, ErrPathEmpty
 	}
 
 	// Create a memory pool for chunks
@@ -77,7 +67,7 @@ func (l *ModelLoader) loadHeader() error {
 
 	header := &GGUFHeader{}
 	if err := binary.Read(file, binary.LittleEndian, header); err != nil {
-		return ErrReadFailed
+		return err
 	}
 
 	// Validate GGUF magic number (0x46554747)
@@ -102,13 +92,13 @@ func (l *ModelLoader) LoadModel() (fs.File, error) {
 func (l *ModelLoader) GetModelSize() (int64, error) {
 	file, err := l.fs.Open(l.modelPath)
 	if err != nil {
-		return 0, ErrModelNotFound
+		return 0, err
 	}
 	defer file.Close()
 
 	info, err := file.Stat()
 	if err != nil {
-		return 0, ErrReadFailed
+		return 0, err
 	}
 	return info.Size(), nil
 }
@@ -132,7 +122,7 @@ func (l *ModelLoader) LoadModelStream() (*bufio.Reader, fs.File, error) {
 
 	file, err := l.fs.Open(l.modelPath)
 	if err != nil {
-		return nil, nil, ErrModelNotFound
+		return nil, nil, err
 	}
 
 	return bufio.NewReaderSize(file, l.bufferSize), file, nil
@@ -147,7 +137,7 @@ func (l *ModelLoader) LoadModelChunk(reader *bufio.Reader, chunkSize int) ([]byt
 	chunk := make([]byte, chunkSize)
 	n, err := reader.Read(chunk)
 	if err != nil && err != io.EOF {
-		return nil, ErrReadFailed
+		return nil, err
 	}
 
 	return chunk[:n], nil
