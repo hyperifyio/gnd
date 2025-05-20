@@ -34,16 +34,16 @@ This rule outlines the requirements and best practices for writing and maintaini
 1. Test Structure:
    ```
    pkg/bitnet/
-   ├── tensor/
-   │   ├── tensor.go
-   │   └── tensor_test.go
-   ├── internal/
-   │   └── implementation/
-   │       ├── impl.go
-   │       └── impl_test.go
-   └── tests/
-       └── integration/
-           └── tensor_ops_test.go
+   +-- tensor/
+   |   +-- tensor.go
+   |   +-- tensor_test.go
+   +-- internal/
+   |   +-- implementation/
+   |       +-- impl.go
+   |       +-- impl_test.go
+   +-- tests/
+       +-- integration/
+           +-- tensor_ops_test.go
    ```
 
 2. Test Categories:

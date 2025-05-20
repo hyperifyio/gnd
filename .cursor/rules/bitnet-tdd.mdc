@@ -33,12 +33,12 @@ This rule defines the Test-Driven Development (TDD) workflow and unit testing st
 1. File Structure:
    ```
    pkg/bitnet/
-   ├── component/
-   │   ├── component.go
-   │   └── component_test.go
-   └── tests/
-       └── integration/
-           └── component_ops_test.go
+   +-- component/
+   |   +-- component.go
+   |   +-- component_test.go
+   +-- tests/
+       +-- integration/
+           +-- component_ops_test.go
    ```
 
 2. Test Categories:

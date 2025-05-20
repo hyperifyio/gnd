@@ -12,9 +12,9 @@ This rule outlines the requirements and best practices for writing, running, and
 1. File Organization:
    ```
    pkg/bitnet/
-   ├── component/
-   │   ├── component.go
-   │   └── component_test.go  # Contains both unit and benchmark tests
+   +-- component/
+   |   +-- component.go
+   |   +-- component_test.go  # Contains both unit and benchmark tests
    ```
 
 2. Benchmark Naming:

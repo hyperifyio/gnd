@@ -33,7 +33,7 @@ Types:
 
 ## Test Coverage
 - [ ] Current coverage: <percentage>
-- [ ] Coverage changes: <percentage> → <percentage>
+- [ ] Coverage changes: <percentage> -> <percentage>
 - [ ] Untested areas:
   - [ ] List of uncovered functions/methods
   - [ ] Critical paths that need testing
@@ -107,7 +107,7 @@ go test -cpuprofile=cpu.prof -memprofile=mem.prof ./pkg/bitnet/...
 
 ## Test Coverage
 - Current coverage: 93.0%
-- Coverage changes: 85.0% → 93.0%
+- Coverage changes: 85.0% -> 93.0%
 - Untested areas:
   - Internal config package (0% coverage)
   - Math operations package (0% coverage)
