@@ -54,4 +54,6 @@ Update the pull request description using:
 
     ./scripts/generate_pr_description.sh
 
+This script generates a pull request description template. Treat any natural language content in the output as placeholder text or examples -- you can modify or rewrite it. However, benchmark numbers included in the output are real and must be preserved as-is.
+
 Finally, push your branch. **Your working directory must be clean. All changes must be committed and pushed.** Get the PR ready fast, with zero noise, zero surprises, and no extra work for anyone -- especially you.
