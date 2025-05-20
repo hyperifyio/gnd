@@ -2,6 +2,7 @@ package model
 
 import (
 	"bufio"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"os"
@@ -9,11 +10,20 @@ import (
 	"sync"
 )
 
-// ModelLoader handles loading and managing the BitNet model file.
+// GGUFHeader represents the header of a GGUF format file
+type GGUFHeader struct {
+	Magic       uint32
+	Version     uint32
+	TensorCount uint64
+	KVCount     uint64
+}
+
+// ModelLoader handles loading and managing the BitNet model file in GGUF format.
 type ModelLoader struct {
 	modelPath  string
 	bufferSize int
 	chunkPool  sync.Pool
+	header     *GGUFHeader
 }
 
 // NewModelLoader creates a new ModelLoader instance.
@@ -44,11 +54,40 @@ func NewModelLoader() (*ModelLoader, error) {
 		},
 	}
 
-	return &ModelLoader{
+	loader := &ModelLoader{
 		modelPath:  foundPath,
 		bufferSize: 1024 * 1024, // 1MB buffer size
 		chunkPool:  chunkPool,
-	}, nil
+	}
+
+	// Load and validate the GGUF header
+	if err := loader.loadHeader(); err != nil {
+		return nil, fmt.Errorf("failed to load GGUF header: %w", err)
+	}
+
+	return loader, nil
+}
+
+// loadHeader reads and validates the GGUF file header
+func (l *ModelLoader) loadHeader() error {
+	file, err := os.Open(l.modelPath)
+	if err != nil {
+		return fmt.Errorf("failed to open model file: %w", err)
+	}
+	defer file.Close()
+
+	header := &GGUFHeader{}
+	if err := binary.Read(file, binary.LittleEndian, header); err != nil {
+		return fmt.Errorf("failed to read GGUF header: %w", err)
+	}
+
+	// Validate GGUF magic number (0x46554747)
+	if header.Magic != 0x46554747 {
+		return fmt.Errorf("invalid GGUF magic number: %x", header.Magic)
+	}
+
+	l.header = header
+	return nil
 }
 
 // LoadModel opens the model file and returns a file handle.
@@ -72,6 +111,11 @@ func (l *ModelLoader) GetModelSize() (int64, error) {
 // GetModelPath returns the current model file path.
 func (l *ModelLoader) GetModelPath() string {
 	return l.modelPath
+}
+
+// GetHeader returns the GGUF header information.
+func (l *ModelLoader) GetHeader() *GGUFHeader {
+	return l.header
 }
 
 // LoadModelStream returns a buffered reader for the model file.
