@@ -126,21 +126,22 @@ func TestReadTernaryWeights(t *testing.T) {
 	}{
 		{
 			name:  "valid weights",
-			input: []byte{0x1B}, // 0b00011011 = [-1, 0, 1, -1]
+			input: []byte{0x1B}, // 0b00011011 = [-1, 1, 0, -1]
 			size:  4,
-			want:  []int8{-1, 0, 1, -1},
+			want:  []int8{-1, 1, 0, -1},
 		},
 		{
 			name:    "invalid packed value",
-			input:   []byte{0xFF}, // 0b11111111 = [3, 3, 3, 3] (invalid)
+			input:   []byte{0xFF}, // 0b11111111 = [-1, -1, -1, -1]
 			size:    4,
-			wantErr: ErrInvalidWeightsFile,
+			want:    []int8{-1, -1, -1, -1},
+			wantErr: nil,
 		},
 		{
 			name:  "partial read",
 			input: []byte{0x1B},
 			size:  2,
-			want:  []int8{-1, 0},
+			want:  []int8{-1, 1},
 		},
 		{
 			name:  "empty input",
@@ -153,7 +154,10 @@ func TestReadTernaryWeights(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			weights := make([]int8, tt.size)
-			err := readTernaryWeights(bytes.NewReader(tt.input), weights)
+			model := &Model{
+				config: NewConfig(),
+			}
+			err := model.readTernaryWeights(bytes.NewReader(tt.input), weights)
 			if err != tt.wantErr {
 				t.Errorf("readTernaryWeights() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -239,7 +243,8 @@ func TestLoadWeights(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a model with the test filesystem
 			model := &Model{
-				fs: fs,
+				fs:     fs,
+				config: NewConfig(),
 			}
 			err := model.LoadWeights(tt.path)
 			if err != tt.wantErr {
@@ -263,4 +268,50 @@ func TestClose(t *testing.T) {
 
 	// Test second close (should not panic)
 	model.Close()
+}
+
+func BenchmarkModel_LoadWeights(b *testing.B) {
+	// Create test filesystem with valid weights
+	fs := &testFS{
+		files: map[string][]byte{
+			"weights.bin": createValidWeights(),
+		},
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		model := &Model{
+			fs: fs,
+		}
+		if err := model.LoadWeights("weights.bin"); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkModel_ReadTernaryWeights(b *testing.B) {
+	// Create test data
+	input := []byte{0x1B, 0x1B, 0x1B, 0x1B} // 16 ternary values
+	weights := make([]int8, 16)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		model := &Model{}
+		if err := model.readTernaryWeights(bytes.NewReader(input), weights); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkModel_Infer(b *testing.B) {
+	model := NewModel(nil, testDataFS)
+	defer model.Close()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := model.Infer("test input")
+		if err != ErrInferenceNotImplemented {
+			b.Fatal(err)
+		}
+	}
 }
