@@ -1,0 +1,52 @@
+---
+description: "Replace fmt.Errorf with static errors; convert dynamic error details into DebugLog calls"
+globs: *.go, pkg/**/*.go
+alwaysApply: false
+---
+
+# Problem
+
+We want to eliminate the use of `fmt.Errorf` for creating errors. Dynamic error 
+messages are not allowed in returned errors.
+
+# Rule
+
+All returned errors must be static values declared in a shared `var` block. 
+Each error should have a unique error string that clearly identifies the 
+operation and failure reason.
+
+Instead of using `fmt.Errorf` with formatted messages, convert the dynamic 
+message to a `DebugLog` call before returning the static error.
+
+# Examples
+
+## [FAIL] Bad
+
+```go
+return nil, fmt.Errorf("trim expects at least 1 argument, got %v", value)
+````
+
+## [ OK ] Good
+
+```go
+i.DebugLog("trim expects at least 1 argument, got %v", value)
+return nil, TrimInvalidArgumentError
+```
+
+## [ OK ] Static error declaration
+
+```go
+var (
+    TrimNoArgumentsError     = errors.New("trim: requires an argument")
+    TrimInvalidArgumentError = errors.New("trim: argument must be a task or number")
+)
+```
+
+# Notes
+
+* All error values must be reused static variables.
+* Use meaningful prefixes (`trim:` in this case) to ensure uniqueness across the codebase.
+* If the original error used formatting to report variable state, that detail should be preserved as a `DebugLog` call.
+* Only `DebugLog` should include variable output. The static error string must never contain dynamic content.
+
+```

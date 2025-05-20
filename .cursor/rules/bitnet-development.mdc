@@ -3,6 +3,10 @@ description:
 globs: 
 alwaysApply: false
 ---
+# BitNet Development Rule
+
+This rule outlines the core development guidelines and standards for contributing to the BitNet project.
+
 # BitNet Development Process
 
 ## Branching Strategy

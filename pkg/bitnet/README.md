@@ -40,7 +40,10 @@ result, err := model.Infer("Your input text here")
 
 This is a work in progress. Current implementation status:
 - [x] Project setup and basic structure
-- [ ] Model weights and tokenizer integration
+- [x] Model weights and tokenizer integration
+  - [x] Model file loading with memory pooling
+  - [x] Efficient chunk-based reading
+  - [x] Performance benchmarks
 - [ ] Core tensor operations
 - [ ] Quantization implementation
 - [ ] Model inference

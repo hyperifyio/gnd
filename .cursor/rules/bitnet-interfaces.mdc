@@ -3,7 +3,9 @@ description:
 globs:
 alwaysApply: false
 ---
-# BitNet Interface Standards
+# BitNet Interfaces Rule
+
+This rule describes the interface design standards and requirements for the BitNet project, ensuring consistency and maintainability across all components.
 
 ## Interface Design Principles
 

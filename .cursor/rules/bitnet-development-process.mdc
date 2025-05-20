@@ -3,6 +3,10 @@ description:
 globs: 
 alwaysApply: false
 ---
+# BitNet Development Process Rule
+
+This rule describes the overall development process for the BitNet project, including coding standards, workflows, and best practices for contributors.
+
 # Development Process Guidelines
 
 ## Code Changes Process

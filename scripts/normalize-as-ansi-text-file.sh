@@ -3,7 +3,7 @@
 # normalize-as-ansi-text-file.sh - convert a UTF-8 file to basic ASCII via sed.
 # Usage:  ./normalize-as-ansi-text-file.sh path/to/file.gnd
 set -e
-set -x
+#set -x
 
 FILE="$1"
 
@@ -47,16 +47,22 @@ else
     -e 's/⁷/\^7/g'  \
     -e 's/⁸/\^8/g'  \
     -e 's/⁹/\^9/g'  \
+    -e 's/├/+/g'    \
+    -e 's/│/|/g'    \
+    -e 's/└/+/g'    \
+    -e 's/─/-/g'    \
+    -e 's/❌/[FAIL]/g'   \
+    -e 's/✅/[ OK ]/g'   \
     "$FILE" > "$FILE.bak"
 
   if iconv -f UTF-8 -t ISO-8859-1 "$FILE.bak" 2> /dev/null > /dev/null; then
     mv "$FILE.bak" "$FILE"
+    echo "INFO: Normalized the file: $FILE" >&2
   else
-    echo "ERROR: Could not normalize the file:" >&2
+    echo "ERROR: Could not normalize the file: $FILE: " >&2
     iconv -f UTF-8 -t ISO-8859-1 "$FILE.bak" > /dev/null || true
     rm -f "$FILE.bak"
     exit 3
   fi
 
 fi
-
