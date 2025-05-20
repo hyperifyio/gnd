@@ -1,10 +1,10 @@
 package model
 
 import (
-	"embed"
 	"encoding/binary"
 	"errors"
 	"io"
+	"io/fs"
 )
 
 // Static errors
@@ -20,7 +20,7 @@ var (
 // Implementation details will be covered in issue #173
 type Model struct {
 	config  *Config
-	fs      embed.FS
+	fs      fs.FS
 	done    chan struct{}
 	weights *ModelWeights
 }
@@ -49,7 +49,7 @@ func NewConfig() *Config {
 }
 
 // NewModel creates a new BitNet model instance
-func NewModel(config *Config, fs embed.FS) *Model {
+func NewModel(config *Config, fs fs.FS) *Model {
 	if config == nil {
 		config = NewConfig()
 	}
