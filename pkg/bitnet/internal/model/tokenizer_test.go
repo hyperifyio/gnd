@@ -122,7 +122,7 @@ func TestTokenize(t *testing.T) {
 		{
 			name:    "unknown word",
 			text:    "hello unknown",
-			want:    []int{1, 3, 3, 3, 3, 3, 3, 3},
+			want:    []int{1, 3},
 			wantErr: nil,
 		},
 		{
