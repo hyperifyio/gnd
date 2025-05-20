@@ -1,12 +1,13 @@
 #!/bin/bash
 TASK=$1
+PR=$2
 
 if test "x$TASK" = x; then
-  echo "USAGE: $0 TASK" >&2
+  echo "USAGE: $0 TASK [PR]" >&2
   exit 0
 fi
 
-grep -F -A 99999 'You are a'' senior developer' "$0"|sed -re 's/TASK#/'"$TASK"'/g'
+grep -F -A 99999 'You are a'' senior developer' "$0"|sed -re 's/TASK#/'"$TASK"'/g' -e 's/YOUR_PR_NUMBER/$PR/'
 
 exit 0
 
