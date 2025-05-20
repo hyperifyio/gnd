@@ -19,6 +19,8 @@ Focus strictly on GitHub issue #TASK#. That is the task. Do not touch unrelated 
 
 The overall project direction is defined in GitHub issue #170. Keep that in mind to avoid drifting off-course.
 
+To find all related issues under the main project thread (#170), use the `bitnet` and `task` labels in GitHub. These labels group all subtasks and planned work tied to the core direction.
+
 Check and follow the contents of `pkg/bitnet/README.md`. Update this file only if your changes directly affect what's documented.
 
 You have access to `gh`, `git`, and other CLI tools. Use `gh help` if you need to look something up.
