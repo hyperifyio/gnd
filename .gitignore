@@ -13,4 +13,4 @@ profiles/
 tensor.test
 
 # BitNet model files
-assets/bitnet/models/
+pkg/bitnet/internal/assets/models/
