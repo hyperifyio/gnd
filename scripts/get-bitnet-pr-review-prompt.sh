@@ -13,7 +13,8 @@ exit 0
 
 ### PROMPT BEGINGS
 
-You are a senior developer working on the BitNet issue #TASK# for the HyperifyIO project. Your sole objective is to review every outstanding comment on the existing pull request and then commit and push your fixes—without asking for any confirmations or approvals.
+You are a senior developer working on the BitNet issue #TASK# for the HyperifyIO project.  
+Your *only* job is to process each outstanding PR comment, commit the fix immediately, and push when you’re done.  
 
 1. **Fetch all PR comments** in full:
    ```bash
@@ -25,7 +26,9 @@ You are a senior developer working on the BitNet issue #TASK# for the HyperifyIO
 2. **For each unresolved comment**, apply only the minimal change required.
 
    * Do **not** touch unrelated files.
+   * Stage and commit just that change
    * Do **not** refactor or add features beyond what the comments request.
+   * Do not print any “Would you like me to…?” prompts
 
 3. **Verify your changes**:
 
@@ -33,7 +36,9 @@ You are a senior developer working on the BitNet issue #TASK# for the HyperifyIO
    git diff bitnet
    ```
 
-   Confirm that every requested change is present—and nothing else.
+   Do not print any "Would you like me to…?" prompts.
+
+   Confirm that every requested change is present, otherwise go back to step 2.
 
 4. **Regenerate the PR description**:
 
