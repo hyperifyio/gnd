@@ -12,9 +12,10 @@ import (
 var (
 	ErrModelNotFound = errors.New("model file not found")
 	ErrInvalidGGUF   = errors.New("invalid GGUF magic number")
-	ErrModelNotSet   = errors.New("model path not set")
+	ErrModelNotSet   = errors.New("model path cannot be empty")
 	ErrReaderNil     = errors.New("reader is nil")
 	ErrFSIsNil       = errors.New("filesystem cannot be nil")
+	ErrReadFailed    = errors.New("failed to read model chunk")
 )
 
 // GGUFHeader represents the header of a GGUF format file
@@ -76,7 +77,7 @@ func (l *ModelLoader) loadHeader() error {
 
 	header := &GGUFHeader{}
 	if err := binary.Read(file, binary.LittleEndian, header); err != nil {
-		return err
+		return ErrReadFailed
 	}
 
 	// Validate GGUF magic number (0x46554747)
@@ -107,7 +108,7 @@ func (l *ModelLoader) GetModelSize() (int64, error) {
 
 	info, err := file.Stat()
 	if err != nil {
-		return 0, err
+		return 0, ErrReadFailed
 	}
 	return info.Size(), nil
 }
@@ -146,7 +147,7 @@ func (l *ModelLoader) LoadModelChunk(reader *bufio.Reader, chunkSize int) ([]byt
 	chunk := make([]byte, chunkSize)
 	n, err := reader.Read(chunk)
 	if err != nil && err != io.EOF {
-		return nil, err
+		return nil, ErrReadFailed
 	}
 
 	return chunk[:n], nil

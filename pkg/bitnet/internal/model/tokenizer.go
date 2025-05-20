@@ -12,6 +12,7 @@ var (
 	ErrVocabNotLoaded    = errors.New("vocabulary not loaded")
 	ErrUnknownToken      = errors.New("unknown token")
 	ErrUnknownTokenID    = errors.New("unknown token ID")
+	ErrDecodeFailed      = errors.New("failed to decode tokenizer file")
 )
 
 // Tokenizer handles loading and using the BitNet tokenizer.
@@ -26,11 +27,11 @@ type Tokenizer struct {
 // NewTokenizer creates a new Tokenizer instance.
 func NewTokenizer(filesystem fs.FS, modelPath string) (*Tokenizer, error) {
 	if filesystem == nil {
-		return nil, ErrFSIsNil
+		return nil, errors.New("filesystem cannot be nil")
 	}
 
 	if modelPath == "" {
-		return nil, ErrTokenizerNotFound
+		return nil, errors.New("model path cannot be empty")
 	}
 
 	tokenizer := &Tokenizer{
@@ -54,7 +55,7 @@ func (t *Tokenizer) loadVocabulary() error {
 	defer file.Close()
 
 	if err := json.NewDecoder(file).Decode(t); err != nil {
-		return err
+		return ErrDecodeFailed
 	}
 
 	if t.Vocab == nil {
