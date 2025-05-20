@@ -91,6 +91,7 @@ func (m *Model) LoadWeights(path string) error {
 }
 
 // Infer performs inference on the input text
+// Implementation will be completed in issue #173
 func (m *Model) Infer(input string) (string, error) {
 	// Create a channel to receive the result
 	resultChan := make(chan string, 1)
@@ -103,7 +104,8 @@ func (m *Model) Infer(input string) (string, error) {
 			return
 		default:
 			// TODO: Implement inference logic
-			// This will be implemented in subsequent PRs
+			// This will be implemented in issue #173
+			resultChan <- ""
 			errChan <- ErrInferenceNotImplemented
 		}
 	}()
@@ -111,7 +113,7 @@ func (m *Model) Infer(input string) (string, error) {
 	// Wait for result or error
 	select {
 	case result := <-resultChan:
-		return result, nil
+		return result, <-errChan
 	case err := <-errChan:
 		return "", err
 	}
