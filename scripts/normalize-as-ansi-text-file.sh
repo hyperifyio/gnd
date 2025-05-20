@@ -51,6 +51,8 @@ else
     -e 's/│/|/g'    \
     -e 's/└/+/g'    \
     -e 's/─/-/g'    \
+    -e 's/❌/[FAIL]/g'   \
+    -e 's/✅/[ OK ]/g'   \
     "$FILE" > "$FILE.bak"
 
   if iconv -f UTF-8 -t ISO-8859-1 "$FILE.bak" 2> /dev/null > /dev/null; then

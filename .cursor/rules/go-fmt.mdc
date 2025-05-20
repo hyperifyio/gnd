@@ -20,20 +20,20 @@ message to a `DebugLog` call before returning the static error.
 
 # Examples
 
-## ❌ Bad
+## [FAIL] Bad
 
 ```go
 return nil, fmt.Errorf("trim expects at least 1 argument, got %v", value)
 ````
 
-## ✅ Good
+## [ OK ] Good
 
 ```go
 i.DebugLog("trim expects at least 1 argument, got %v", value)
 return nil, TrimInvalidArgumentError
 ```
 
-## ✅ Static error declaration
+## [ OK ] Static error declaration
 
 ```go
 var (
