@@ -1,9 +1,11 @@
 ---
-description: 
-globs: 
-alwaysApply: false
+description: "Defines the Test-Driven Development (TDD) workflow and unit testing standards for the BitNet implementation, ensuring consistent, maintainable, and high-quality test coverage across the codebase."
+globs: pkg/bitnet/**/*.go
+alwaysApply: true
 ---
 # BitNet TDD and Unit Testing Standards
+
+This rule defines the Test-Driven Development (TDD) workflow and unit testing standards for the BitNet implementation. It covers test organization, implementation patterns, best practices, and quality assurance guidelines to ensure consistent, maintainable, and high-quality test coverage across the codebase.
 
 ## TDD Workflow
 

@@ -1,7 +1,7 @@
 ---
-description:
-globs:
-alwaysApply: false
+description: "Defines the guidelines and standards for implementing tensor operations in the BitNet project, ensuring efficient and maintainable code."
+globs: pkg/bitnet/**/*.go
+alwaysApply: true
 ---
 # Tensor Implementation Guidelines
 

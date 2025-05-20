@@ -1,7 +1,7 @@
 ---
-description: 
-globs: 
-alwaysApply: false
+description: "Outlines the core development guidelines and standards for contributing to the BitNet project."
+globs: pkg/bitnet/**
+alwaysApply: true
 ---
 # BitNet Development Process
 

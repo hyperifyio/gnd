@@ -1,5 +1,93 @@
 ---
-description:
-globs:
-alwaysApply: false
+description: "Defines the branch management standards and workflows for the BitNet implementation, ensuring consistent and maintainable development practices."
+globs: pkg/bitnet/**
+alwaysApply: true
 ---
+# BitNet Branch Management
+
+This rule defines the branch management standards and workflows for the BitNet implementation. It covers branch creation, naming conventions, and best practices to ensure consistent and maintainable development workflow.
+
+## Creating Feature Branches
+
+Always use `gh issue develop` command to create branches for BitNet implementation. This ensures proper linking between issues and branches.
+
+### Basic Branch Creation
+
+```bash
+# Create and checkout a branch for issue 171
+gh issue develop 171 --checkout --base bitnet
+```
+
+### Branch Naming Convention
+
+The `gh issue develop` command will automatically create branches with the format:
+- `{username}/issue-{number}`
+
+For BitNet implementation, we'll use the `--name` flag to follow our convention:
+```bash
+# Create a branch with our naming convention
+gh issue develop 171 --name feat/bitnet-171-project-setup --base bitnet --checkout
+```
+
+## Branch Management Commands
+
+1. List branches for an issue:
+```bash
+gh issue develop --list 171
+```
+
+2. Create branch in a different repo (if needed):
+```bash
+gh issue develop 171 --repo hyperifyio/gnd --branch-repo hyperifyio/gnd
+```
+
+## Branch Workflow
+
+1. Always create branches from the `bitnet` base branch:
+```bash
+gh issue develop {issue_number} --base bitnet --checkout
+```
+
+2. For BitNet implementation, use the naming convention:
+```bash
+gh issue develop {issue_number} --name feat/bitnet-{issue_number}-{description} --base bitnet --checkout
+```
+
+3. Verify branch creation:
+```bash
+# List all branches for the issue
+gh issue develop --list {issue_number}
+```
+
+## Pull Request Creation
+
+After creating a branch with `gh issue develop`, the branch is automatically linked to the issue. When creating PRs:
+
+1. The branch will be automatically set as the base for PRs
+2. The issue will be automatically linked in the PR
+3. Use `gh pr create` to create the PR against the `bitnet` branch
+
+## Best Practices
+
+1. Always use `--checkout` flag to switch to the new branch immediately
+2. Always specify `--base bitnet` to ensure correct base branch
+3. Use `--name` flag to maintain consistent branch naming
+4. Verify branch creation with `--list` flag
+5. Keep branches focused on single issues
+6. Delete branches after PR is merged
+
+## Example Workflow
+
+```bash
+# 1. Create and checkout branch for issue 171
+gh issue develop 171 --name feat/bitnet-171-project-setup --base bitnet --checkout
+
+# 2. Make changes and commit
+
+# 3. Create PR
+gh pr create --base bitnet
+
+# 4. After PR is merged, delete the branch
+gh pr close {pr_number}
+git branch -d feat/bitnet-171-project-setup
+```

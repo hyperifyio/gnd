@@ -1,7 +1,7 @@
 ---
-description: 
-globs: 
-alwaysApply: false
+description: "Defines the required development environment, tools, and setup instructions for working on the BitNet project."
+globs: pkg/bitnet/**
+alwaysApply: true
 ---
 # BitNet Development Environment and Best Practices
 

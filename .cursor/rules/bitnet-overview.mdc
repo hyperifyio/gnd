@@ -1,7 +1,7 @@
 ---
-description:
-globs:
-alwaysApply: false
+description: "Provides an overview of the BitNet project, including its goals, architecture, and high-level guidelines for contributors."
+globs: pkg/bitnet/**
+alwaysApply: true
 ---
 # BitNet Project Overview
 

@@ -1,5 +1,160 @@
 ---
-description:
-globs:
-alwaysApply: false
+description: "Defines the standards and workflow for reviewing Pull Requests (PRs) in the BitNet project, ensuring code quality and consistency."
+globs: pkg/bitnet/**
+alwaysApply: true
 ---
+# BitNet PR Reviews Rule
+
+This rule defines the standards and workflow for reviewing Pull Requests (PRs) in the BitNet project, ensuring code quality and consistency.
+
+## Accessing PR Reviews
+
+1. Basic Review Information:
+   ```bash
+   # View basic PR information
+   gh pr view <PR_NUMBER>
+   
+   # View PR with comments
+   gh pr view <PR_NUMBER> --comments
+   ```
+
+2. Detailed Review Information:
+   ```bash
+   # View PR with JSON output
+   gh pr view <PR_NUMBER> --json reviews,comments,latestReviews
+   
+   # View specific review fields
+   gh pr view <PR_NUMBER> --json reviews --jq '.reviews[].body'
+   ```
+
+3. GitHub API Access:
+   ```bash
+   # Access PR comments via API
+   gh api \
+     -H "Accept: application/vnd.github+json" \
+     -H "X-GitHub-Api-Version: 2022-11-28" \
+     /repos/OWNER/REPO/pulls/PR_NUMBER/comments
+   ```
+
+## Review Types
+
+1. Review States:
+   - APPROVED: Changes are ready to merge
+   - CHANGES_REQUESTED: Changes needed before approval
+   - COMMENTED: General feedback provided
+   - DISMISSED: Previous review no longer valid
+
+2. Review Components:
+   - Body: Main review comment
+   - Comments: Line-specific feedback
+   - State: Review decision
+   - Author: Reviewer information
+
+## Best Practices
+
+1. Review Access:
+   - Use appropriate commands for detail level needed
+   - Check both comments and reviews
+   - Verify review state
+   - Look for line-specific comments
+
+2. Review Response:
+   - Address all feedback points
+   - Make requested changes
+   - Add clarifying comments
+   - Update PR description if needed
+
+3. Review Communication:
+   - Acknowledge feedback
+   - Ask for clarification if needed
+   - Document changes made
+   - Request re-review when ready
+
+## Common Commands
+
+1. Viewing Reviews:
+   ```bash
+   # Basic PR view
+   gh pr view <PR_NUMBER>
+   
+   # View with comments
+   gh pr view <PR_NUMBER> --comments
+   
+   # View in browser
+   gh pr view <PR_NUMBER> --web
+   ```
+
+2. JSON Output:
+   ```bash
+   # Full review details
+   gh pr view <PR_NUMBER> --json reviews
+   
+   # Specific fields
+   gh pr view <PR_NUMBER> --json reviews --jq '.reviews[].body'
+   ```
+
+3. Template Formatting:
+   ```bash
+   # Custom format
+   gh pr view <PR_NUMBER> --json reviews --template '{{range .reviews}}{{printf "Review by %s (%s):\n%s\n\n" .author.login .state .body}}{{end}}'
+   ```
+
+## Review Workflow
+
+1. Initial Review:
+   - Check PR description
+   - Review code changes
+   - Look for comments
+   - Verify review state
+
+2. Addressing Feedback:
+   - Make necessary changes
+   - Update documentation
+   - Add test coverage
+   - Improve code quality
+
+3. Follow-up:
+   - Request re-review
+   - Address new feedback
+   - Update PR as needed
+   - Maintain communication
+
+## Review Documentation
+
+1. PR Updates:
+   - Document changes made
+   - Reference feedback addressed
+   - Explain design decisions
+   - Note remaining issues
+
+2. Communication:
+   - Be clear and concise
+   - Reference specific feedback
+   - Explain changes made
+   - Ask for clarification
+
+3. Status Tracking:
+   - Track review state
+   - Monitor feedback
+   - Update PR status
+   - Document progress
+
+## Common Issues
+
+1. Missing Information:
+   - Check all review types
+   - Look for line comments
+   - Verify review state
+   - Use appropriate commands
+
+2. Incomplete Reviews:
+   - Request clarification
+   - Check all feedback
+   - Verify changes
+   - Document decisions
+
+3. Review Updates:
+   - Monitor new feedback
+   - Address all points
+   - Update documentation
+   - Maintain communication

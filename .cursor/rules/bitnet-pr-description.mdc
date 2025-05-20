@@ -1,5 +1,142 @@
 ---
-description:
-globs:
-alwaysApply: false
+description: "Defines the standardized format and content requirements for Pull Request descriptions in the BitNet project, ensuring consistent documentation of changes, test coverage, performance metrics, and areas for improvement."
+globs: pkg/bitnet/**
+alwaysApply: true
 ---
+# PR Description Template
+
+This rule defines the standardized format and content requirements for Pull Request descriptions in the BitNet project. It ensures consistent documentation of changes, test coverage, performance metrics, and areas for improvement across all PRs.
+
+## Overview
+This rule defines the structure and content requirements for Pull Request descriptions in the BitNet project.
+
+## PR Description Structure
+
+### Title Format
+```
+<type>: <concise description>
+```
+Types:
+- feat: New feature
+- fix: Bug fix
+- test: Test additions/modifications
+- perf: Performance improvements
+- refactor: Code refactoring
+- docs: Documentation updates
+
+### Description Template
+```markdown
+## Changes
+- [ ] List of specific changes made
+- [ ] Include file paths and line numbers for major changes
+- [ ] Reference related issues/tickets
+
+## Test Coverage
+- [ ] Current coverage: <percentage>
+- [ ] Coverage changes: <percentage> → <percentage>
+- [ ] Untested areas:
+  - [ ] List of uncovered functions/methods
+  - [ ] Critical paths that need testing
+
+## Performance Metrics
+### Memory Usage
+- [ ] Allocations per operation:
+  - [ ] New tensor creation: <number> allocs/op
+  - [ ] Get/Set operations: <number> allocs/op
+  - [ ] Parallel operations: <number> allocs/op
+
+### CPU Performance
+- [ ] Operation timing:
+  - [ ] Basic operations: <time> ns/op
+  - [ ] Parallel operations: <time> ns/op
+  - [ ] Large tensor operations: <time> ns/op
+
+## Areas for Improvement
+### High Priority
+- [ ] List critical improvements needed
+- [ ] Performance bottlenecks
+- [ ] Memory optimization opportunities
+
+### Medium Priority
+- [ ] List non-critical improvements
+- [ ] Code quality enhancements
+- [ ] Documentation updates
+
+### Low Priority
+- [ ] List nice-to-have improvements
+- [ ] Future optimizations
+- [ ] Technical debt items
+
+## Related Rules
+- bitnet-testing.mdc
+- bitnet-benchmarks.mdc
+- bitnet-performance.mdc
+- bitnet-development-process.mdc
+
+## Automation
+The following commands should be run to generate PR metrics:
+
+```bash
+# Test coverage
+go test ./pkg/bitnet/... -coverprofile=coverage.out
+go tool cover -func=coverage.out
+
+# Benchmarks
+./scripts/run_benchmarks.sh
+
+# Performance profiling
+go test -cpuprofile=cpu.prof -memprofile=mem.prof ./pkg/bitnet/...
+```
+
+## Best Practices
+1. Always include test coverage metrics
+2. Document performance impact
+3. List specific improvement areas
+4. Reference related issues
+5. Include benchmark comparisons
+6. Document memory usage patterns
+7. Note any breaking changes
+8. Include migration steps if needed
+
+## Example PR Description
+```markdown
+## Changes
+- Implemented worker pool for ParallelForEach
+- Added memory pooling for tensor creation
+- Optimized Get/Set operations
+
+## Test Coverage
+- Current coverage: 93.0%
+- Coverage changes: 85.0% → 93.0%
+- Untested areas:
+  - Internal config package (0% coverage)
+  - Math operations package (0% coverage)
+
+## Performance Metrics
+### Memory Usage
+- Allocations per operation:
+  - New tensor creation: 2 allocs/op
+  - Get/Set operations: 0 allocs/op
+  - Parallel operations: 17 allocs/op
+
+### CPU Performance
+- Operation timing:
+  - Basic operations: 2.1-2.4 ns/op
+  - Parallel operations: 142-146 ms/op
+  - Large tensor operations: 74-82 ms/op
+
+## Areas for Improvement
+### High Priority
+- Add tests for internal packages
+- Optimize ParallelForEach memory allocations
+- Implement memory pooling for large tensors
+
+### Medium Priority
+- Improve error handling in tensor operations
+- Add more comprehensive benchmarks
+- Enhance documentation
+
+### Low Priority
+- Consider SIMD optimizations
+- Add more tensor operations
+- Improve test organization

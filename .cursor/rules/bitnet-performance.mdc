@@ -1,5 +1,260 @@
 ---
-description:
-globs:
+description: "Defines the performance optimization standards and requirements for the BitNet implementation, covering automated performance testing, memory optimization, CPU optimization, and continuous monitoring guidelines."
+globs: pkg/bitnet/**/*.go
 alwaysApply: false
 ---
+# BitNet Performance Optimization Standards
+
+This rule defines the performance optimization standards and requirements for the BitNet implementation. It covers automated performance testing, memory optimization, CPU optimization, and continuous monitoring guidelines to ensure optimal performance across all components.
+
+## Automated Performance Testing
+
+1. Benchmark Script:
+   ```bash
+   #!/bin/bash
+   # run_benchmarks.sh
+   
+   # Run benchmarks with memory profiling
+   go test -bench=. -benchmem -memprofile=mem.prof ./...
+   
+   # Run benchmarks with CPU profiling
+   go test -bench=. -cpuprofile=cpu.prof ./...
+   
+   # Analyze memory profile
+   go tool pprof -http=:8080 mem.prof
+   
+   # Analyze CPU profile
+   go tool pprof -http=:8081 cpu.prof
+   ```
+
+2. Performance Thresholds:
+   ```go
+   // Example from [pkg/bitnet/tensor/tensor_test.go](mdc:pkg/bitnet/tensor/tensor_test.go)
+   func BenchmarkTensor_Operations(b *testing.B) {
+       // Set performance thresholds
+       const (
+           maxAllocsPerOp = 10
+           maxBytesPerOp  = 1024
+           maxNsPerOp     = 1000
+       )
+       
+       // Run benchmark
+       result := testing.Benchmark(func(b *testing.B) {
+           // Benchmark code
+       })
+       
+       // Check thresholds
+       if result.AllocsPerOp() > maxAllocsPerOp {
+           b.Errorf("Too many allocations: %d > %d", result.AllocsPerOp(), maxAllocsPerOp)
+       }
+   }
+   ```
+
+## Memory Optimization
+
+1. Allocation Tracking:
+   ```go
+   // Example memory tracking
+   func BenchmarkMemoryUsage(b *testing.B) {
+       var m runtime.MemStats
+       runtime.ReadMemStats(&m)
+       allocsBefore := m.TotalAlloc
+       
+       // Run benchmark
+       b.ResetTimer()
+       for i := 0; i < b.N; i++ {
+           // Code to benchmark
+       }
+       b.StopTimer()
+       
+       // Check allocations
+       runtime.ReadMemStats(&m)
+       allocsAfter := m.TotalAlloc
+       allocsPerOp := (allocsAfter - allocsBefore) / uint64(b.N)
+       
+       if allocsPerOp > 1000 {
+           b.Errorf("High allocation rate: %d allocs/op", allocsPerOp)
+       }
+   }
+   ```
+
+2. Memory Profiling:
+   ```go
+   // Example memory profiling
+   func TestMemoryProfile(t *testing.T) {
+       f, err := os.Create("mem.prof")
+       if err != nil {
+           t.Fatal(err)
+       }
+       defer f.Close()
+       
+       pprof.StartCPUProfile(f)
+       defer pprof.StopCPUProfile()
+       
+       // Run operations
+       for i := 0; i < 1000; i++ {
+           // Code to profile
+       }
+   }
+   ```
+
+## CPU Optimization
+
+1. CPU Profiling:
+   ```go
+   // Example CPU profiling
+   func TestCPUProfile(t *testing.T) {
+       f, err := os.Create("cpu.prof")
+       if err != nil {
+           t.Fatal(err)
+       }
+       defer f.Close()
+       
+       pprof.StartCPUProfile(f)
+       defer pprof.StopCPUProfile()
+       
+       // Run operations
+       for i := 0; i < 1000; i++ {
+           // Code to profile
+       }
+   }
+   ```
+
+2. Performance Monitoring:
+   ```go
+   // Example performance monitoring
+   func BenchmarkPerformance(b *testing.B) {
+       var m runtime.MemStats
+       runtime.ReadMemStats(&m)
+       
+       b.ResetTimer()
+       for i := 0; i < b.N; i++ {
+           // Code to benchmark
+       }
+       b.StopTimer()
+       
+       // Report metrics
+       b.ReportMetric(float64(m.TotalAlloc)/float64(b.N), "alloc/op")
+       b.ReportMetric(float64(m.NumGC), "gc/op")
+   }
+   ```
+
+## Automated Optimization
+
+1. Performance Checks:
+   ```go
+   // Example performance checks
+   func TestPerformance(t *testing.T) {
+       // Run benchmark
+       result := testing.Benchmark(func(b *testing.B) {
+           for i := 0; i < b.N; i++ {
+               // Code to benchmark
+           }
+       })
+       
+       // Check performance
+       if result.AllocsPerOp() > 10 {
+           t.Errorf("High allocation rate: %d allocs/op", result.AllocsPerOp())
+       }
+       
+       if result.NsPerOp() > 1000 {
+           t.Errorf("Slow operation: %d ns/op", result.NsPerOp())
+       }
+   }
+   ```
+
+2. Optimization Hints:
+   ```go
+   // Example optimization hints
+   func BenchmarkOptimization(b *testing.B) {
+       // Track allocations
+       var allocs uint64
+       runtime.SetFinalizer(&allocs, func(_ *uint64) {
+           if allocs > 1000 {
+               b.Logf("High allocation rate detected: %d allocs", allocs)
+           }
+       })
+       
+       // Run benchmark
+       b.ResetTimer()
+       for i := 0; i < b.N; i++ {
+           // Code to benchmark
+       }
+       b.StopTimer()
+   }
+   ```
+
+## Continuous Monitoring
+
+1. Performance Metrics:
+   ```go
+   // Example performance metrics
+   type PerformanceMetrics struct {
+       AllocsPerOp  int64
+       BytesPerOp   int64
+       NsPerOp      int64
+       GCPauseNs    int64
+   }
+   
+   func collectMetrics(b *testing.B) PerformanceMetrics {
+       var m runtime.MemStats
+       runtime.ReadMemStats(&m)
+       
+       return PerformanceMetrics{
+           AllocsPerOp: b.AllocsPerOp(),
+           BytesPerOp:  b.AllocedBytesPerOp(),
+           NsPerOp:     b.NsPerOp(),
+           GCPauseNs:   m.PauseTotalNs,
+       }
+   }
+   ```
+
+2. Performance Tracking:
+   ```go
+   // Example performance tracking
+   func trackPerformance(b *testing.B, metrics PerformanceMetrics) {
+       // Store metrics
+       // Compare with baseline
+       // Report regressions
+   }
+   ```
+
+## Best Practices
+
+1. Memory Management:
+   - Minimize allocations
+   - Reuse buffers
+   - Use sync.Pool
+   - Monitor GC
+
+2. CPU Optimization:
+   - Profile hot paths
+   - Optimize algorithms
+   - Use parallelism
+   - Cache results
+
+3. Performance Monitoring:
+   - Track metrics
+   - Set thresholds
+   - Monitor trends
+   - Report issues
+
+## Implementation Guidelines
+
+1. Code Optimization:
+   - Profile first
+   - Optimize hot paths
+   - Reduce allocations
+   - Use efficient algorithms
+
+2. Performance Testing:
+   - Run benchmarks
+   - Check thresholds
+   - Monitor trends
+   - Document findings
+
+3. Continuous Improvement:
+   - Track metrics
+   - Set goals
+   - Monitor progress
+   - Optimize regularly

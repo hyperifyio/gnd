@@ -1,7 +1,7 @@
 ---
-description:
-globs:
-alwaysApply: false
+description: "Describes the interface design standards and requirements for the BitNet project, ensuring consistency and maintainability across all components."
+globs: pkg/bitnet/**
+alwaysApply: true
 ---
 # BitNet Interface Standards
 

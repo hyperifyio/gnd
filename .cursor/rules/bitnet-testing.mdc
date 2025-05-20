@@ -1,5 +1,155 @@
 ---
-description:
-globs:
+description: "Outlines the requirements and best practices for writing and maintaining tests in the BitNet project, ensuring code reliability and maintainability."
+globs: pkg/bitnet/**/*.go
 alwaysApply: false
 ---
+# BitNet Testing Rule
+
+This rule outlines the requirements and best practices for writing and maintaining tests in the BitNet project, ensuring code reliability and maintainability.
+
+# BitNet Testing Standards
+
+## Testing Principles
+
+1. Interface Testing:
+   - Verify interface compliance
+   - Test all interface methods
+   - Check edge cases
+   - Validate behavior
+
+2. Implementation Testing:
+   - Test private methods
+   - Verify data integrity
+   - Check performance
+   - Validate error handling
+
+3. Integration Testing:
+   - Test component interaction
+   - Verify system behavior
+   - Check resource usage
+   - Validate end-to-end flow
+
+## Test Organization
+
+1. Test Structure:
+   ```
+   pkg/bitnet/
+   ├── tensor/
+   │   ├── tensor.go
+   │   └── tensor_test.go
+   ├── internal/
+   │   └── implementation/
+   │       ├── impl.go
+   │       └── impl_test.go
+   └── tests/
+       └── integration/
+           └── tensor_ops_test.go
+   ```
+
+2. Test Categories:
+   - Unit tests
+   - Interface tests
+   - Integration tests
+   - Performance tests
+
+3. Test Naming:
+   - Clear and descriptive
+   - Follow Go conventions
+   - Indicate test type
+   - Show test purpose
+
+## Test Implementation
+
+1. Unit Tests:
+   ```go
+   func TestTensor_Get(t *testing.T) {
+       // Test setup
+       t.Run("valid indices", func(t *testing.T) {
+           // Test implementation
+       })
+       t.Run("invalid indices", func(t *testing.T) {
+           // Test implementation
+       })
+   }
+   ```
+
+2. Interface Tests:
+   ```go
+   func TestTensorType_Implementation(t *testing.T) {
+       var _ TensorType = &Tensor{}
+       // Additional interface tests
+   }
+   ```
+
+3. Performance Tests:
+   ```go
+   func BenchmarkTensor_ParallelForEach(b *testing.B) {
+       // Benchmark implementation
+   }
+   ```
+
+## Best Practices
+
+1. Test Coverage:
+   - Aim for high coverage
+   - Test edge cases
+   - Verify error paths
+   - Check performance
+
+2. Test Quality:
+   - Clear test names
+   - Descriptive comments
+   - Proper assertions
+   - Clean test data
+
+3. Test Maintenance:
+   - Keep tests simple
+   - Avoid test duplication
+   - Update with changes
+   - Document test cases
+
+## Test Categories
+
+1. Unit Tests:
+   - Test individual components
+   - Verify basic functionality
+   - Check error handling
+   - Validate edge cases
+
+2. Interface Tests:
+   - Verify interface compliance
+   - Test all methods
+   - Check behavior
+   - Validate contracts
+
+3. Integration Tests:
+   - Test component interaction
+   - Verify system behavior
+   - Check resource usage
+   - Validate workflows
+
+4. Performance Tests:
+   - Measure execution time
+   - Check memory usage
+   - Verify scalability
+   - Compare implementations
+
+## Test Documentation
+
+1. Test Comments:
+   - Purpose of test
+   - Test setup
+   - Expected results
+   - Edge cases
+
+2. Test Organization:
+   - Group related tests
+   - Clear test names
+   - Logical structure
+   - Easy to maintain
+
+3. Test Data:
+   - Representative data
+   - Edge cases
+   - Error conditions
+   - Performance scenarios

@@ -1,5 +1,225 @@
 ---
-description:
-globs:
+description: "Outlines the requirements and best practices for writing, running, and maintaining benchmarks in the BitNet project to ensure optimal performance."
+globs: pkg/bitnet/**/*.go
 alwaysApply: false
 ---
+# BitNet Benchmarks Rule
+
+This rule outlines the requirements and best practices for writing, running, and maintaining benchmarks in the BitNet project to ensure optimal performance.
+
+## Benchmark Structure
+
+1. File Organization:
+   ```
+   pkg/bitnet/
+   ├── component/
+   │   ├── component.go
+   │   └── component_test.go  # Contains both unit and benchmark tests
+   ```
+
+2. Benchmark Naming:
+   ```go
+   // Example from [pkg/bitnet/tensor/tensor_test.go](mdc:pkg/bitnet/tensor/tensor_test.go)
+   func BenchmarkComponent_Operation(b *testing.B) {
+       // Benchmark implementation
+   }
+   ```
+
+3. Sub-benchmarks:
+   ```go
+   func BenchmarkComponent_Operation(b *testing.B) {
+       b.Run("sub_operation", func(b *testing.B) {
+           // Sub-benchmark implementation
+       })
+   }
+   ```
+
+## Benchmark Categories
+
+1. Creation Benchmarks:
+   ```go
+   func BenchmarkNewComponent(b *testing.B) {
+       sizes := []struct {
+           name string
+           size int
+       }{
+           {"small", 100},
+           {"medium", 1000},
+           {"large", 10000},
+       }
+       
+       for _, size := range sizes {
+           b.Run(size.name, func(b *testing.B) {
+               for i := 0; i < b.N; i++ {
+                   NewComponent(size.size)
+               }
+           })
+       }
+   }
+   ```
+
+2. Operation Benchmarks:
+   ```go
+   func BenchmarkComponent_Operations(b *testing.B) {
+       component := NewComponent(1000)
+       
+       b.Run("single_operation", func(b *testing.B) {
+           for i := 0; i < b.N; i++ {
+               component.Operation()
+           }
+       })
+       
+       b.Run("sequential_operations", func(b *testing.B) {
+           for i := 0; i < b.N; i++ {
+               for j := 0; j < 100; j++ {
+                   component.Operation()
+               }
+           }
+       })
+   }
+   ```
+
+3. Memory Benchmarks:
+   ```go
+   func BenchmarkComponent_Memory(b *testing.B) {
+       b.Run("allocation", func(b *testing.B) {
+           for i := 0; i < b.N; i++ {
+               _ = make([]byte, 1024)
+           }
+       })
+   }
+   ```
+
+## Best Practices
+
+1. Test Setup:
+   - Initialize test data once
+   - Use realistic data sizes
+   - Consider memory impact
+   - Document setup costs
+
+2. Benchmark Cases:
+   - Test different sizes
+   - Test different patterns
+   - Test edge cases
+   - Test real-world scenarios
+
+3. Memory Analysis:
+   - Track allocations
+   - Monitor memory usage
+   - Check for leaks
+   - Optimize allocations
+
+## Running Benchmarks
+
+1. Basic Run:
+   ```bash
+   go test -bench=. ./...
+   ```
+
+2. Memory Analysis:
+   ```bash
+   go test -bench=. -benchmem ./...
+   ```
+
+3. CPU Profiling:
+   ```bash
+   go test -bench=. -cpuprofile=cpu.prof ./...
+   ```
+
+## Benchmark Results
+
+1. Performance Metrics:
+   - Operations per second
+   - Memory allocations
+   - Bytes per operation
+   - CPU time per operation
+
+2. Result Analysis:
+   - Compare implementations
+   - Identify bottlenecks
+   - Track improvements
+   - Document findings
+
+3. Optimization:
+   - Reduce allocations
+   - Improve algorithms
+   - Optimize memory usage
+   - Enhance parallelism
+
+## Common Patterns
+
+1. Size Variations:
+   ```go
+   sizes := []struct {
+       name  string
+       size  int
+   }{
+       {"small", 100},
+       {"medium", 1000},
+       {"large", 10000},
+   }
+   ```
+
+2. Pattern Testing:
+   ```go
+   patterns := []struct {
+       name     string
+       pattern  func() error
+   }{
+       {"sequential", sequentialPattern},
+       {"random", randomPattern},
+       {"parallel", parallelPattern},
+   }
+   ```
+
+3. Memory Testing:
+   ```go
+   func BenchmarkMemory(b *testing.B) {
+       b.Run("allocation", func(b *testing.B) {
+           for i := 0; i < b.N; i++ {
+               _ = make([]byte, 1024)
+           }
+       })
+   }
+   ```
+
+## Documentation
+
+1. Benchmark Comments:
+   - Purpose of benchmark
+   - Test scenarios
+   - Expected results
+   - Performance goals
+
+2. Result Documentation:
+   - Record baseline
+   - Track improvements
+   - Document optimizations
+   - Note limitations
+
+3. Performance Goals:
+   - Set targets
+   - Monitor progress
+   - Document achievements
+   - Plan improvements
+
+## Quality Assurance
+
+1. Benchmark Review:
+   - Verify methodology
+   - Check test cases
+   - Validate results
+   - Document findings
+
+2. Continuous Monitoring:
+   - Track performance
+   - Monitor regressions
+   - Document changes
+   - Plan optimizations
+
+3. Performance Goals:
+   - Set benchmarks
+   - Track progress
+   - Document improvements
+   - Plan optimizations
