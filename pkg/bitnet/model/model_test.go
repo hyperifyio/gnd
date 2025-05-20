@@ -1,9 +1,12 @@
 package model
 
 import (
-	"os"
+	"embed"
 	"testing"
 )
+
+//go:embed testdata
+var testFS embed.FS
 
 func TestNewConfig(t *testing.T) {
 	config := NewConfig()
@@ -34,7 +37,7 @@ func TestNewConfig(t *testing.T) {
 
 func TestNewModel(t *testing.T) {
 	// Test with nil config
-	model := NewModel(nil)
+	model := NewModel(nil, testFS)
 	if model == nil {
 		t.Fatal("NewModel returned nil")
 	}
@@ -51,7 +54,7 @@ func TestNewModel(t *testing.T) {
 		MaxSeqLength:     2048,
 		IntermediateSize: 4096,
 	}
-	model = NewModel(customConfig)
+	model = NewModel(customConfig, testFS)
 	if model == nil {
 		t.Fatal("NewModel returned nil")
 	}
@@ -61,7 +64,7 @@ func TestNewModel(t *testing.T) {
 }
 
 func TestLoadWeights(t *testing.T) {
-	model := NewModel(nil)
+	model := NewModel(nil, testFS)
 
 	// Test with non-existent file
 	err := model.LoadWeights("nonexistent.bin")
@@ -69,21 +72,8 @@ func TestLoadWeights(t *testing.T) {
 		t.Error("expected error for non-existent file")
 	}
 
-	// Create a temporary file with invalid format
-	tmpFile, err := os.CreateTemp("", "test_weights_*.bin")
-	if err != nil {
-		t.Fatalf("failed to create temp file: %v", err)
-	}
-	defer os.Remove(tmpFile.Name())
-	defer tmpFile.Close()
-
-	// Write invalid magic number
-	_, err = tmpFile.Write([]byte{0, 0, 0, 0})
-	if err != nil {
-		t.Fatalf("failed to write to temp file: %v", err)
-	}
-
-	err = model.LoadWeights(tmpFile.Name())
+	// Test with invalid file format
+	err = model.LoadWeights("testdata/invalid.bin")
 	if err == nil {
 		t.Error("expected error for invalid file format")
 	}

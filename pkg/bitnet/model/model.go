@@ -1,16 +1,23 @@
 package model
 
 import (
+	"embed"
 	"encoding/binary"
-	"fmt"
-	"os"
-	"sync"
+	"errors"
+)
+
+// Static errors
+var (
+	ErrInvalidWeightsFile      = errors.New("bitnet: invalid weights file format")
+	ErrUnsupportedVersion      = errors.New("bitnet: unsupported weights file version")
+	ErrInferenceNotImplemented = errors.New("bitnet: inference not implemented yet")
 )
 
 // Model represents the BitNet b1.58-2B-4T model structure
 type Model struct {
 	config *Config
-	mu     sync.RWMutex
+	fs     embed.FS
+	done   chan struct{}
 }
 
 // Config holds the model configuration
@@ -37,42 +44,41 @@ func NewConfig() *Config {
 }
 
 // NewModel creates a new BitNet model instance
-func NewModel(config *Config) *Model {
+func NewModel(config *Config, fs embed.FS) *Model {
 	if config == nil {
 		config = NewConfig()
 	}
 	return &Model{
 		config: config,
+		fs:     fs,
+		done:   make(chan struct{}),
 	}
 }
 
-// LoadWeights loads the model weights from a file
+// LoadWeights loads the model weights from the embedded filesystem
 func (m *Model) LoadWeights(path string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	file, err := os.Open(path)
+	file, err := m.fs.Open(path)
 	if err != nil {
-		return fmt.Errorf("failed to open weights file: %w", err)
+		return err
 	}
 	defer file.Close()
 
 	// Read and validate magic number
 	var magic uint32
 	if err := binary.Read(file, binary.LittleEndian, &magic); err != nil {
-		return fmt.Errorf("failed to read magic number: %w", err)
+		return err
 	}
 	if magic != 0x424E4554 { // "BNET" in hex
-		return fmt.Errorf("invalid weights file format")
+		return ErrInvalidWeightsFile
 	}
 
 	// Read version
 	var version uint32
 	if err := binary.Read(file, binary.LittleEndian, &version); err != nil {
-		return fmt.Errorf("failed to read version: %w", err)
+		return err
 	}
 	if version != 1 {
-		return fmt.Errorf("unsupported weights file version: %d", version)
+		return ErrUnsupportedVersion
 	}
 
 	// TODO: Implement weight loading logic
@@ -83,10 +89,32 @@ func (m *Model) LoadWeights(path string) error {
 
 // Infer performs inference on the input text
 func (m *Model) Infer(input string) (string, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	// Create a channel to receive the result
+	resultChan := make(chan string, 1)
+	errChan := make(chan error, 1)
 
-	// TODO: Implement inference logic
-	// This will be implemented in subsequent PRs
-	return "", fmt.Errorf("inference not implemented yet")
+	// Run inference in a goroutine
+	go func() {
+		select {
+		case <-m.done:
+			return
+		default:
+			// TODO: Implement inference logic
+			// This will be implemented in subsequent PRs
+			errChan <- ErrInferenceNotImplemented
+		}
+	}()
+
+	// Wait for result or error
+	select {
+	case result := <-resultChan:
+		return result, nil
+	case err := <-errChan:
+		return "", err
+	}
+}
+
+// Close stops all goroutines and cleans up resources
+func (m *Model) Close() {
+	close(m.done)
 }
