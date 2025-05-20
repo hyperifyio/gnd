@@ -1,8 +1,14 @@
 package model
 
 import (
-	"fmt"
+	"errors"
 	"strings"
+)
+
+var (
+	ErrVocabNotLoaded = errors.New("vocabulary not loaded")
+	ErrUnknownToken   = errors.New("unknown token")
+	ErrUnknownTokenID = errors.New("unknown token ID")
 )
 
 // Tokenizer represents the model's tokenizer
@@ -15,7 +21,7 @@ type Tokenizer struct {
 // Tokenize converts text into token IDs
 func (t *Tokenizer) Tokenize(text string) ([]int, error) {
 	if t.Vocab == nil {
-		return nil, fmt.Errorf("vocabulary not loaded")
+		return nil, ErrVocabNotLoaded
 	}
 
 	// Split text into words
@@ -37,7 +43,7 @@ func (t *Tokenizer) Tokenize(text string) ([]int, error) {
 			} else if id, ok := t.SpecialTokens["[UNK]"]; ok {
 				tokens = append(tokens, id)
 			} else {
-				return nil, fmt.Errorf("unknown token: %s", subword)
+				return nil, ErrUnknownToken
 			}
 		}
 	}
@@ -87,7 +93,7 @@ func (t *Tokenizer) applyBPE(word string) []string {
 // Decode converts token IDs back to text
 func (t *Tokenizer) Decode(ids []int) (string, error) {
 	if t.Vocab == nil {
-		return "", fmt.Errorf("vocabulary not loaded")
+		return "", ErrVocabNotLoaded
 	}
 
 	// Create reverse vocabulary mapping
@@ -102,7 +108,7 @@ func (t *Tokenizer) Decode(ids []int) (string, error) {
 		if token, ok := reverseVocab[id]; ok {
 			tokens[i] = token
 		} else {
-			return "", fmt.Errorf("unknown token ID: %d", id)
+			return "", ErrUnknownTokenID
 		}
 	}
 
@@ -110,4 +116,29 @@ func (t *Tokenizer) Decode(ids []int) (string, error) {
 	text := strings.Join(tokens, "")
 	text = strings.ReplaceAll(text, "##", "") // Remove BPE markers
 	return text, nil
+}
+
+// Detokenize converts token IDs back into text
+func (t *Tokenizer) Detokenize(ids []int) (string, error) {
+	if t.Vocab == nil {
+		return "", ErrVocabNotLoaded
+	}
+
+	// TODO: Implement actual detokenization logic
+	return "", nil
+}
+
+// GetVocab returns the tokenizer vocabulary
+func (t *Tokenizer) GetVocab() map[string]int {
+	return t.Vocab
+}
+
+// GetMerges returns the tokenizer merges
+func (t *Tokenizer) GetMerges() map[string]string {
+	return t.Merges
+}
+
+// GetSpecialTokens returns the tokenizer special tokens
+func (t *Tokenizer) GetSpecialTokens() map[string]int {
+	return t.SpecialTokens
 }

@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -15,6 +14,7 @@ var (
 	ErrModelNotFound = errors.New("model file not found")
 	ErrInvalidGGUF   = errors.New("invalid GGUF magic number")
 	ErrModelNotSet   = errors.New("model path not set")
+	ErrReaderNil     = errors.New("reader is nil")
 )
 
 // GGUFHeader represents the header of a GGUF format file
@@ -130,13 +130,19 @@ func (l *ModelLoader) LoadModelStream() (*bufio.Reader, *os.File, error) {
 // LoadModelChunk reads a chunk of the model file.
 func (l *ModelLoader) LoadModelChunk(reader *bufio.Reader, chunkSize int) ([]byte, error) {
 	if reader == nil {
-		return nil, fmt.Errorf("reader is nil")
+		return nil, ErrReaderNil
 	}
 
-	chunk := make([]byte, chunkSize)
-	n, err := reader.Read(chunk)
-	if err != nil && err != io.EOF {
-		return nil, fmt.Errorf("failed to read model chunk: %w", err)
+	chunk := l.chunkPool.Get().([]byte)
+	if cap(chunk) < chunkSize {
+		chunk = make([]byte, chunkSize)
+	}
+	chunk = chunk[:chunkSize]
+
+	n, err := io.ReadFull(reader, chunk)
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		l.chunkPool.Put(chunk)
+		return nil, err
 	}
 
 	return chunk[:n], nil

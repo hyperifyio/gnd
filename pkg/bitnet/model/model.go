@@ -9,7 +9,10 @@ import (
 )
 
 var (
-	ErrConfigNil = errors.New("config cannot be nil")
+	ErrConfigNil         = errors.New("config cannot be nil")
+	ErrModelNotFound     = errors.New("model file not found")
+	ErrTokenizerNotFound = errors.New("tokenizer file not found")
+	ErrInvalidJSON       = errors.New("invalid JSON data")
 )
 
 // Model represents the BitNet model with its weights and tokenizer
@@ -104,7 +107,7 @@ func (m *Model) loadWeights() error {
 
 	file, err := os.Open(modelPath)
 	if err != nil {
-		return err
+		return ErrModelNotFound
 	}
 	defer file.Close()
 
@@ -128,7 +131,7 @@ func (m *Model) loadTokenizer() error {
 
 	file, err := os.Open(tokenizerPath)
 	if err != nil {
-		return err
+		return ErrTokenizerNotFound
 	}
 	defer file.Close()
 
@@ -138,7 +141,7 @@ func (m *Model) loadTokenizer() error {
 	}
 
 	if err := json.Unmarshal(data, &m.Tokenizer); err != nil {
-		return err
+		return ErrInvalidJSON
 	}
 
 	return nil
