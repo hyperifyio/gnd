@@ -3,11 +3,18 @@ package model
 import (
 	"bufio"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"sync"
+)
+
+var (
+	ErrModelNotFound = errors.New("model file not found")
+	ErrInvalidGGUF   = errors.New("invalid GGUF magic number")
+	ErrModelNotSet   = errors.New("model path not set")
 )
 
 // GGUFHeader represents the header of a GGUF format file
@@ -28,23 +35,10 @@ type ModelLoader struct {
 
 // NewModelLoader creates a new ModelLoader instance.
 func NewModelLoader() (*ModelLoader, error) {
-	// Try to find the model file in different possible locations
-	possiblePaths := []string{
-		filepath.Join("pkg", "bitnet", "internal", "assets", "models", "BitNet-b1.58-2B-4T", "model.bin"),
-		filepath.Join("..", "..", "..", "..", "pkg", "bitnet", "internal", "assets", "models", "BitNet-b1.58-2B-4T", "model.bin"),
-		filepath.Join("..", "..", "..", "pkg", "bitnet", "internal", "assets", "models", "BitNet-b1.58-2B-4T", "model.bin"),
-	}
+	modelPath := filepath.Join("pkg", "bitnet", "internal", "assets", "models", "BitNet-b1.58-2B-4T", "model.bin")
 
-	var foundPath string
-	for _, path := range possiblePaths {
-		if _, err := os.Stat(path); err == nil {
-			foundPath = path
-			break
-		}
-	}
-
-	if foundPath == "" {
-		return nil, fmt.Errorf("model file not found in any of the expected locations: %v", possiblePaths)
+	if _, err := os.Stat(modelPath); err != nil {
+		return nil, ErrModelNotFound
 	}
 
 	// Create a memory pool for chunks
@@ -55,14 +49,14 @@ func NewModelLoader() (*ModelLoader, error) {
 	}
 
 	loader := &ModelLoader{
-		modelPath:  foundPath,
+		modelPath:  modelPath,
 		bufferSize: 1024 * 1024, // 1MB buffer size
 		chunkPool:  chunkPool,
 	}
 
 	// Load and validate the GGUF header
 	if err := loader.loadHeader(); err != nil {
-		return nil, fmt.Errorf("failed to load GGUF header: %w", err)
+		return nil, err
 	}
 
 	return loader, nil
@@ -72,18 +66,18 @@ func NewModelLoader() (*ModelLoader, error) {
 func (l *ModelLoader) loadHeader() error {
 	file, err := os.Open(l.modelPath)
 	if err != nil {
-		return fmt.Errorf("failed to open model file: %w", err)
+		return err
 	}
 	defer file.Close()
 
 	header := &GGUFHeader{}
 	if err := binary.Read(file, binary.LittleEndian, header); err != nil {
-		return fmt.Errorf("failed to read GGUF header: %w", err)
+		return err
 	}
 
 	// Validate GGUF magic number (0x46554747)
 	if header.Magic != 0x46554747 {
-		return fmt.Errorf("invalid GGUF magic number: %x", header.Magic)
+		return ErrInvalidGGUF
 	}
 
 	l.header = header
@@ -94,7 +88,7 @@ func (l *ModelLoader) loadHeader() error {
 // The caller is responsible for closing the file.
 func (l *ModelLoader) LoadModel() (*os.File, error) {
 	if l.modelPath == "" {
-		return nil, fmt.Errorf("model path not set")
+		return nil, ErrModelNotSet
 	}
 	return os.Open(l.modelPath)
 }
@@ -122,16 +116,15 @@ func (l *ModelLoader) GetHeader() *GGUFHeader {
 // The caller is responsible for closing the reader.
 func (l *ModelLoader) LoadModelStream() (*bufio.Reader, *os.File, error) {
 	if l.modelPath == "" {
-		return nil, nil, fmt.Errorf("model path not set")
+		return nil, nil, ErrModelNotSet
 	}
 
 	file, err := os.Open(l.modelPath)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to open model file: %w", err)
+		return nil, nil, err
 	}
 
-	reader := bufio.NewReaderSize(file, l.bufferSize)
-	return reader, file, nil
+	return bufio.NewReaderSize(file, l.bufferSize), file, nil
 }
 
 // LoadModelChunk reads a chunk of the model file.

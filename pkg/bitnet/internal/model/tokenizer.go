@@ -2,9 +2,14 @@ package model
 
 import (
 	"encoding/json"
-	"fmt"
+	"errors"
 	"os"
 	"path/filepath"
+)
+
+var (
+	ErrTokenizerNotFound = errors.New("tokenizer file not found")
+	ErrVocabNotLoaded    = errors.New("vocabulary not loaded")
 )
 
 // Tokenizer handles loading and using the BitNet tokenizer.
@@ -15,51 +20,46 @@ type Tokenizer struct {
 
 // NewTokenizer creates a new Tokenizer instance.
 func NewTokenizer() (*Tokenizer, error) {
-	// Try to find the tokenizer file in different possible locations
-	possiblePaths := []string{
-		filepath.Join("pkg", "bitnet", "internal", "assets", "models", "BitNet-b1.58-2B-4T", "tokenizer.json"),
-		filepath.Join("..", "..", "..", "..", "pkg", "bitnet", "internal", "assets", "models", "BitNet-b1.58-2B-4T", "tokenizer.json"),
-		filepath.Join("..", "..", "..", "pkg", "bitnet", "internal", "assets", "models", "BitNet-b1.58-2B-4T", "tokenizer.json"),
+	tokenizerPath := filepath.Join("pkg", "bitnet", "internal", "assets", "models", "BitNet-b1.58-2B-4T", "tokenizer.json")
+
+	if _, err := os.Stat(tokenizerPath); err != nil {
+		return nil, ErrTokenizerNotFound
 	}
 
-	var foundPath string
-	for _, path := range possiblePaths {
-		if _, err := os.Stat(path); err == nil {
-			foundPath = path
-			break
-		}
+	tokenizer := &Tokenizer{
+		modelPath: tokenizerPath,
 	}
 
-	if foundPath == "" {
-		return nil, fmt.Errorf("tokenizer file not found in any of the expected locations: %v", possiblePaths)
+	if err := tokenizer.loadVocab(); err != nil {
+		return nil, err
 	}
 
-	return &Tokenizer{
-		modelPath: foundPath,
-		vocab:     make(map[string]int),
-	}, nil
+	return tokenizer, nil
 }
 
-// Load loads the tokenizer vocabulary from the JSON file.
-func (t *Tokenizer) Load() error {
+// loadVocab loads the vocabulary from the tokenizer file
+func (t *Tokenizer) loadVocab() error {
 	file, err := os.Open(t.modelPath)
 	if err != nil {
-		return fmt.Errorf("failed to open tokenizer file: %w", err)
+		return err
 	}
 	defer file.Close()
 
-	var data struct {
-		Model struct {
-			Vocab map[string]int `json:"vocab"`
-		} `json:"model"`
+	if err := json.NewDecoder(file).Decode(&t.vocab); err != nil {
+		return err
 	}
 
-	if err := json.NewDecoder(file).Decode(&data); err != nil {
-		return fmt.Errorf("failed to decode tokenizer JSON: %w", err)
-	}
-
-	t.vocab = data.Model.Vocab
 	return nil
+}
+
+// Tokenize converts text into token IDs
+func (t *Tokenizer) Tokenize(text string) ([]int, error) {
+	if t.vocab == nil {
+		return nil, ErrVocabNotLoaded
+	}
+
+	// TODO: Implement actual tokenization logic
+	return nil, nil
 }
 
 // GetVocab returns the tokenizer vocabulary.

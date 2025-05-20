@@ -2,10 +2,14 @@ package model
 
 import (
 	"encoding/json"
-	"fmt"
+	"errors"
 	"io"
+	"os"
+	"path/filepath"
+)
 
-	"github.com/hyperifyio/gnd/pkg/bitnet/model/embedded"
+var (
+	ErrConfigNil = errors.New("config cannot be nil")
 )
 
 // Model represents the BitNet model with its weights and tokenizer
@@ -74,7 +78,7 @@ type Parameters struct {
 // NewModel creates a new model instance
 func NewModel(config *Config) (*Model, error) {
 	if config == nil {
-		return nil, fmt.Errorf("config cannot be nil")
+		return nil, ErrConfigNil
 	}
 
 	model := &Model{
@@ -83,29 +87,31 @@ func NewModel(config *Config) (*Model, error) {
 
 	// Load weights
 	if err := model.loadWeights(); err != nil {
-		return nil, fmt.Errorf("failed to load weights: %w", err)
+		return nil, err
 	}
 
 	// Load tokenizer
 	if err := model.loadTokenizer(); err != nil {
-		return nil, fmt.Errorf("failed to load tokenizer: %w", err)
+		return nil, err
 	}
 
 	return model, nil
 }
 
-// loadWeights loads the model weights from the embedded file
+// loadWeights loads the model weights from the file
 func (m *Model) loadWeights() error {
-	file, err := embedded.GetModelFile()
+	modelPath := filepath.Join("pkg", "bitnet", "internal", "assets", "models", "BitNet-b1.58-2B-4T", "model.bin")
+
+	file, err := os.Open(modelPath)
 	if err != nil {
-		return fmt.Errorf("failed to open embedded weights file: %w", err)
+		return err
 	}
 	defer file.Close()
 
 	// Read the entire file into memory
 	data, err := io.ReadAll(file)
 	if err != nil {
-		return fmt.Errorf("failed to read weights file: %w", err)
+		return err
 	}
 
 	// Store the raw data
@@ -116,21 +122,23 @@ func (m *Model) loadWeights() error {
 	return nil
 }
 
-// loadTokenizer loads the tokenizer from the embedded file
+// loadTokenizer loads the tokenizer from the file
 func (m *Model) loadTokenizer() error {
-	file, err := embedded.GetTokenizerFile()
+	tokenizerPath := filepath.Join("pkg", "bitnet", "internal", "assets", "models", "BitNet-b1.58-2B-4T", "tokenizer.json")
+
+	file, err := os.Open(tokenizerPath)
 	if err != nil {
-		return fmt.Errorf("failed to open embedded tokenizer file: %w", err)
+		return err
 	}
 	defer file.Close()
 
 	data, err := io.ReadAll(file)
 	if err != nil {
-		return fmt.Errorf("failed to read tokenizer file: %w", err)
+		return err
 	}
 
 	if err := json.Unmarshal(data, &m.Tokenizer); err != nil {
-		return fmt.Errorf("failed to unmarshal tokenizer: %w", err)
+		return err
 	}
 
 	return nil
