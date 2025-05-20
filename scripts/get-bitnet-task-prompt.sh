@@ -7,7 +7,7 @@ if test "x$TASK" = x; then
   exit 0
 fi
 
-grep -F -A 99999 'You are a'' senior developer' "$0"|sed -re 's/TASK#/'"$TASK"'/g' -e 's/YOUR_PR_NUMBER/$PR/'
+grep -F -A 99999 'You are a'' senior developer' "$0"|sed -re 's/TASK#/'"$TASK"'/g' -e 's/YOUR_PR_NUMBER/'"$PR"'/'
 
 exit 0
 
