@@ -292,7 +292,7 @@ func (m *Model) Infer(input string) (string, error) {
 
 // tokenize converts input text to token IDs
 func (m *Model) tokenize(input string) ([]int, error) {
-	// TODO: Implement proper tokenization
+	// TODO(#174): Implement proper tokenization using LLaMA 3 BPE
 	// For now, return a simple character-based tokenization
 	tokens := make([]int, len(input))
 	for i, c := range input {
@@ -306,7 +306,7 @@ func (m *Model) tokenize(input string) ([]int, error) {
 
 // selfAttention performs self-attention computation
 func (m *Model) selfAttention(hidden []float32, block *TransformerBlock) []float32 {
-	// TODO: Implement proper self-attention
+	// TODO(#186): Implement proper self-attention with pre-norm and residual connections
 	// For now, return a simple projection
 	output := make([]float32, m.config.HiddenSize)
 	for i := 0; i < m.config.HiddenSize; i++ {
@@ -319,7 +319,7 @@ func (m *Model) selfAttention(hidden []float32, block *TransformerBlock) []float
 
 // feedForward performs feed-forward network computation
 func (m *Model) feedForward(hidden []float32, block *TransformerBlock) []float32 {
-	// TODO: Implement proper feed-forward network
+	// TODO(#187): Implement proper feed-forward network with pre-norm and residual connections
 	// For now, return a simple projection
 	output := make([]float32, m.config.HiddenSize)
 	hiddenSize := m.config.HiddenSize
@@ -335,7 +335,7 @@ func (m *Model) feedForward(hidden []float32, block *TransformerBlock) []float32
 
 // generateOutput converts hidden state to output text
 func (m *Model) generateOutput(hidden []float32) string {
-	// TODO: Implement proper output generation
+	// TODO(#189): Implement proper output generation with final layer normalization
 	// For now, return a simple character-based output
 	var output string
 	for i := 0; i < len(hidden); i++ {
