@@ -1,0 +1,23 @@
+#!/bin/bash
+set -e
+
+# Create the embedded directory if it doesn't exist
+mkdir -p pkg/bitnet/model/embedded
+
+# Download the model files from Hugging Face
+echo "Downloading BitNet model files..."
+curl -L "https://huggingface.co/microsoft/bitnet-b1.58-2B-4T/resolve/main/model.bin" -o pkg/bitnet/model/embedded/model.bin
+curl -L "https://huggingface.co/microsoft/bitnet-b1.58-2B-4T/resolve/main/tokenizer.json" -o pkg/bitnet/model/embedded/tokenizer.json
+
+# Verify the files were downloaded
+if [ ! -f pkg/bitnet/model/embedded/model.bin ]; then
+    echo "Error: Failed to download model.bin"
+    exit 1
+fi
+
+if [ ! -f pkg/bitnet/model/embedded/tokenizer.json ]; then
+    echo "Error: Failed to download tokenizer.json"
+    exit 1
+fi
+
+echo "Successfully downloaded BitNet model files" 

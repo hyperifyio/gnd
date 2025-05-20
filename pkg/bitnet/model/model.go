@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
+
+	"github.com/hyperifyio/gnd/pkg/bitnet/model/embedded"
 )
 
 // Model represents the BitNet model with its weights and tokenizer
@@ -91,12 +91,11 @@ func NewModel(config *Config) (*Model, error) {
 	return model, nil
 }
 
-// loadWeights loads the model weights from the specified path
+// loadWeights loads the model weights from the embedded file
 func (m *Model) loadWeights() error {
-	weightsPath := filepath.Join(m.Config.ModelPath, "weights.json")
-	file, err := os.Open(weightsPath)
+	file, err := embedded.GetModelFile()
 	if err != nil {
-		return fmt.Errorf("failed to open weights file: %w", err)
+		return fmt.Errorf("failed to open embedded weights file: %w", err)
 	}
 	defer file.Close()
 
@@ -112,12 +111,11 @@ func (m *Model) loadWeights() error {
 	return nil
 }
 
-// loadTokenizer loads the tokenizer from the specified path
+// loadTokenizer loads the tokenizer from the embedded file
 func (m *Model) loadTokenizer() error {
-	tokenizerPath := filepath.Join(m.Config.TokenizerPath, "tokenizer.json")
-	file, err := os.Open(tokenizerPath)
+	file, err := embedded.GetTokenizerFile()
 	if err != nil {
-		return fmt.Errorf("failed to open tokenizer file: %w", err)
+		return fmt.Errorf("failed to open embedded tokenizer file: %w", err)
 	}
 	defer file.Close()
 
