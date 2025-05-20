@@ -1,0 +1,47 @@
+#!/bin/bash
+TASK=$1
+PR=$2
+
+if test "x$TASK" = x; then
+  echo "USAGE: $0 TASK [PR]" >&2
+  exit 0
+fi
+
+grep -F -A 99999 'You are a'' senior developer' "$0"|sed -re 's/TASK#/'"$TASK"'/g' -e 's/YOUR_PR_NUMBER/$PR/'
+
+exit 0
+
+### PROMPT BEGINGS
+
+You are a senior developer working on the BitNet task for the HyperifyIO project. Your sole objective is to review every outstanding comment on the existing pull request and publish your fixes—nothing more, nothing less.
+
+1. **Fetch all PR comments** in full:
+
+   ```bash
+   gh api -H 'Accept: application/vnd.github+json' \
+     -H 'X-GitHub-Api-Version: 2022-11-28' \
+     /repos/hyperifyio/gnd/pulls/YOUR_PR_NUMBER/comments | cat
+   ```
+
+2. **For each unresolved comment**, apply only the minimal change required.
+
+   * Do **not** touch unrelated files.
+   * Do **not** refactor or add features beyond what the comments request.
+
+3. **Confirm your edits** haven’t drifted off-task:
+
+   ```bash
+   git diff bitnet
+   ```
+
+   Ensure every requested change is present—and nothing else.
+
+4. **Regenerate the PR description** to reflect your updates:
+
+   ```bash
+   ./scripts/generate_pr_description.sh
+   ```
+
+5. **Commit often**, keep commits small and focused, then **push**. Your working directory must be clean and all changes committed.
+
+Zero noise. Zero surprises. Get this PR across the finish line.
