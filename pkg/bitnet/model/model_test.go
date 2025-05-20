@@ -1,0 +1,90 @@
+package model
+
+import (
+	"os"
+	"testing"
+)
+
+func TestNewConfig(t *testing.T) {
+	config := NewConfig()
+	if config == nil {
+		t.Fatal("NewConfig returned nil")
+	}
+
+	// Verify default values
+	if config.HiddenSize != 2048 {
+		t.Errorf("expected HiddenSize to be 2048, got %d", config.HiddenSize)
+	}
+	if config.NumHeads != 16 {
+		t.Errorf("expected NumHeads to be 16, got %d", config.NumHeads)
+	}
+	if config.NumLayers != 24 {
+		t.Errorf("expected NumLayers to be 24, got %d", config.NumLayers)
+	}
+	if config.VocabSize != 32000 {
+		t.Errorf("expected VocabSize to be 32000, got %d", config.VocabSize)
+	}
+	if config.MaxSeqLength != 4096 {
+		t.Errorf("expected MaxSeqLength to be 4096, got %d", config.MaxSeqLength)
+	}
+	if config.IntermediateSize != 8192 {
+		t.Errorf("expected IntermediateSize to be 8192, got %d", config.IntermediateSize)
+	}
+}
+
+func TestNewModel(t *testing.T) {
+	// Test with nil config
+	model := NewModel(nil)
+	if model == nil {
+		t.Fatal("NewModel returned nil")
+	}
+	if model.config == nil {
+		t.Fatal("model.config is nil")
+	}
+
+	// Test with custom config
+	customConfig := &Config{
+		HiddenSize:       1024,
+		NumHeads:         8,
+		NumLayers:        12,
+		VocabSize:        16000,
+		MaxSeqLength:     2048,
+		IntermediateSize: 4096,
+	}
+	model = NewModel(customConfig)
+	if model == nil {
+		t.Fatal("NewModel returned nil")
+	}
+	if model.config != customConfig {
+		t.Error("model.config does not match custom config")
+	}
+}
+
+func TestLoadWeights(t *testing.T) {
+	model := NewModel(nil)
+
+	// Test with non-existent file
+	err := model.LoadWeights("nonexistent.bin")
+	if err == nil {
+		t.Error("expected error for non-existent file")
+	}
+
+	// Create a temporary file with invalid format
+	tmpFile, err := os.CreateTemp("", "test_weights_*.bin")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	defer tmpFile.Close()
+
+	// Write invalid magic number
+	_, err = tmpFile.Write([]byte{0, 0, 0, 0})
+	if err != nil {
+		t.Fatalf("failed to write to temp file: %v", err)
+	}
+
+	err = model.LoadWeights(tmpFile.Name())
+	if err == nil {
+		t.Error("expected error for invalid file format")
+	}
+}
