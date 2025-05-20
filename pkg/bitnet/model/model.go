@@ -323,14 +323,22 @@ func (m *Model) selfAttention(hidden []float32, block *TransformerBlock) []float
 
 // feedForward performs feed-forward network computation
 func (m *Model) feedForward(hidden []float32, block *TransformerBlock) []float32 {
-	// TODO: Implement proper feed-forward network
-	// For now, return a simple projection
+	// First projection: hidden_size -> intermediate_size
+	intermediate := make([]float32, m.config.IntermediateSize)
+	for i := 0; i < m.config.IntermediateSize; i++ {
+		for j := 0; j < m.config.HiddenSize; j++ {
+			intermediate[i] += float32(block.FFNUp[i*m.config.HiddenSize+j]) * hidden[j]
+		}
+	}
+
+	// Second projection: intermediate_size -> hidden_size
 	output := make([]float32, m.config.HiddenSize)
 	for i := 0; i < m.config.HiddenSize; i++ {
 		for j := 0; j < m.config.IntermediateSize; j++ {
-			output[i] += float32(block.FFNUp[i*m.config.IntermediateSize+j]) * hidden[j]
+			output[i] += float32(block.FFNDown[i*m.config.IntermediateSize+j]) * intermediate[j]
 		}
 	}
+
 	return output
 }
 
