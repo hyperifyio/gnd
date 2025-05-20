@@ -20,17 +20,10 @@ LARGE_OPS_TIME=$(grep "BenchmarkNewTensor/shape_\[100_100\]" benchmark_results.t
 
 # Generate PR description
 cat << EOF > pr_description.md
-## Changes
-- [ ] List of specific changes made
-- [ ] Include file paths and line numbers for major changes
-- [ ] Reference related issues/tickets
 
 ## Test Coverage
 - Current coverage: ${COVERAGE}
 - Coverage changes: <previous> → ${COVERAGE}
-- Untested areas:
-  - Internal config package (0% coverage)
-  - Math operations package (0% coverage)
 
 ## Performance Metrics
 ### Memory Usage
@@ -45,21 +38,6 @@ cat << EOF > pr_description.md
   - Parallel operations: ${PARALLEL_OPS_TIME} ns/op
   - Large tensor operations: ${LARGE_OPS_TIME} ns/op
 
-## Areas for Improvement
-### High Priority
-- Add tests for internal packages
-- Optimize ParallelForEach memory allocations
-- Implement memory pooling for large tensors
-
-### Medium Priority
-- Improve error handling in tensor operations
-- Add more comprehensive benchmarks
-- Enhance documentation
-
-### Low Priority
-- Consider SIMD optimizations
-- Add more tensor operations
-- Improve test organization
 EOF
 
 echo "PR description generated in pr_description.md" 
