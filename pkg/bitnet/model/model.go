@@ -11,9 +11,12 @@ var (
 	ErrInvalidWeightsFile      = errors.New("bitnet: invalid weights file format")
 	ErrUnsupportedVersion      = errors.New("bitnet: unsupported weights file version")
 	ErrInferenceNotImplemented = errors.New("bitnet: inference not implemented yet")
+	ErrWeightsFileOpen         = errors.New("bitnet: failed to open weights file")
+	ErrWeightsFileRead         = errors.New("bitnet: failed to read weights file")
 )
 
 // Model represents the BitNet b1.58-2B-4T model structure
+// Implementation details will be covered in issue #173
 type Model struct {
 	config *Config
 	fs     embed.FS
@@ -59,14 +62,14 @@ func NewModel(config *Config, fs embed.FS) *Model {
 func (m *Model) LoadWeights(path string) error {
 	file, err := m.fs.Open(path)
 	if err != nil {
-		return err
+		return ErrWeightsFileOpen
 	}
 	defer file.Close()
 
 	// Read and validate magic number
 	var magic uint32
 	if err := binary.Read(file, binary.LittleEndian, &magic); err != nil {
-		return err
+		return ErrWeightsFileRead
 	}
 	if magic != 0x424E4554 { // "BNET" in hex
 		return ErrInvalidWeightsFile
@@ -75,14 +78,14 @@ func (m *Model) LoadWeights(path string) error {
 	// Read version
 	var version uint32
 	if err := binary.Read(file, binary.LittleEndian, &version); err != nil {
-		return err
+		return ErrWeightsFileRead
 	}
 	if version != 1 {
 		return ErrUnsupportedVersion
 	}
 
 	// TODO: Implement weight loading logic
-	// This will be implemented in subsequent PRs
+	// This will be implemented in issue #173
 
 	return nil
 }
