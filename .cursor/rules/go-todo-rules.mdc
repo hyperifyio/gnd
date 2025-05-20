@@ -18,7 +18,7 @@ If you're about to write a TODO without a known issue, stop and:
 
 * Use `gh issue list --label bitnet,task` to find existing issues
 
-### ✅ Good
+### [ OK ] Good
 
 ```go
 // TODO(#172): add parallel execution for BitNet inference
@@ -28,7 +28,7 @@ If you're about to write a TODO without a known issue, stop and:
 // TODO(#184): handle case when input is empty but context is present
 ```
 
-### ❌ Bad
+### [FAIL] Bad
 
 ```go
 // TODO: handle empty input later
@@ -38,7 +38,7 @@ If you're about to write a TODO without a known issue, stop and:
 // TODO: refactor this logic eventually
 ```
 
-# 📌 Notes
+# [NOTE] Notes
 
 * Use `#` before the issue number to make the reference unambiguous.
 * This ensures TODOs are trackable and never lost in source code.
