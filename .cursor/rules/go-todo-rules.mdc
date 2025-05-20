@@ -1,0 +1,49 @@
+---
+description: "Enforce TODO comments in pkg/bitnet to include GitHub issue number; suggest using `gh` to find relevant tasks"
+globs: pkg/bitnet/**/*.go
+alwaysApply: false
+---
+
+# Rule
+
+All `TODO` comments in `pkg/bitnet/**/*.go` must include a **GitHub issue reference** that explains which ticket will cover the deferred work.
+
+Use the format:
+
+```go
+// TODO(#123): clarify task ownership
+````
+
+If you're about to write a TODO without a known issue, stop and:
+
+* Use `gh issue list --label bitnet,task` to find existing issues
+
+### [ OK ] Good
+
+```go
+// TODO(#172): add parallel execution for BitNet inference
+```
+
+```go
+// TODO(#184): handle case when input is empty but context is present
+```
+
+### [FAIL] Bad
+
+```go
+// TODO: handle empty input later
+```
+
+```go
+// TODO: refactor this logic eventually
+```
+
+# [NOTE] Notes
+
+* Use `#` before the issue number to make the reference unambiguous.
+* This ensures TODOs are trackable and never lost in source code.
+* Cursor can call `gh` to help you search for tasks:
+  `gh issue list --label bitnet,task`
+* You can also grep your repo for all TODOs with `grep -r TODO pkg/bitnet`
+
+All TODOs must eventually link to real work items. Comments without a ticket number will be flagged during review or rule checks.

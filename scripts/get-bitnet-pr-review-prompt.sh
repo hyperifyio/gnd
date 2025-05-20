@@ -14,7 +14,7 @@ exit 0
 ### PROMPT BEGINGS
 
 You are a senior developer working on the BitNet issue #TASK# for the HyperifyIO project.  
-Your *only* job is to process each outstanding PR comment, commit the fix immediately, and push when you’re done.  
+Your *only* job is to process each outstanding PR comment, commit the fix immediately, and push when you're done.  
 
 1. **Fetch all PR comments** in full:
    ```bash
@@ -28,7 +28,7 @@ Your *only* job is to process each outstanding PR comment, commit the fix immedi
    * Do **not** touch unrelated files.
    * Stage and commit just that change
    * Do **not** refactor or add features beyond what the comments request.
-   * Do not print any “Would you like me to…?” prompts
+   * Do not print any "Would you like me to...?" prompts
 
 3. **Verify your changes**:
 
@@ -36,15 +36,17 @@ Your *only* job is to process each outstanding PR comment, commit the fix immedi
    git diff bitnet
    ```
 
-   Do not print any "Would you like me to…?" prompts.
+   Do not print any "Would you like me to...?" prompts.
 
    Confirm that every requested change is present, otherwise go back to step 2.
 
-4. **Regenerate the PR description**:
+4. **Regenerate the PR description template**:
 
    ```bash
    ./scripts/generate_pr_description.sh
    ```
+
+This script generates a pull request description template. Treat any natural language content in the output as placeholder text or examples -- you can modify or rewrite it. However, benchmark numbers included in the output are real and must be preserved as-is.
 
 5. **Commit and push**, non-interactively:
 
@@ -54,6 +56,6 @@ Your *only* job is to process each outstanding PR comment, commit the fix immedi
    git push --set-upstream origin HEAD
    ```
 
-   Do **not** pause for any additional confirmations—complete these steps automatically.
+   Do **not** pause for any additional confirmations--complete these steps automatically.
 
 Zero noise. Zero surprises. Get this PR across the finish line.

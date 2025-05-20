@@ -1,6 +1,6 @@
 ---
-description:
-globs:
+description: "This rule describes the interface design standards and requirements for the BitNet project, ensuring consistency and maintainability across all components."
+globs: **/*.go
 alwaysApply: false
 ---
 # BitNet Interfaces Rule

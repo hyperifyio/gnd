@@ -1,6 +1,6 @@
 ---
-description: 
-globs: 
+description: "This rule defines the standards and procedures for updating Pull Requests (PRs) in the BitNet project. It ensures that all PR updates are well-documented, reviewed, and follow the project's contribution guidelines."
+globs: pkg/bitnet/**
 alwaysApply: false
 ---
 # BitNet PR Updates

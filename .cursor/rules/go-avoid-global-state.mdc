@@ -1,0 +1,48 @@
+---
+description: "Avoid global state access like os.Open or log.Print. Instead, inject dependencies via constructors. This ensures better testability and supports mocks or virtual environments."
+globs: **/*.go
+alwaysApply: false
+---
+
+# Rule
+
+All global state (e.g., filesystem access, loggers, network clients) must be passed into your logic via constructor parameters.
+
+Do **not** access global objects or singleton APIs (like `os.Open`, `os.ReadFile`, `log.Println`) directly inside business logic or helper methods.
+
+Instead:
+- Define an interface for each dependency
+- Accept those interfaces in constructors
+- Use them internally
+
+# [ OK ] Good
+
+```go
+type MyService struct {
+    fs embed.FS
+}
+
+func NewMyService(fs embed.FS) *MyService {
+    return &MyService{fs}
+}
+
+func (s *MyService) LoadFile(name string) ([]byte, error) {
+    return s.fs.ReadFile(name)
+}
+````
+
+# [FAIL] Bad
+
+```go
+func LoadFile(name string) ([]byte, error) {
+    return os.ReadFile(name) // [FAIL] direct global access
+}
+
+func (s *MyService) DoSomething() {
+    log.Println("hello") // [FAIL] global logger
+}
+```
+
+# Notes
+
+Global dependencies should only be created once in `main()` or the root setup function, then passed in explicitly. This promotes testability and clean architecture.

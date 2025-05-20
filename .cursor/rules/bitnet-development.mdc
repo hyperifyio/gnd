@@ -1,6 +1,6 @@
 ---
-description: 
-globs: 
+description: "This rule outlines the core development guidelines and standards for contributing to the BitNet project."
+globs: pkg/bitnet/**
 alwaysApply: false
 ---
 # BitNet Development Rule
