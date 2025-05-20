@@ -35,21 +35,27 @@ type ModelLoader struct {
 
 // NewModelLoader creates a new ModelLoader instance.
 func NewModelLoader() (*ModelLoader, error) {
+	// Get the absolute path to the model file
 	modelPath := filepath.Join("pkg", "bitnet", "internal", "assets", "models", "BitNet-b1.58-2B-4T", "model.bin")
+	absPath, err := filepath.Abs(modelPath)
+	if err != nil {
+		return nil, err
+	}
 
-	if _, err := os.Stat(modelPath); err != nil {
+	if _, err := os.Stat(absPath); err != nil {
 		return nil, ErrModelNotFound
 	}
 
 	// Create a memory pool for chunks
 	chunkPool := sync.Pool{
 		New: func() interface{} {
-			return make([]byte, 1024*1024) // 1MB default chunk size
+			buf := make([]byte, 1024*1024) // 1MB default chunk size
+			return &buf
 		},
 	}
 
 	loader := &ModelLoader{
-		modelPath:  modelPath,
+		modelPath:  absPath,
 		bufferSize: 1024 * 1024, // 1MB buffer size
 		chunkPool:  chunkPool,
 	}
@@ -133,17 +139,27 @@ func (l *ModelLoader) LoadModelChunk(reader *bufio.Reader, chunkSize int) ([]byt
 		return nil, ErrReaderNil
 	}
 
-	chunk := l.chunkPool.Get().([]byte)
-	if cap(chunk) < chunkSize {
-		chunk = make([]byte, chunkSize)
+	bufPtr := l.chunkPool.Get()
+	if bufPtr == nil {
+		buf := make([]byte, chunkSize)
+		bufPtr = &buf
 	}
-	chunk = chunk[:chunkSize]
+	buf := *(bufPtr.(*[]byte))
 
-	n, err := io.ReadFull(reader, chunk)
+	if cap(buf) < chunkSize {
+		buf = make([]byte, chunkSize)
+	}
+	buf = buf[:chunkSize]
+
+	n, err := io.ReadFull(reader, buf)
 	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
-		l.chunkPool.Put(chunk)
+		l.chunkPool.Put(&buf)
 		return nil, err
 	}
 
-	return chunk[:n], nil
+	chunk := make([]byte, n)
+	copy(chunk, buf[:n])
+	l.chunkPool.Put(&buf)
+
+	return chunk, nil
 }

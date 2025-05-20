@@ -65,8 +65,10 @@ func TestModelLoader(t *testing.T) {
 	}
 
 	// Test model path
-	if loader.GetModelPath() != modelPath {
-		t.Errorf("Expected model path %s, got %s", modelPath, loader.GetModelPath())
+	expPath, _ := filepath.EvalSymlinks(modelPath)
+	gotPath, _ := filepath.EvalSymlinks(loader.GetModelPath())
+	if gotPath != expPath {
+		t.Errorf("Expected model path %s, got %s", expPath, gotPath)
 	}
 
 	// Test header loading
