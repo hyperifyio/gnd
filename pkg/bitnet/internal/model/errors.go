@@ -16,7 +16,7 @@ var (
 	// Tokenizer errors
 	ErrTokenizerNotFound = errors.New("tokenizer file not found")
 	ErrVocabNotLoaded    = errors.New("vocabulary not loaded")
-	ErrUnknownToken      = errors.New("unknown token")
+	ErrUnknownToken      = errors.New("unknown token encountered")
 	ErrUnknownTokenID    = errors.New("unknown token ID")
 	ErrDecodeFailed      = errors.New("failed to decode tokenizer file")
 	ErrSequenceTooLong   = errors.New("token sequence exceeds maximum length")
