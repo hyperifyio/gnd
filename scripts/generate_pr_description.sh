@@ -24,7 +24,7 @@ extract_timing() {
 
 # Function to get previous coverage from git history
 get_previous_coverage() {
-    local previous_coverage=$(git log -p --all | grep -A 1 "Current coverage:" | grep -v "Current coverage:" | grep -v "^--$" | head -n 1 | awk '{print $3}')
+    local previous_coverage=$(git log --all | grep -FA 1 "Current coverage:" | grep -Eo 'Current coverage:.*'|head -n 1|tr -d ' '|awk -F: '{print $2}')
     if [ -z "$previous_coverage" ]; then
         echo "N/A"
     else
