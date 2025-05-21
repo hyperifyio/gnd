@@ -3,8 +3,10 @@ package tensor
 import (
 	"fmt"
 	"math"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // TestNewTensor tests tensor creation with various shapes
@@ -205,6 +207,9 @@ func TestTensor_Data(t *testing.T) {
 // TestTensor_Close tests tensor cleanup
 func TestTensor_Close(t *testing.T) {
 	tensor := NewTensor(2, 2)
+	defer tensor.Close()
+
+	// Set initial values
 	tensor.Set(1, 0, 0)
 	tensor.Set(-1, 0, 1)
 	tensor.Set(0, 1, 0)
@@ -218,13 +223,32 @@ func TestTensor_Close(t *testing.T) {
 	// Close tensor
 	tensor.Close()
 
+	// Add a delay to ensure handler has exited and ops channel is drained
+	time.Sleep(100 * time.Millisecond)
+
 	// Verify operations panic after close
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("Get() did not panic after Close()")
-		}
+	func() {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("Get() did not panic after Close()")
+			}
+		}()
+		tensor.Get(0, 0)
 	}()
-	tensor.Get(0, 0)
+
+	// Verify no concurrent access after close
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("Get() did not panic in goroutine after Close()")
+			}
+		}()
+		tensor.Get(0, 0)
+	}()
+	wg.Wait()
 }
 
 // TestTensor_ParallelForEach tests parallel processing
