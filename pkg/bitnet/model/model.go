@@ -3,12 +3,11 @@ package model
 import (
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"io/fs"
-	"sync"
 
 	"github.com/hyperifyio/gnd/pkg/bitnet/internal/model"
+	"github.com/hyperifyio/gnd/pkg/loggers"
 )
 
 // Static errors
@@ -33,13 +32,28 @@ type Model struct {
 	fs        fs.FS
 	tokenizer *model.Tokenizer
 	done      chan struct{}
-	mu        sync.RWMutex
 	weights   *ModelWeights
 
-	// Reusable buffers
-	readBuf    []byte
-	resultChan chan string
-	errChan    chan error
+	// Channels for async operations
+	loadCh   chan loadRequest
+	inferCh  chan inferRequest
+	resultCh chan string
+	errCh    chan error
+}
+
+type loadRequest struct {
+	path string
+	done chan error
+}
+
+type inferRequest struct {
+	input string
+	done  chan inferResult
+}
+
+type inferResult struct {
+	output string
+	err    error
 }
 
 // Config holds the model configuration
@@ -70,29 +84,58 @@ func NewModel(config *Config, fs fs.FS) *Model {
 	if config == nil {
 		config = NewConfig()
 	}
-	return &Model{
-		config: config,
-		fs:     fs,
-		done:   make(chan struct{}),
+	m := &Model{
+		config:   config,
+		fs:       fs,
+		done:     make(chan struct{}),
+		loadCh:   make(chan loadRequest),
+		inferCh:  make(chan inferRequest),
+		resultCh: make(chan string, 1),
+		errCh:    make(chan error, 1),
+	}
+
+	// Start the model goroutine
+	go m.run()
+	return m
+}
+
+// run handles all model operations in a single goroutine
+func (m *Model) run() {
+	for {
+		select {
+		case <-m.done:
+			return
+		case req := <-m.loadCh:
+			req.done <- m.loadWeights(req.path)
+		case req := <-m.inferCh:
+			output, err := m.infer(req.input)
+			req.done <- inferResult{output, err}
+		}
 	}
 }
 
 // LoadWeights loads the model weights from a file
 func (m *Model) LoadWeights(path string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	done := make(chan error, 1)
+	m.loadCh <- loadRequest{path: path, done: done}
+	return <-done
+}
 
+// loadWeights is the internal implementation of LoadWeights
+func (m *Model) loadWeights(path string) error {
 	// Open the weights file
 	file, err := m.fs.Open(path)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrWeightsFileOpen, err)
+		loggers.Printf(loggers.Debug, "failed to open weights file: %v", err)
+		return ErrWeightsFileOpen
 	}
 	defer file.Close()
 
 	// Read the header
 	header := make([]byte, 8)
 	if _, err := io.ReadFull(file, header); err != nil {
-		return fmt.Errorf("%w: %v", ErrWeightsFileRead, err)
+		loggers.Printf(loggers.Debug, "failed to read weights file: %v", err)
+		return ErrWeightsFileRead
 	}
 
 	// Verify magic number
@@ -108,7 +151,8 @@ func (m *Model) LoadWeights(path string) error {
 	// Initialize tokenizer
 	tokenizer, err := model.NewTokenizer(m.fs, "tokenizer")
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrTokenizerInit, err)
+		loggers.Printf(loggers.Debug, "failed to initialize tokenizer: %v", err)
+		return ErrTokenizerInit
 	}
 	m.tokenizer = tokenizer
 
@@ -117,22 +161,30 @@ func (m *Model) LoadWeights(path string) error {
 
 // Infer performs inference on the input text
 func (m *Model) Infer(input string) (string, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	done := make(chan inferResult, 1)
+	m.inferCh <- inferRequest{input: input, done: done}
+	result := <-done
+	return result.output, result.err
+}
 
+// infer is the internal implementation of Infer
+func (m *Model) infer(input string) (string, error) {
 	if m.tokenizer == nil {
+		loggers.Printf(loggers.Debug, "tokenizer not loaded")
 		return "", ErrTokenizerNotLoaded
 	}
 
 	// Tokenize input
 	tokens, err := m.tokenizer.Tokenize(input)
 	if err != nil {
-		return "", fmt.Errorf("%w: %v", ErrTokenization, err)
+		loggers.Printf(loggers.Debug, "tokenization error: %v", err)
+		return "", ErrTokenization
 	}
 
 	// Check sequence length
 	if len(tokens) > m.config.MaxSeqLength {
-		return "", fmt.Errorf("%w: sequence length %d exceeds maximum %d", ErrSequenceTooLong, len(tokens), m.config.MaxSeqLength)
+		loggers.Printf(loggers.Debug, "sequence length %d exceeds maximum %d", len(tokens), m.config.MaxSeqLength)
+		return "", ErrSequenceTooLong
 	}
 
 	// TODO: Implement actual inference
@@ -141,9 +193,6 @@ func (m *Model) Infer(input string) (string, error) {
 
 // Close releases any resources held by the model
 func (m *Model) Close() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	select {
 	case <-m.done:
 		// Already closed
@@ -157,7 +206,8 @@ func (m *Model) readTernaryWeights(r io.Reader, weights []int8) error {
 	// Read packed values
 	packed := make([]byte, (len(weights)+3)/4)
 	if _, err := io.ReadFull(r, packed); err != nil {
-		return fmt.Errorf("%w: %v", ErrWeightsFileRead, err)
+		loggers.Printf(loggers.Debug, "failed to read weights: %v", err)
+		return ErrWeightsFileRead
 	}
 
 	// Unpack values
@@ -198,10 +248,10 @@ type TransformerBlock struct {
 	FFNNorm  []float32 // FFN normalization weights
 }
 
-// ModelWeights holds all the model's parameters
+// ModelWeights represents all model parameters
 type ModelWeights struct {
 	// Token embeddings (shared with output layer)
-	TokenEmbedding []int8 // Token embedding weights (ternary)
+	TokenEmbeddings []float32
 
 	// Transformer blocks
 	Blocks []*TransformerBlock

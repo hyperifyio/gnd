@@ -2,10 +2,11 @@ package model
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/fs"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/hyperifyio/gnd/pkg/loggers"
 )
 
 // Tokenizer handles loading and using the BitNet tokenizer.
@@ -22,10 +23,12 @@ type Tokenizer struct {
 // NewTokenizer creates a new Tokenizer instance.
 func NewTokenizer(filesystem fs.FS, modelPath string) (*Tokenizer, error) {
 	if filesystem == nil {
+		loggers.Printf(loggers.Debug, "filesystem is nil")
 		return nil, ErrFSNotSet
 	}
 
 	if modelPath == "" {
+		loggers.Printf(loggers.Debug, "model path is empty")
 		return nil, ErrPathEmpty
 	}
 
@@ -36,6 +39,7 @@ func NewTokenizer(filesystem fs.FS, modelPath string) (*Tokenizer, error) {
 	}
 
 	if err := tokenizer.load(); err != nil {
+		loggers.Printf(loggers.Debug, "failed to load tokenizer: %v", err)
 		return nil, ErrTokenizerNotFound
 	}
 
@@ -47,17 +51,20 @@ func (t *Tokenizer) load() error {
 	// Read vocabulary
 	vocabData, err := fs.ReadFile(t.fs, t.modelPath+"/vocab.json")
 	if err != nil {
-		return fmt.Errorf("failed to read vocabulary: %w", err)
+		loggers.Printf(loggers.Debug, "failed to read vocabulary: %v", err)
+		return ErrVocabRead
 	}
 
 	if err := json.Unmarshal(vocabData, &t.Vocab); err != nil {
-		return fmt.Errorf("failed to parse vocabulary: %w", err)
+		loggers.Printf(loggers.Debug, "failed to parse vocabulary: %v", err)
+		return ErrVocabParse
 	}
 
 	// Read merges
 	mergesData, err := fs.ReadFile(t.fs, t.modelPath+"/merges.txt")
 	if err != nil {
-		return fmt.Errorf("failed to read merges: %w", err)
+		loggers.Printf(loggers.Debug, "failed to read merges: %v", err)
+		return ErrMergesRead
 	}
 
 	// Parse merges into ordered list and map
@@ -79,11 +86,13 @@ func (t *Tokenizer) load() error {
 	// Read special tokens
 	specialData, err := fs.ReadFile(t.fs, t.modelPath+"/special_tokens.json")
 	if err != nil {
-		return fmt.Errorf("failed to read special tokens: %w", err)
+		loggers.Printf(loggers.Debug, "failed to read special tokens: %v", err)
+		return ErrSpecialRead
 	}
 
 	if err := json.Unmarshal(specialData, &t.SpecialTokens); err != nil {
-		return fmt.Errorf("failed to parse special tokens: %w", err)
+		loggers.Printf(loggers.Debug, "failed to parse special tokens: %v", err)
+		return ErrSpecialParse
 	}
 
 	return nil
@@ -92,6 +101,7 @@ func (t *Tokenizer) load() error {
 // Tokenize converts text into token IDs using BPE
 func (t *Tokenizer) Tokenize(text string) ([]int, error) {
 	if t.Vocab == nil {
+		loggers.Printf(loggers.Debug, "vocabulary not loaded")
 		return nil, ErrVocabNotLoaded
 	}
 
@@ -135,6 +145,7 @@ func (t *Tokenizer) Tokenize(text string) ([]int, error) {
 			if unkID, ok := t.SpecialTokens["<unk>"]; ok {
 				tokens = append(tokens, unkID)
 			} else {
+				loggers.Printf(loggers.Debug, "unknown token encountered: %s", word)
 				return nil, ErrUnknownToken
 			}
 		}
@@ -142,6 +153,7 @@ func (t *Tokenizer) Tokenize(text string) ([]int, error) {
 
 	// Check sequence length
 	if len(tokens) > t.MaxTokens {
+		loggers.Printf(loggers.Debug, "sequence length %d exceeds maximum %d", len(tokens), t.MaxTokens)
 		return nil, ErrSequenceTooLong
 	}
 
