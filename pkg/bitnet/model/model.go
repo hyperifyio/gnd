@@ -196,8 +196,8 @@ func (m *Model) Infer(input string) (string, error) {
 		return "", err
 	}
 
-	// TODO: Process hidden states through transformer blocks
-	// TODO: Generate output tokens
+	// TODO(#176): Process hidden states through transformer blocks
+	// TODO(#177): Generate output tokens
 	return "", ErrInferenceNotImplemented
 }
 
@@ -268,8 +268,8 @@ func (m *Model) infer(input string) (string, error) {
 		return "", err
 	}
 
-	// TODO: Process hidden states through transformer blocks
-	// TODO: Generate output tokens
+	// TODO(#176): Process hidden states through transformer blocks
+	// TODO(#177): Generate output tokens
 	return "", ErrInferenceNotImplemented
 }
 
