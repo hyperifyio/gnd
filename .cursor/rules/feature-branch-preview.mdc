@@ -1,0 +1,15 @@
+---
+description: "Guide manual verification of a feature branch against its task goal before merging."
+globs: "**/*.go"
+alwaysApply: false
+---
+
+# Feature-Branch Verification
+
+**Purpose:** Ensure that a feature branch's changes strictly implement the intended BitNet issue and introduce no unrelated modifications.
+
+Run this command:
+
+`./scripts/get-bitnet-branch-preview.sh|cat`
+
+And follow instructions it prints.
