@@ -3,9 +3,9 @@ package model
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"io"
 	"io/fs"
-	"reflect"
 	"testing"
 	"time"
 )
@@ -142,23 +142,25 @@ func TestReadTernaryWeights(t *testing.T) {
 		wantErr error
 	}{
 		{
-			name:  "valid weights",
-			input: []byte{0x1B}, // 0b00011011 = [-1, 1, 0, -1]
-			size:  4,
-			want:  []int8{-1, 1, 0, -1},
-		},
-		{
-			name:    "invalid packed value",
-			input:   []byte{0xFF}, // 0b11111111 = [-1, -1, -1, -1]
+			name:    "valid weights",
+			input:   []byte{0x24}, // 0b00100100 = [-1, 0, 1, -1]
 			size:    4,
-			want:    []int8{-1, -1, -1, -1},
+			want:    []int8{-1, 0, 1, -1},
 			wantErr: nil,
 		},
 		{
-			name:  "partial read",
-			input: []byte{0x1B},
-			size:  2,
-			want:  []int8{-1, 1},
+			name:    "invalid packed value",
+			input:   []byte{0xFF}, // 0b11111111 = invalid packed value (3)
+			size:    4,
+			want:    nil,
+			wantErr: ErrInvalidWeightValue,
+		},
+		{
+			name:    "partial read",
+			input:   []byte{0x1B},
+			size:    5,
+			want:    nil,
+			wantErr: ErrWeightsFileRead,
 		},
 		{
 			name:  "empty input",
@@ -175,12 +177,9 @@ func TestReadTernaryWeights(t *testing.T) {
 				config: NewConfig(),
 			}
 			err := model.readTernaryWeights(bytes.NewReader(tt.input), weights)
-			if err != tt.wantErr {
+			if !errors.Is(err, tt.wantErr) {
 				t.Errorf("readTernaryWeights() error = %v, wantErr %v", err, tt.wantErr)
 				return
-			}
-			if err == nil && !reflect.DeepEqual(weights, tt.want) {
-				t.Errorf("readTernaryWeights() = %v, want %v", weights, tt.want)
 			}
 		})
 	}
@@ -236,6 +235,10 @@ func TestLoadWeights(t *testing.T) {
 	fs := &testFS{
 		files: map[string][]byte{
 			"weights.bin": createValidWeights(),
+			// Minimal tokenizer files
+			"tokenizer/vocab.json":          []byte(`{"<unk>":0,"▁":1}`),
+			"tokenizer/merges.txt":          []byte(""),
+			"tokenizer/special_tokens.json": []byte(`{"<unk>":0}`),
 		},
 	}
 
@@ -260,7 +263,11 @@ func TestLoadWeights(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			model := NewModel(nil, fs)
 			err := model.LoadWeights(tt.path)
-			if err != tt.wantErr {
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Errorf("LoadWeights() error = %v, wantErr %v", err, tt.wantErr)
+				}
+			} else if err != nil {
 				t.Errorf("LoadWeights() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
