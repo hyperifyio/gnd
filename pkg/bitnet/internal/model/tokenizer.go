@@ -1,8 +1,8 @@
 package model
 
 import (
-	"bufio"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"strings"
 	"unicode/utf8"
@@ -36,7 +36,7 @@ func NewTokenizer(filesystem fs.FS, modelPath string) (*Tokenizer, error) {
 	}
 
 	if err := tokenizer.load(); err != nil {
-		return nil, err
+		return nil, ErrTokenizerNotFound
 	}
 
 	return tokenizer, nil
@@ -44,55 +44,46 @@ func NewTokenizer(filesystem fs.FS, modelPath string) (*Tokenizer, error) {
 
 // load reads and decodes the tokenizer files
 func (t *Tokenizer) load() error {
-	// Load vocabulary
-	vocabFile, err := t.fs.Open(t.modelPath + "/vocab.json")
+	// Read vocabulary
+	vocabData, err := fs.ReadFile(t.fs, t.modelPath+"/vocab.json")
 	if err != nil {
-		return ErrTokenizerNotFound
-	}
-	defer vocabFile.Close()
-
-	if err := json.NewDecoder(vocabFile).Decode(&t.Vocab); err != nil {
-		return ErrDecodeFailed
+		return fmt.Errorf("failed to read vocabulary: %w", err)
 	}
 
-	// Load merges
-	mergesFile, err := t.fs.Open(t.modelPath + "/merges.txt")
+	if err := json.Unmarshal(vocabData, &t.Vocab); err != nil {
+		return fmt.Errorf("failed to parse vocabulary: %w", err)
+	}
+
+	// Read merges
+	mergesData, err := fs.ReadFile(t.fs, t.modelPath+"/merges.txt")
 	if err != nil {
-		return ErrTokenizerNotFound
+		return fmt.Errorf("failed to read merges: %w", err)
 	}
-	defer mergesFile.Close()
 
-	t.Merges = make([]string, 0)
+	// Parse merges into ordered list and map
+	merges := strings.Split(string(mergesData), "\n")
+	t.Merges = make([]string, 0, len(merges))
 	t.MergeMap = make(map[string]string)
-	scanner := bufio.NewScanner(mergesFile)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" || strings.HasPrefix(line, "#") {
+
+	for _, merge := range merges {
+		if merge == "" {
 			continue
 		}
-		parts := strings.Split(line, " ")
-		if len(parts) != 2 {
-			continue
+		t.Merges = append(t.Merges, merge)
+		parts := strings.Split(merge, " ")
+		if len(parts) == 2 {
+			t.MergeMap[parts[0]+" "+parts[1]] = parts[0] + parts[1]
 		}
-		pair := parts[0]
-		merge := parts[1]
-		t.Merges = append(t.Merges, pair)
-		t.MergeMap[pair] = merge
 	}
 
-	if err := scanner.Err(); err != nil {
-		return ErrDecodeFailed
-	}
-
-	// Load special tokens
-	specialFile, err := t.fs.Open(t.modelPath + "/special_tokens.json")
+	// Read special tokens
+	specialData, err := fs.ReadFile(t.fs, t.modelPath+"/special_tokens.json")
 	if err != nil {
-		return ErrTokenizerNotFound
+		return fmt.Errorf("failed to read special tokens: %w", err)
 	}
-	defer specialFile.Close()
 
-	if err := json.NewDecoder(specialFile).Decode(&t.SpecialTokens); err != nil {
-		return ErrDecodeFailed
+	if err := json.Unmarshal(specialData, &t.SpecialTokens); err != nil {
+		return fmt.Errorf("failed to parse special tokens: %w", err)
 	}
 
 	return nil
@@ -104,24 +95,45 @@ func (t *Tokenizer) Tokenize(text string) ([]int, error) {
 		return nil, ErrVocabNotLoaded
 	}
 
-	// Split text into words and handle special tokens
-	words := t.splitText(text)
-	tokens := make([]int, 0, len(words))
+	if text == "" {
+		return []int{}, nil
+	}
 
-	for _, word := range words {
-		// Check if word exists in vocabulary
-		if id, ok := t.Vocab[word]; ok {
+	// Split text into words and add space tokens
+	words := t.splitText(text)
+	tokens := make([]int, 0, len(words)*2)
+
+	for i, word := range words {
+		// Add space token between words (except for the first word)
+		if i > 0 {
+			if spaceID, ok := t.Vocab["▁"]; ok {
+				tokens = append(tokens, spaceID)
+			}
+		}
+
+		// Handle special tokens
+		if id, ok := t.SpecialTokens[word]; ok {
 			tokens = append(tokens, id)
 			continue
 		}
 
-		// Apply BPE merges
-		subwords := t.applyBPE(word)
-		for _, subword := range subwords {
-			if id, ok := t.Vocab[subword]; ok {
+		// Apply BPE to the word
+		subTokens := t.applyBPE(word)
+		allKnown := true
+		for _, subToken := range subTokens {
+			if _, ok := t.Vocab[subToken]; !ok {
+				allKnown = false
+				break
+			}
+		}
+		if allKnown {
+			for _, subToken := range subTokens {
+				id := t.Vocab[subToken]
 				tokens = append(tokens, id)
-			} else if id, ok := t.SpecialTokens["[UNK]"]; ok {
-				tokens = append(tokens, id)
+			}
+		} else {
+			if unkID, ok := t.SpecialTokens["<unk>"]; ok {
+				tokens = append(tokens, unkID)
 			} else {
 				return nil, ErrUnknownToken
 			}
@@ -179,43 +191,81 @@ func (t *Tokenizer) splitText(text string) []string {
 		words = append(words, current.String())
 	}
 
+	// Strip trailing punctuation from each word
+	for i, word := range words {
+		words[i] = strings.TrimRight(word, ",.!?;:")
+	}
+
 	return words
 }
 
 // applyBPE applies Byte Pair Encoding to split unknown words
 func (t *Tokenizer) applyBPE(word string) []string {
-	if len(word) == 0 {
+	if word == "" {
 		return nil
 	}
 
-	// Convert word to bytes for BPE
-	bytes := []byte(word)
-	symbols := make([]string, len(bytes))
-	for i := 0; i < len(bytes); i++ {
-		symbols[i] = string(bytes[i : i+1])
+	// Split on word boundaries (apostrophes, hyphens, etc.)
+	parts := strings.FieldsFunc(word, func(r rune) bool {
+		return r == '\'' || r == '-' || r == '_'
+	})
+
+	if len(parts) > 1 {
+		// If we have multiple parts, process each one
+		var result []string
+		for i, part := range parts {
+			if i > 0 {
+				// Add the separator back
+				result = append(result, string(word[len(result)]))
+			}
+			result = append(result, t.applyBPE(part)...)
+		}
+		return result
 	}
 
-	// Keep merging pairs as long as possible
+	// Start with individual characters
+	symbols := make([]string, 0, len(word))
+	for _, r := range word {
+		symbols = append(symbols, string(r))
+	}
+
+	// Apply merges in order until no more can be applied
 	for {
-		found := false
-		for _, pair := range t.Merges {
-			// Find the pair in the current symbols
+		// Find the first merge that can be applied
+		bestPos := -1
+		bestMerge := ""
+
+		// Check each merge in order
+		for _, merge := range t.Merges {
+			parts := strings.Split(merge, " ")
+			if len(parts) != 2 {
+				continue
+			}
+			// Look for this merge in the current symbols
 			for i := 0; i < len(symbols)-1; i++ {
-				if symbols[i]+symbols[i+1] == pair {
-					// Merge the pair
-					merged := t.MergeMap[pair]
-					symbols = append(symbols[:i], append([]string{merged}, symbols[i+2:]...)...)
-					found = true
+				if symbols[i] == parts[0] && symbols[i+1] == parts[1] {
+					bestPos = i
+					bestMerge = t.MergeMap[merge]
 					break
 				}
 			}
-			if found {
-				break
+			if bestPos != -1 {
+				break // Found the first valid merge
 			}
 		}
-		if !found {
-			break
+
+		if bestPos == -1 {
+			break // No more merges can be applied
 		}
+
+		// Apply the merge
+		symbols[bestPos] = bestMerge
+		symbols = append(symbols[:bestPos+1], symbols[bestPos+2:]...)
+	}
+
+	// If we have a complete word in the vocabulary, use it
+	if _, ok := t.Vocab[word]; ok {
+		return []string{word}
 	}
 
 	return symbols
