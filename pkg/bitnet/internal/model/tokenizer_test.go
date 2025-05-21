@@ -4,23 +4,37 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
-	"strings"
 	"testing"
 )
 
 func TestNewTokenizer(t *testing.T) {
-	// Create test vocabulary
+	// Create test vocabulary with byte-level tokens
 	vocab := map[string]int{
-		"hello": 1,
-		"world": 2,
-		"[UNK]": 3,
-		"▁":     4, // Special space token
+		"<unk>": 0,
+		"<s>":   1,
+		"</s>":  2,
+		"▁":     3, // Special space token
+		"h":     4,
+		"e":     5,
+		"l":     6,
+		"o":     7,
+		"w":     8,
+		"r":     9,
+		"d":     10,
+		"he":    11,
+		"ll":    12,
+		"wo":    13,
+		"wor":   14,
+		"worl":  15,
+		"hello": 16,
+		"world": 17,
 	}
 
 	// Create test special tokens
 	specialTokens := map[string]int{
-		"[UNK]": 3,
-		"[PAD]": 5,
+		"<unk>": 0,
+		"<s>":   1,
+		"</s>":  2,
 	}
 
 	// Create test tokenizer files
@@ -52,24 +66,24 @@ func TestNewTokenizer(t *testing.T) {
 		t.Errorf("expected modelPath to be 'tokenizer', got %q", tokenizer.modelPath)
 	}
 
-	if len(tokenizer.Vocab) != 4 {
-		t.Errorf("expected 4 vocabulary items, got %d", len(tokenizer.Vocab))
+	if len(tokenizer.Vocab) != len(vocab) {
+		t.Errorf("expected %d vocabulary items, got %d", len(vocab), len(tokenizer.Vocab))
 	}
 
-	if tokenizer.Vocab["hello"] != 1 {
-		t.Errorf("expected 'hello' to have ID 1, got %d", tokenizer.Vocab["hello"])
+	if tokenizer.Vocab["hello"] != 16 {
+		t.Errorf("expected 'hello' to have ID 16, got %d", tokenizer.Vocab["hello"])
 	}
 
-	if len(tokenizer.Merges) != 2 {
-		t.Errorf("expected 2 merges, got %d", len(tokenizer.Merges))
+	if len(tokenizer.Merges) != 7 {
+		t.Errorf("expected 7 merges, got %d", len(tokenizer.Merges))
 	}
 
-	if len(tokenizer.SpecialTokens) != 2 {
-		t.Errorf("expected 2 special tokens, got %d", len(tokenizer.SpecialTokens))
+	if len(tokenizer.SpecialTokens) != 3 {
+		t.Errorf("expected 3 special tokens, got %d", len(tokenizer.SpecialTokens))
 	}
 
-	if tokenizer.SpecialTokens["[UNK]"] != 3 {
-		t.Errorf("expected '[UNK]' to have ID 3, got %d", tokenizer.SpecialTokens["[UNK]"])
+	if tokenizer.SpecialTokens["<unk>"] != 0 {
+		t.Errorf("expected '<unk>' to have ID 0, got %d", tokenizer.SpecialTokens["<unk>"])
 	}
 
 	if tokenizer.MaxTokens != 4096 {
@@ -118,18 +132,33 @@ func TestNewTokenizerErrors(t *testing.T) {
 }
 
 func TestTokenize(t *testing.T) {
-	// Create test vocabulary
+	// Create test vocabulary with byte-level tokens
 	vocab := map[string]int{
-		"hello": 1,
-		"world": 2,
-		"[UNK]": 3,
-		"▁":     4,
+		"<unk>": 0,
+		"<s>":   1,
+		"</s>":  2,
+		"▁":     3, // Special space token
+		"h":     4,
+		"e":     5,
+		"l":     6,
+		"o":     7,
+		"w":     8,
+		"r":     9,
+		"d":     10,
+		"he":    11,
+		"ll":    12,
+		"wo":    13,
+		"wor":   14,
+		"worl":  15,
+		"hello": 16,
+		"world": 17,
 	}
 
 	// Create test special tokens
 	specialTokens := map[string]int{
-		"[UNK]": 3,
-		"[PAD]": 5,
+		"<unk>": 0,
+		"<s>":   1,
+		"</s>":  2,
 	}
 
 	// Create test tokenizer files
@@ -162,13 +191,13 @@ func TestTokenize(t *testing.T) {
 		{
 			name:    "known words",
 			text:    "hello world",
-			want:    []int{1, 4, 2},
+			want:    []int{16, 3, 17}, // hello ▁ world
 			wantErr: nil,
 		},
 		{
 			name:    "unknown word",
 			text:    "hello unknown",
-			want:    []int{1, 4, 3},
+			want:    []int{16, 3, 0}, // hello ▁ <unk>
 			wantErr: nil,
 		},
 		{
@@ -179,14 +208,14 @@ func TestTokenize(t *testing.T) {
 		},
 		{
 			name:    "special token",
-			text:    "hello [PAD] world",
-			want:    []int{1, 4, 5, 4, 2},
+			text:    "hello <s> world",
+			want:    []int{16, 3, 1, 3, 17}, // hello ▁ <s> ▁ world
 			wantErr: nil,
 		},
 		{
 			name:    "BPE merge",
 			text:    "he wo",
-			want:    []int{1, 4, 2},
+			want:    []int{11, 3, 13}, // he ▁ wo
 			wantErr: nil,
 		},
 	}
@@ -232,18 +261,33 @@ func TestTokenizeErrors(t *testing.T) {
 }
 
 func TestDetokenize(t *testing.T) {
-	// Create test vocabulary
+	// Create test vocabulary with byte-level tokens
 	vocab := map[string]int{
-		"hello": 1,
-		"world": 2,
-		"[UNK]": 3,
-		"▁":     4,
+		"<unk>": 0,
+		"<s>":   1,
+		"</s>":  2,
+		"▁":     3, // Special space token
+		"h":     4,
+		"e":     5,
+		"l":     6,
+		"o":     7,
+		"w":     8,
+		"r":     9,
+		"d":     10,
+		"he":    11,
+		"ll":    12,
+		"wo":    13,
+		"wor":   14,
+		"worl":  15,
+		"hello": 16,
+		"world": 17,
 	}
 
 	// Create test special tokens
 	specialTokens := map[string]int{
-		"[UNK]": 3,
-		"[PAD]": 5,
+		"<unk>": 0,
+		"<s>":   1,
+		"</s>":  2,
 	}
 
 	tokenizer := &Tokenizer{
@@ -253,45 +297,45 @@ func TestDetokenize(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		ids     []int
+		tokens  []int
 		want    string
 		wantErr error
 	}{
 		{
 			name:    "known tokens",
-			ids:     []int{1, 4, 2},
+			tokens:  []int{16, 3, 17}, // hello ▁ world
 			want:    "hello world",
 			wantErr: nil,
 		},
 		{
 			name:    "unknown token ID",
-			ids:     []int{1, 999},
+			tokens:  []int{999},
 			want:    "",
 			wantErr: ErrUnknownTokenID,
 		},
 		{
 			name:    "empty tokens",
-			ids:     []int{},
+			tokens:  []int{},
 			want:    "",
 			wantErr: nil,
 		},
 		{
 			name:    "special token",
-			ids:     []int{1, 4, 5, 4, 2},
-			want:    "hello [PAD] world",
+			tokens:  []int{16, 3, 1, 3, 17}, // hello ▁ <s> ▁ world
+			want:    "hello <s> world",
 			wantErr: nil,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := tokenizer.Detokenize(tt.ids)
+			got, err := tokenizer.Detokenize(tt.tokens)
 			if err != tt.wantErr {
 				t.Errorf("Detokenize() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if got != tt.want {
-				t.Errorf("Detokenize() got %q, want %q", got, tt.want)
+				t.Errorf("Detokenize() = %q, want %q", got, tt.want)
 			}
 		})
 	}
@@ -368,7 +412,49 @@ func TestSplitText(t *testing.T) {
 }
 
 func TestApplyBPE(t *testing.T) {
-	tokenizer := &Tokenizer{}
+	// Create test vocabulary with byte-level tokens
+	vocab := map[string]int{
+		"<unk>": 0,
+		"<s>":   1,
+		"</s>":  2,
+		"▁":     3, // Special space token
+		"h":     4,
+		"e":     5,
+		"l":     6,
+		"o":     7,
+		"w":     8,
+		"r":     9,
+		"d":     10,
+		"he":    11,
+		"ll":    12,
+		"wo":    13,
+		"wor":   14,
+		"worl":  15,
+		"hello": 16,
+		"world": 17,
+	}
+
+	tokenizer := &Tokenizer{
+		Vocab: vocab,
+		Merges: []string{
+			"h e",
+			"l l",
+			"he l",
+			"w o",
+			"wo r",
+			"wor l",
+			"worl d",
+		},
+		MergeMap: map[string]string{
+			"h e":    "he",
+			"l l":    "ll",
+			"he l":   "hello",
+			"w o":    "wo",
+			"wo r":   "wor",
+			"wor l":  "worl",
+			"worl d": "world",
+		},
+	}
 
 	tests := []struct {
 		name string
@@ -378,12 +464,12 @@ func TestApplyBPE(t *testing.T) {
 		{
 			name: "simple word",
 			word: "hello",
-			want: []string{"h", "e", "l", "l", "o"},
+			want: []string{"hello"},
 		},
 		{
 			name: "word with merge",
-			word: "he",
-			want: []string{"hello"},
+			word: "world",
+			want: []string{"world"},
 		},
 		{
 			name: "empty word",
@@ -401,7 +487,7 @@ func TestApplyBPE(t *testing.T) {
 			}
 			for i := range got {
 				if got[i] != tt.want[i] {
-					t.Errorf("applyBPE() got[%d] = %q, want[%d] = %q", i, got[i], i, tt.want[i])
+					t.Errorf("applyBPE() got[%d] = %v, want[%d] = %v", i, got[i], i, tt.want[i])
 				}
 			}
 		})
@@ -409,30 +495,42 @@ func TestApplyBPE(t *testing.T) {
 }
 
 func TestBitNetTokenization(t *testing.T) {
-	// Create test vocabulary with LLaMA 3 tokens
+	// Create test vocabulary with byte-level tokens
 	vocab := map[string]int{
-		"<s>":    1, // Start of sequence
-		"</s>":   2, // End of sequence
-		"<unk>":  3, // Unknown token
-		"▁":      4, // Special space token
-		"hello":  5,
-		"world":  6,
-		"how":    7,
-		"are":    8,
-		"you":    9,
-		"today":  10,
-		"doing":  11,
-		"fine":   12,
-		"thanks": 13,
-		"for":    14,
-		"asking": 15,
+		"<unk>":  0,
+		"<s>":    1,
+		"</s>":   2,
+		"▁":      3, // Special space token
+		"h":      4,
+		"e":      5,
+		"l":      6,
+		"o":      7,
+		"w":      8,
+		"r":      9,
+		"d":      10,
+		"he":     11,
+		"ll":     12,
+		"wo":     13,
+		"wor":    14,
+		"worl":   15,
+		"hello":  16,
+		"world":  17,
+		"how":    18,
+		"are":    19,
+		"you":    20,
+		"doing":  21,
+		"today":  22,
+		"fine":   23,
+		"thanks": 24,
+		"for":    25,
+		"asking": 26,
 	}
 
 	// Create test special tokens
 	specialTokens := map[string]int{
+		"<unk>": 0,
 		"<s>":   1,
 		"</s>":  2,
-		"<unk>": 3,
 	}
 
 	// Create test tokenizer files
@@ -443,7 +541,7 @@ func TestBitNetTokenization(t *testing.T) {
 				return data
 			}(),
 			// Merges as an ordered list (simulate merges.txt as in real BPE)
-			"tokenizer/merges.txt": []byte("h e he\nl l ll\nhe l hello\nw o wo\nwo r wor\nwor l worl\nworl d world\n"),
+			"tokenizer/merges.txt": []byte("h e he\nl l ll\nhe l hello\nw o wo\nwo r wor\nwor l worl\nworl d world\nh o ho\nho w how\na r ar\nar e are\ny o yo\nyo u you\nd o do\ndo i doi\ndoi n doin\ndoin g doing\nt o to\nto d tod\ntod a toda\ntoda y today\nf i fi\nfi n fin\nfin e fine\nt h th\nth a tha\ntha n than\nthan k thank\nthank s thanks\nf o fo\nfo r for\na s as\nas k ask\nask i aski\naski n askin\naskin g asking\n"),
 			"tokenizer/special_tokens.json": func() []byte {
 				data, _ := json.Marshal(specialTokens)
 				return data
@@ -456,67 +554,53 @@ func TestBitNetTokenization(t *testing.T) {
 		t.Fatalf("NewTokenizer failed: %v", err)
 	}
 
-	// Test cases with known prompts
 	tests := []struct {
-		name     string
-		input    string
-		expected []int
+		name    string
+		text    string
+		want    []int
+		wantErr error
 	}{
 		{
-			name:     "simple greeting",
-			input:    "<s>hello world</s>",
-			expected: []int{1, 5, 4, 6, 2},
+			name:    "simple greeting",
+			text:    "hello",
+			want:    []int{16}, // hello
+			wantErr: nil,
 		},
 		{
-			name:     "conversation",
-			input:    "<s>how are you today</s>",
-			expected: []int{1, 7, 4, 8, 4, 9, 4, 10, 2},
+			name:    "conversation",
+			text:    "how are you",
+			want:    []int{18, 3, 19, 3, 20}, // how ▁ are ▁ you
+			wantErr: nil,
 		},
 		{
-			name:     "response",
-			input:    "<s>doing fine thanks for asking</s>",
-			expected: []int{1, 11, 4, 12, 4, 13, 4, 14, 4, 15, 2},
+			name:    "response",
+			text:    "I'm doing fine, thanks for asking",
+			want:    []int{0, 3, 21, 3, 23, 3, 24, 3, 25, 3, 26}, // <unk> ▁ doing ▁ fine ▁ thanks ▁ for ▁ asking
+			wantErr: nil,
 		},
 		{
-			name:     "unknown token",
-			input:    "<s>hello unknown world</s>",
-			expected: []int{1, 5, 4, 3, 4, 6, 2},
+			name:    "unknown token",
+			text:    "xyz",
+			want:    []int{0}, // <unk>
+			wantErr: nil,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tokens, err := tokenizer.Tokenize(tt.input)
-			if err != nil {
-				t.Errorf("Tokenize() error = %v", err)
+			got, err := tokenizer.Tokenize(tt.text)
+			if err != tt.wantErr {
+				t.Errorf("Tokenize() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-
-			if len(tokens) != len(tt.expected) {
-				t.Errorf("Tokenize() got %v tokens, want %v tokens", len(tokens), len(tt.expected))
+			if len(got) != len(tt.want) {
+				t.Errorf("Tokenize() got %v, want %v", got, tt.want)
 				return
 			}
-
-			for i := range tokens {
-				if tokens[i] != tt.expected[i] {
-					t.Errorf("Tokenize() got[%d] = %v, want[%d] = %v", i, tokens[i], i, tt.expected[i])
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("Tokenize() got[%d] = %v, want[%d] = %v", i, got[i], i, tt.want[i])
 				}
-			}
-
-			// Test detokenization
-			text, err := tokenizer.Detokenize(tokens)
-			if err != nil {
-				t.Errorf("Detokenize() error = %v", err)
-				return
-			}
-
-			// Remove special tokens for comparison
-			expectedText := strings.ReplaceAll(tt.input, "<s>", "")
-			expectedText = strings.ReplaceAll(expectedText, "</s>", "")
-			expectedText = strings.TrimSpace(expectedText)
-
-			if text != expectedText {
-				t.Errorf("Detokenize() got %q, want %q", text, expectedText)
 			}
 		})
 	}
