@@ -3,7 +3,6 @@ package model
 import (
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"io/fs"
 
@@ -182,12 +181,14 @@ func (m *Model) Infer(input string) (string, error) {
 	// Tokenize input
 	tokens, err := m.tokenizer.Tokenize(input)
 	if err != nil {
-		return "", fmt.Errorf("%w: %v", ErrTokenization, err)
+		loggers.Printf(loggers.Debug, "tokenization error: %v", err)
+		return "", ErrTokenization
 	}
 
 	// Check sequence length
 	if len(tokens) > m.config.MaxSeqLength {
-		return "", fmt.Errorf("%w: sequence length %d exceeds maximum %d", ErrSequenceTooLong, len(tokens), m.config.MaxSeqLength)
+		loggers.Printf(loggers.Debug, "sequence length %d exceeds maximum %d", len(tokens), m.config.MaxSeqLength)
+		return "", ErrSequenceTooLong
 	}
 
 	// TODO: Implement actual inference
