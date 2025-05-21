@@ -2,6 +2,10 @@
 TASK=$1
 PR=$2
 
+if test "x$PR" = x; then
+  PR=YOUR-PR-NUMBER
+fi
+
 if test "x$TASK" = x; then
   echo "USAGE: $0 TASK [PR]" >&2
   exit 0
