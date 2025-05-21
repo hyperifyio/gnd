@@ -121,6 +121,8 @@ cat << EOF > pr_description.md
 - [ ] Add more model operations (TODO #190)
 - [ ] Improve test organization (TODO #192)
 - [ ] Implement proper output generation (TODO #189)
+
+Closes #TASK#
 EOF
 
 echo "PR description generated in pr_description.md" 
