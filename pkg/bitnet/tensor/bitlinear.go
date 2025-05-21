@@ -17,16 +17,16 @@ func BitLinear(input, weights *Tensor) *Tensor {
 		panic("bitlinear: input and weight dimensions must match")
 	}
 
+	// Convert to rawTensor for efficient computation
+	rawInput := newRawTensorFrom(input)
+	rawWeights := newRawTensorFrom(weights)
+
 	batchSize := input.shape[0]
 	inFeatures := input.shape[1]
 	outFeatures := weights.shape[0]
 
-	// Create output tensor
-	output := NewTensor(batchSize, outFeatures)
-
-	// Get raw data arrays
-	inputData := input.Data()
-	weightsData := weights.Data()
+	// Create raw output tensor
+	rawOutput := newRawTensor(batchSize, outFeatures)
 
 	// Process in parallel chunks
 	var wg sync.WaitGroup
@@ -52,9 +52,9 @@ func BitLinear(input, weights *Tensor) *Tensor {
 					// Compute dot product
 					for f := 0; f < inFeatures; f++ {
 						// Get input activation (8-bit)
-						act := inputData[b*inFeatures+f]
+						act := rawInput.At(b, f)
 						// Get weight (1.58-bit, stored as -1, 0, +1)
-						w := weightsData[o*inFeatures+f]
+						w := rawWeights.At(o, f)
 						// Multiply and accumulate
 						sum += int32(act) * int32(w)
 					}
@@ -64,12 +64,21 @@ func BitLinear(input, weights *Tensor) *Tensor {
 					} else if sum < -128 {
 						sum = -128
 					}
-					output.Set(int8(sum), b, o)
+					rawOutput.Set(b, o, int8(sum))
 				}
 			}
 		}(i)
 	}
 
 	wg.Wait()
+
+	// Convert result back to Tensor
+	output := NewTensor(batchSize, outFeatures)
+	for i := 0; i < batchSize; i++ {
+		for j := 0; j < outFeatures; j++ {
+			output.setRaw(rawOutput.At(i, j), i, j)
+		}
+	}
+
 	return output
 }
