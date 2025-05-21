@@ -32,9 +32,8 @@ get_previous_coverage() {
     fi
 }
 
-# Get current issue and PR numbers
+# Get current issue number
 ISSUE_NUMBER=$(./scripts/get-current-task-number.sh)
-PR_NUMBER=$(./scripts/get-current-pr-number.sh)
 
 # Generate test coverage report
 echo "Generating test coverage report..."
@@ -94,7 +93,7 @@ else
     fi
 fi
 
-# Generate PR description
+# Generate PR description template
 cat << EOF > pr_description.md
 ## Changes
 - [ ] List of specific changes made
@@ -154,10 +153,5 @@ cat << EOF > pr_description.md
 Closes #${ISSUE_NUMBER}
 EOF
 
-echo "PR description generated in pr_description.md"
-
-# Update PR description if PR exists
-if [ -n "$PR_NUMBER" ]; then
-    echo "Updating PR #${PR_NUMBER} description..."
-    gh pr edit "$PR_NUMBER" --body-file pr_description.md
-fi 
+echo "PR description template generated in pr_description.md"
+echo "Please review and edit the template before updating the PR description." 

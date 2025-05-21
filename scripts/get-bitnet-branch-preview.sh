@@ -1,5 +1,8 @@
 #!/bin/bash
 TASK=$1
+if test "x$TASK" = x; then
+  TASK=$(./scripts/get-current-task-number.sh)
+fi
 
 if [ -z "$TASK" ]; then
   echo "USAGE: $0 TASK" >&2
