@@ -36,6 +36,7 @@ func NewTokenizer(fs fs.FS, modelPath string) (*Tokenizer, error) {
 	}
 
 	if err := t.load(); err != nil {
+		loggers.Printf(loggers.Debug, "failed to load tokenizer: %v", err)
 		return nil, ErrTokenizerNotFound
 	}
 
