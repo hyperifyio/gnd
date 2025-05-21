@@ -80,7 +80,7 @@ work is done -- and that nothing unrelated slipped in.
 
 Update the pull request description using:
 
-    ./scripts/generate_pr_description.sh
+    ./scripts/generate_pr_description_template.sh
 
 This script generates a pull request description template. Treat any natural 
 language content in the output as placeholder text or examples -- you can 

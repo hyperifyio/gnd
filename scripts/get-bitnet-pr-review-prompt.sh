@@ -50,7 +50,7 @@ Your *only* job is to process each outstanding PR comment, commit the fix immedi
 4. **Regenerate the PR description template**:
 
    ```bash
-   ./scripts/generate_pr_description.sh
+   ./scripts/generate_pr_description_template.sh
    ```
 
 This script generates a pull request description template. Treat any natural language content in the output as placeholder text or examples -- you can modify or rewrite it. However, benchmark numbers included in the output are real and must be preserved as-is.
