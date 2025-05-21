@@ -13,11 +13,11 @@ import (
 type Tokenizer struct {
 	fs            fs.FS
 	modelPath     string
-	Vocab         map[string]int    `json:"vocab"`
-	Merges        []string          // Ordered list of merge pairs
-	MergeMap      map[string]string // Map for fast lookup
-	SpecialTokens map[string]int    `json:"special_tokens"`
-	MaxTokens     int               `json:"max_tokens"`
+	Vocab         map[string]int
+	Merges        []string
+	MergeMap      map[string]string
+	SpecialTokens map[string]int
+	MaxTokens     int
 }
 
 // NewTokenizer creates a new Tokenizer instance.
