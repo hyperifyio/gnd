@@ -110,6 +110,27 @@ func (t *Tensor) Set(value int8, indices ...int) {
 	t.data[index] = value
 }
 
+// setRaw assigns a value to the tensor without clamping (for internal use only)
+func (t *Tensor) setRaw(value int8, indices ...int) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	if t.closed {
+		panic("tensor: Set called on closed tensor")
+	}
+
+	if len(indices) != len(t.shape) {
+		panic("tensor: invalid number of indices")
+	}
+
+	index := t.calculateIndex(indices)
+	if index < 0 || index >= len(t.data) {
+		panic("tensor: index out of range")
+	}
+
+	t.data[index] = value // No clamping
+}
+
 // Shape returns the tensor's dimensions
 func (t *Tensor) Shape() []int {
 	t.mu.RLock()
