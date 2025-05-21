@@ -4,12 +4,14 @@ globs: "\*\*"
 alwaysApply: false
 ---
 
-# Commit Uncommitted Changes
+# Detect and Commit Uncommitted Changes
+
+You **MUST** detect uncommited changes using:
+
+    git status|cat
 
 **Purpose:** Ensure that all uncommitted changes are captured in Git commits 
 with clear, standardized commit messages:
-
-    git status|cat
 
 ## Commit Scope
 
