@@ -154,21 +154,21 @@ func TestReadTernaryWeights(t *testing.T) {
 		},
 		{
 			name:    "single byte with all values",
-			input:   []byte{0x1B}, // 00 01 10 11 in binary
+			input:   []byte{0x1A}, // 00011010
 			weights: make([]int8, 4),
-			want:    []int8{-1, 0, 1, 1},
+			want:    []int8{1, 1, 0, -1},
 			wantErr: nil,
 		},
 		{
 			name:    "multiple bytes",
-			input:   []byte{0x1B, 0x2D}, // 00 01 10 11, 10 11 01 01
+			input:   []byte{0x1A, 0x2A}, // 00011010, 00101010
 			weights: make([]int8, 8),
-			want:    []int8{-1, 0, 1, 1, 1, 1, 0, 0},
+			want:    []int8{1, 1, 0, -1, 1, 1, 1, -1},
 			wantErr: nil,
 		},
 		{
 			name:    "incomplete byte",
-			input:   []byte{0x1B},
+			input:   []byte{0x1A},
 			weights: make([]int8, 5), // Request 5 weights but only 4 available
 			want:    nil,
 			wantErr: ErrWeightsFileRead,
@@ -182,7 +182,7 @@ func TestReadTernaryWeights(t *testing.T) {
 		},
 		{
 			name:    "nil weights slice",
-			input:   []byte{0x1B},
+			input:   []byte{0x1A},
 			weights: nil,
 			want:    nil,
 			wantErr: ErrWeightsFileRead,
