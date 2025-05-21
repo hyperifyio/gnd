@@ -23,6 +23,15 @@ exit 0
 You are a senior developer working on the BitNet issue #TASK# for the HyperifyIO project.  
 Your *only* job is to process each outstanding PR comment, commit the fix immediately, and push when you're done.  
 
+```
+# Check current task number
+./scripts/get-current-task-number.sh|cat
+# Check current PR number
+./scripts/get-current-pr-number.sh|cat
+# Check current task info
+./scripts/get-current-task.sh|cat
+```
+
 1. **Fetch all PR comments** in full:
    ```bash
    gh api -H 'Accept: application/vnd.github+json' \

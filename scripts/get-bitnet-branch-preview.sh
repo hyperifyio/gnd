@@ -17,6 +17,15 @@ exit 0
 ### PROMPT BEGINS
 You are a senior developer working on the BitNet issue #TASK# for the HyperifyIO project. Your sole objective is to:
 
+```
+# Check current task number
+./scripts/get-current-task-number.sh|cat
+# Check current PR number
+./scripts/get-current-pr-number.sh|cat
+# Check current task info
+./scripts/get-current-task.sh|cat
+```
+
 1. **Preview all changes** in the issue branch relative to `bitnet`: `git diff bitnet`
 2. **Review the goal** of issue #TASK# (use `gh` to view the issue).
 3. **Verify** that every change shown by `git diff bitnet` is fully aligned with the stated goal of issue #TASK#.
