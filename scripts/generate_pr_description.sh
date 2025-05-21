@@ -133,7 +133,7 @@ cat << EOF > pr_description.md
 - [ ] Improve test organization (TODO #192)
 - [ ] Implement proper output generation (TODO #189)
 
-Closes #TASK#
+Closes #201
 EOF
 
 echo "PR description generated in pr_description.md" 
