@@ -63,14 +63,15 @@ func TestApplyRoPE(t *testing.T) {
 
 	// Check rotation properties
 	// For position 1, the rotation should be approximately:
-	// [cos(θ), sin(θ), cos(2θ), sin(2θ)]
-	// where θ = 1/10000
-	theta := 1.0 / base
+	// [cos(θ₀), sin(θ₀), -sin(θ₁), cos(θ₁)]
+	// where θ₀ = 1.0, θ₁ = 0.01 (per implementation)
+	theta0 := 1.0
+	theta1 := 0.01
 	expected := []float32{
-		float32(math.Cos(theta)),
-		float32(math.Sin(theta)),
-		float32(-math.Sin(2 * theta)),
-		float32(math.Cos(2 * theta)),
+		float32(math.Cos(theta0)),  // cos(θ₀)
+		float32(math.Sin(theta0)),  // sin(θ₀)
+		-float32(math.Sin(theta1)), // -sin(θ₁)
+		float32(math.Cos(theta1)),  // cos(θ₁)
 	}
 
 	for i := 0; i < dim; i++ {
