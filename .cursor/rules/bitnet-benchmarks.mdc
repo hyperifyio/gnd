@@ -12,8 +12,8 @@ alwaysApply: false
 
 ```
 pkg/bitnet/
-├─ mycomponent.go
-└─ mycomponent_test.go   # must contain both unit and benchmark tests
++- mycomponent.go
++- mycomponent_test.go   # must contain both unit and benchmark tests
 ```
 
 ## Benchmark function names
@@ -21,9 +21,9 @@ pkg/bitnet/
 - Use `_` to separate semantic units; avoid camel-case after the prefix.
 
 ```go
-func BenchmarkTensor_Create(b *testing.B) { … }
-func BenchmarkTensor_Get(b *testing.B)    { … }
-func BenchmarkTensor_Set(b *testing.B)    { … }
+func BenchmarkTensor_Create(b *testing.B) { ... }
+func BenchmarkTensor_Get(b *testing.B)    { ... }
+func BenchmarkTensor_Set(b *testing.B)    { ... }
 ```
 
 ## Sub-benchmarks
