@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -340,5 +341,91 @@ func BenchmarkModel_Infer(b *testing.B) {
 		if err != ErrInferenceNotImplemented {
 			b.Fatal(err)
 		}
+	}
+}
+
+func TestEmbedTokens(t *testing.T) {
+	// Create a test model with minimal configuration
+	config := &Config{
+		HiddenSize: 4,
+		VocabSize:  3,
+	}
+	model := NewModel(config, nil)
+
+	// Create test weights with known ternary values
+	model.weights = &ModelWeights{
+		TokenEmbedding: []int8{
+			// Token 0 embeddings
+			1, -1, 0, 1,
+			// Token 1 embeddings
+			-1, 1, 0, -1,
+			// Token 2 embeddings
+			0, 0, 1, 1,
+		},
+	}
+
+	tests := []struct {
+		name    string
+		tokens  []int
+		want    [][]float32
+		wantErr error
+	}{
+		{
+			name:   "valid tokens",
+			tokens: []int{0, 1, 2},
+			want: [][]float32{
+				{1.0, -1.0, 0.0, 1.0},  // Token 0
+				{-1.0, 1.0, 0.0, -1.0}, // Token 1
+				{0.0, 0.0, 1.0, 1.0},   // Token 2
+			},
+			wantErr: nil,
+		},
+		{
+			name:    "invalid token",
+			tokens:  []int{0, 3, 2},
+			want:    nil,
+			wantErr: ErrInvalidToken,
+		},
+		{
+			name:    "negative token",
+			tokens:  []int{0, -1, 2},
+			want:    nil,
+			wantErr: ErrInvalidToken,
+		},
+		{
+			name:    "nil weights",
+			tokens:  []int{0, 1, 2},
+			want:    nil,
+			wantErr: ErrWeightsNotLoaded,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// For the nil weights test
+			if tt.name == "nil weights" {
+				model.weights = nil
+			} else {
+				model.weights = &ModelWeights{
+					TokenEmbedding: []int8{
+						// Token 0 embeddings
+						1, -1, 0, 1,
+						// Token 1 embeddings
+						-1, 1, 0, -1,
+						// Token 2 embeddings
+						0, 0, 1, 1,
+					},
+				}
+			}
+
+			got, err := model.embedTokens(tt.tokens)
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("embedTokens() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("embedTokens() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }

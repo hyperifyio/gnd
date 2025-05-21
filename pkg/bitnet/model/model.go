@@ -191,8 +191,56 @@ func (m *Model) Infer(input string) (string, error) {
 		return "", ErrSequenceTooLong
 	}
 
-	// TODO(#175): Implement BitNet inference with ternary weights
+	// Convert tokens to hidden states using embedding layer
+	if _, err = m.embedTokens(tokens); err != nil {
+		return "", err
+	}
+
+	// TODO: Process hidden states through transformer blocks
+	// TODO: Generate output tokens
 	return "", ErrInferenceNotImplemented
+}
+
+// embedTokens converts token IDs to their corresponding hidden vectors
+// using the quantized embedding matrix
+func (m *Model) embedTokens(tokens []int) ([][]float32, error) {
+	if m.weights == nil {
+		return nil, ErrWeightsNotLoaded
+	}
+
+	// Allocate output tensor
+	hiddenStates := make([][]float32, len(tokens))
+	for i := range hiddenStates {
+		hiddenStates[i] = make([]float32, m.config.HiddenSize)
+	}
+
+	// For each token, look up its embedding vector
+	for i, tokenID := range tokens {
+		if tokenID < 0 || tokenID >= m.config.VocabSize {
+			return nil, ErrInvalidToken
+		}
+
+		// Get the embedding vector for this token
+		embeddingStart := tokenID * m.config.HiddenSize
+
+		// Convert ternary weights to float32 values
+		for j := 0; j < m.config.HiddenSize; j++ {
+			weight := m.weights.TokenEmbedding[embeddingStart+j]
+			// Convert ternary value (-1, 0, +1) to float32
+			switch weight {
+			case -1:
+				hiddenStates[i][j] = -1.0
+			case 0:
+				hiddenStates[i][j] = 0.0
+			case 1:
+				hiddenStates[i][j] = 1.0
+			default:
+				return nil, ErrInvalidWeightValue
+			}
+		}
+	}
+
+	return hiddenStates, nil
 }
 
 // infer is the internal implementation of Infer
@@ -215,7 +263,13 @@ func (m *Model) infer(input string) (string, error) {
 		return "", ErrSequenceTooLong
 	}
 
-	// TODO(#175): Implement BitNet inference with ternary weights
+	// Convert tokens to hidden states using embedding layer
+	if _, err = m.embedTokens(tokens); err != nil {
+		return "", err
+	}
+
+	// TODO: Process hidden states through transformer blocks
+	// TODO: Generate output tokens
 	return "", ErrInferenceNotImplemented
 }
 
