@@ -22,10 +22,21 @@ extract_timing() {
     fi
 }
 
+# Function to get previous coverage from git history
+get_previous_coverage() {
+    local previous_coverage=$(git log -p --all | grep -A 1 "Current coverage:" | grep -v "Current coverage:" | grep -v "^--$" | head -n 1 | awk '{print $3}')
+    if [ -z "$previous_coverage" ]; then
+        echo "N/A"
+    else
+        echo "$previous_coverage"
+    fi
+}
+
 # Generate test coverage report
 echo "Generating test coverage report..."
 go test ./pkg/bitnet/... -coverprofile=coverage.out
 COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}')
+PREVIOUS_COVERAGE=$(get_previous_coverage)
 
 # Run benchmarks
 echo "Running benchmarks..."
@@ -76,7 +87,7 @@ cat << EOF > pr_description.md
 
 ## Test Coverage
 - Current coverage: ${COVERAGE}
-- Coverage changes: <previous> → ${COVERAGE}
+- Coverage changes: ${PREVIOUS_COVERAGE} → ${COVERAGE}
 
 ## Performance Metrics
 ### Memory Usage
