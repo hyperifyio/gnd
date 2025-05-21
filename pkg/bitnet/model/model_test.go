@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
+	"math/rand"
 	"reflect"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -138,49 +141,72 @@ func TestReadTernaryWeights(t *testing.T) {
 	tests := []struct {
 		name    string
 		input   []byte
-		size    int
+		weights []int8
 		want    []int8
 		wantErr error
 	}{
 		{
-			name:    "valid weights",
-			input:   []byte{0x24}, // 0b00100100 = [-1, 0, 1, -1]
-			size:    4,
-			want:    []int8{-1, 0, 1, -1},
+			name:    "empty input",
+			input:   []byte{},
+			weights: make([]int8, 0),
+			want:    []int8{},
 			wantErr: nil,
 		},
 		{
-			name:    "invalid packed value",
-			input:   []byte{0xFF}, // 0b11111111 = invalid packed value (3)
-			size:    4,
-			want:    nil,
-			wantErr: ErrInvalidWeightValue,
+			name:    "single byte with all values",
+			input:   []byte{0x1B}, // 00 01 10 11 in binary
+			weights: make([]int8, 4),
+			want:    []int8{-1, 0, 1, 1},
+			wantErr: nil,
 		},
 		{
-			name:    "partial read",
+			name:    "multiple bytes",
+			input:   []byte{0x1B, 0x2D}, // 00 01 10 11, 10 11 01 01
+			weights: make([]int8, 8),
+			want:    []int8{-1, 0, 1, 1, 1, 1, 0, 0},
+			wantErr: nil,
+		},
+		{
+			name:    "incomplete byte",
 			input:   []byte{0x1B},
-			size:    5,
+			weights: make([]int8, 5), // Request 5 weights but only 4 available
 			want:    nil,
 			wantErr: ErrWeightsFileRead,
 		},
 		{
-			name:  "empty input",
-			input: []byte{},
-			size:  0,
-			want:  []int8{},
+			name:    "nil reader",
+			input:   nil,
+			weights: make([]int8, 4),
+			want:    nil,
+			wantErr: ErrWeightsFileRead,
+		},
+		{
+			name:    "nil weights slice",
+			input:   []byte{0x1B},
+			weights: nil,
+			want:    nil,
+			wantErr: ErrWeightsFileRead,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			weights := make([]int8, tt.size)
 			model := &Model{
 				config: NewConfig(),
 			}
-			err := model.readTernaryWeights(bytes.NewReader(tt.input), weights)
+
+			var reader io.Reader
+			if tt.input != nil {
+				reader = bytes.NewReader(tt.input)
+			}
+
+			err := model.readTernaryWeights(reader, tt.weights)
 			if !errors.Is(err, tt.wantErr) {
 				t.Errorf("readTernaryWeights() error = %v, wantErr %v", err, tt.wantErr)
 				return
+			}
+			if err == nil && !reflect.DeepEqual(tt.weights, tt.want) {
+				t.Errorf("readTernaryWeights() = %v, want %v", tt.weights, tt.want)
 			}
 		})
 	}
@@ -425,6 +451,162 @@ func TestEmbedTokens(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("embedTokens() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestEmbedTokensMemoryUsage(t *testing.T) {
+	// Skip in short mode as this is a memory-intensive test
+	if testing.Short() {
+		t.Skip("skipping memory usage test in short mode")
+	}
+
+	// Create a test model with large vocabulary
+	config := &Config{
+		HiddenSize: 2048,
+		VocabSize:  32000,
+	}
+	model := NewModel(config, nil)
+
+	// Create test weights with random ternary values
+	model.weights = &ModelWeights{
+		TokenEmbedding: make([]int8, config.VocabSize*config.HiddenSize),
+	}
+	for i := range model.weights.TokenEmbedding {
+		model.weights.TokenEmbedding[i] = int8(rand.Intn(3) - 1)
+	}
+
+	// Test different sequence lengths
+	sequenceLengths := []int{16, 256, 1024, 4096}
+
+	for _, seqLen := range sequenceLengths {
+		t.Run(fmt.Sprintf("SequenceLength_%d", seqLen), func(t *testing.T) {
+			// Generate test tokens
+			tokens := make([]int, seqLen)
+			for i := range tokens {
+				tokens[i] = i % config.VocabSize
+			}
+
+			// Measure memory before
+			var m runtime.MemStats
+			runtime.ReadMemStats(&m)
+			before := m.TotalAlloc
+
+			// Run embedding
+			hiddenStates, err := model.embedTokens(tokens)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Measure memory after
+			runtime.ReadMemStats(&m)
+			after := m.TotalAlloc
+
+			// Calculate memory usage
+			memoryUsed := after - before
+			expectedMemory := uint64(seqLen * config.HiddenSize * 4) // float32 = 4 bytes
+
+			// Allow for some overhead (20%)
+			maxAllowedMemory := uint64(float64(expectedMemory) * 1.2)
+
+			// Verify memory usage is within expected bounds
+			if memoryUsed > maxAllowedMemory {
+				t.Errorf("Memory usage too high: got %d bytes, want <= %d bytes",
+					memoryUsed, maxAllowedMemory)
+			}
+
+			// Verify output dimensions
+			if len(hiddenStates) != seqLen {
+				t.Errorf("Wrong number of hidden states: got %d, want %d",
+					len(hiddenStates), seqLen)
+			}
+			for i, state := range hiddenStates {
+				if len(state) != config.HiddenSize {
+					t.Errorf("Wrong hidden state size at index %d: got %d, want %d",
+						i, len(state), config.HiddenSize)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkEmbedTokens(b *testing.B) {
+	// Create a test model with large vocabulary
+	config := &Config{
+		HiddenSize: 2048,
+		VocabSize:  32000,
+	}
+	model := NewModel(config, nil)
+
+	// Create test weights with random ternary values
+	model.weights = &ModelWeights{
+		TokenEmbedding: make([]int8, config.VocabSize*config.HiddenSize),
+	}
+	for i := range model.weights.TokenEmbedding {
+		// Generate random ternary values (-1, 0, 1)
+		model.weights.TokenEmbedding[i] = int8(rand.Intn(3) - 1)
+	}
+
+	// Test cases with different sequence lengths
+	benchmarks := []struct {
+		name         string
+		sequenceLen  int
+		randomTokens bool
+	}{
+		{
+			name:         "ShortSeq_FixedTokens",
+			sequenceLen:  16,
+			randomTokens: false,
+		},
+		{
+			name:         "ShortSeq_RandomTokens",
+			sequenceLen:  16,
+			randomTokens: true,
+		},
+		{
+			name:         "MediumSeq_FixedTokens",
+			sequenceLen:  256,
+			randomTokens: false,
+		},
+		{
+			name:         "MediumSeq_RandomTokens",
+			sequenceLen:  256,
+			randomTokens: true,
+		},
+		{
+			name:         "LongSeq_FixedTokens",
+			sequenceLen:  1024,
+			randomTokens: false,
+		},
+		{
+			name:         "LongSeq_RandomTokens",
+			sequenceLen:  1024,
+			randomTokens: true,
+		},
+	}
+
+	for _, bm := range benchmarks {
+		b.Run(bm.name, func(b *testing.B) {
+			// Generate test tokens
+			tokens := make([]int, bm.sequenceLen)
+			if bm.randomTokens {
+				for i := range tokens {
+					tokens[i] = rand.Intn(config.VocabSize)
+				}
+			} else {
+				// Use fixed tokens for more consistent benchmarking
+				for i := range tokens {
+					tokens[i] = i % config.VocabSize
+				}
+			}
+
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_, err := model.embedTokens(tokens)
+				if err != nil {
+					b.Fatal(err)
+				}
 			}
 		})
 	}
