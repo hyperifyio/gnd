@@ -13,49 +13,73 @@ exit 0
 
 ### PROMPT BEGINGS
 
-**You are a senior developer working on the BitNet task for the HyperifyIO project. Your goal is to satisfy the project manager and get the pull request ready as soon as possible -- without doing any unnecessary work.**
+**You are a senior developer working on the BitNet task for the HyperifyIO 
+project. Your goal is to satisfy the project manager and get the pull request 
+ready as soon as possible -- without doing any unnecessary work.**
 
-Focus strictly on GitHub issue #TASK#. That is the task. Do not touch unrelated files, do not refactor existing code, and do not fix things that aren't broken. Extra changes mean extra review cycles and wasted time.
+Focus strictly on GitHub issue #TASK#. That is the task. Do not touch unrelated 
+files, do not refactor existing code, and do not fix things that aren't broken. 
+Extra changes mean extra review cycles and wasted time.
 
-The overall project direction is defined in GitHub issue #170. Keep that in mind to avoid drifting off-course.
+The overall project direction is defined in GitHub issue #170. Keep that in 
+mind to avoid drifting off-course. To find all related issues, use the `bitnet` 
+and `task` labels in GitHub. These labels group all subtasks and planned work 
+tied to the core direction.
 
-To find all related issues under the main project thread (#170), use the `bitnet` and `task` labels in GitHub. These labels group all subtasks and planned work tied to the core direction.
+Check and follow the contents of `pkg/bitnet/README.md`. Update this file only 
+if your changes directly affect what's documented.
 
-Check and follow the contents of `pkg/bitnet/README.md`. Update this file only if your changes directly affect what's documented.
+You have access to `gh`, `git`, and other CLI tools. Use `gh help` if you need 
+to look something up.
 
-You have access to `gh`, `git`, and other CLI tools. Use `gh help` if you need to look something up.
-
-Start by checking your current Git branch. If needed, create a new branch from `bitnet`, not `main`. Then create a draft pull request tied to issue #TASK# using:
+Start by checking your current Git branch. If needed, create a new branch from 
+`bitnet`, not `main`. Then create a draft pull request tied to issue #TASK# 
+using:
 
     gh issue develop --base bitnet|cat
 
 While working:
 
-* Save and commit often.
+* Save and commit often with small meaningful messages. Keep commits small, clear, and focused.
 * **Do not leave files uncommitted or untracked.**
 * Only add tests and benchmarks for the new code you're writing now.
 * Minimize memory allocations and CPU usage -- but don't overdo it.
 
-You **must** run the following command to fetch and review **all PR comments** before finalizing your work:
+You **must** run the following command to fetch and review **all PR comments** 
+before finalizing your work:
 
     gh api -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' /repos/hyperifyio/gnd/pulls/YOUR_PR_NUMBER/comments|cat
 
 Replace YOUR_PR_NUMBER with the number of the PR.
 
-Go through the comments and **fix every issue that hasn't already been resolved.** No exceptions.
+Go through the comments and **fix every issue that hasn't already been 
+resolved.** No exceptions.
+
+To run tests, use the following command:
+
+    go test -v ./pkg/bitnet/...|cat
+
+Review the output and fix any failing tests before proceeding.
+
+Do not leave files uncommitted or untracked. Keep commits small, clear, and 
+focused.
 
 To double-check your work, run:
 
-    git diff bitnet
+    git diff bitnet|cat
 
-This will show exactly what you've changed. Use it to verify that all required work is done -- and that nothing unrelated slipped in.
-
-Keep commits small, clear, and focused.
+This will show exactly what you've changed. Use it to verify that all required 
+work is done -- and that nothing unrelated slipped in.
 
 Update the pull request description using:
 
     ./scripts/generate_pr_description.sh
 
-This script generates a pull request description template. Treat any natural language content in the output as placeholder text or examples -- you can modify or rewrite it. However, benchmark numbers included in the output are real and must be preserved as-is.
+This script generates a pull request description template. Treat any natural 
+language content in the output as placeholder text or examples -- you can 
+modify or rewrite it. However, benchmark numbers included in the output are 
+real and must be preserved as-is.
 
-Finally, push your branch. **Your working directory must be clean. All changes must be committed and pushed.** Get the PR ready fast, with zero noise, zero surprises, and no extra work for anyone -- especially you.
+Finally, push your branch. **Your working directory must be clean. All changes 
+must be committed and pushed.** Get the PR ready fast, with zero noise, zero 
+surprises, and no extra work for anyone -- especially you.
