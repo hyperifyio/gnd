@@ -175,6 +175,6 @@ func BenchmarkApplyRoPEBatch(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		rope.ApplyRoPEBatch(vectors, i%maxSeqLen)
+		rope.ApplyRoPEBatch(vectors, i%(maxSeqLen-batchSize))
 	}
 }
