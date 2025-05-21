@@ -23,6 +23,7 @@ type Tensor struct {
 	data   []int8
 	shape  []int
 	stride []int
+	mu     sync.RWMutex // Protect concurrent access to data
 }
 
 // workerPool manages a pool of worker goroutines
@@ -69,6 +70,8 @@ func (t *Tensor) Get(indices ...int) int8 {
 		idx += v * t.stride[i]
 	}
 
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 	return t.data[idx]
 }
 
@@ -93,6 +96,9 @@ func (t *Tensor) Set(value int8, indices ...int) {
 	} else if value < -1 {
 		value = -1
 	}
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	t.data[idx] = value
 }
 

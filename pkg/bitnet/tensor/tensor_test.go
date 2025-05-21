@@ -3,6 +3,7 @@ package tensor
 import (
 	"fmt"
 	"math"
+	"sync/atomic"
 	"testing"
 )
 
@@ -204,19 +205,19 @@ func TestTensor_Data(t *testing.T) {
 // TestTensor_ParallelForEach tests parallel processing
 func TestTensor_ParallelForEach(t *testing.T) {
 	tensor := NewTensor(3, 3)
-	sum := int32(0)
-	count := 0
+	var sum atomic.Int32
+	var count atomic.Int32
 
 	tensor.ParallelForEach(func(indices []int, value int8) {
-		sum += int32(value)
-		count++
+		sum.Add(int32(value))
+		count.Add(1)
 	})
 
-	if count != 9 {
-		t.Errorf("ParallelForEach() count = %v, want %v", count, 9)
+	if count.Load() != 9 {
+		t.Errorf("ParallelForEach() count = %v, want %v", count.Load(), 9)
 	}
-	if sum != 0 {
-		t.Errorf("ParallelForEach() sum = %v, want %v", sum, 0)
+	if sum.Load() != 0 {
+		t.Errorf("ParallelForEach() sum = %v, want %v", sum.Load(), 0)
 	}
 }
 
