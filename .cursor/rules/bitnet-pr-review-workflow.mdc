@@ -13,6 +13,12 @@ alwaysApply: true
 Use GitHub CLI or API:
 
 ```bash
+# Check current task info
+./scripts/get-current-task.sh|cat
+# Check current task number
+./scripts/get-current-task-number.sh|cat
+# Check current PR number
+./scripts/get-current-pr-number.sh|cat
 # View basic info
 gh pr view <PR_NUMBER>
 # View comments
