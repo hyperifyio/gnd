@@ -1,7 +1,7 @@
 ---
 description: "Replace fmt.Errorf with static errors; convert dynamic error details into DebugLog calls"
 globs: *.go, pkg/**/*.go
-alwaysApply: false
+alwaysApply: true
 ---
 
 # Problem
