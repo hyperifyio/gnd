@@ -191,7 +191,7 @@ func (m *Model) Infer(input string) (string, error) {
 		return "", ErrSequenceTooLong
 	}
 
-	// TODO: Implement actual inference
+	// TODO(#175): Implement BitNet inference with ternary weights
 	return "", ErrInferenceNotImplemented
 }
 
@@ -215,7 +215,7 @@ func (m *Model) infer(input string) (string, error) {
 		return "", ErrSequenceTooLong
 	}
 
-	// TODO: Implement actual inference
+	// TODO(#175): Implement BitNet inference with ternary weights
 	return "", ErrInferenceNotImplemented
 }
 
