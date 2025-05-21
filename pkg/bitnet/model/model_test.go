@@ -315,10 +315,13 @@ func TestClose(t *testing.T) {
 }
 
 func BenchmarkModel_LoadWeights(b *testing.B) {
-	// Create test filesystem with valid weights
+	// Create test filesystem with valid weights and tokenizer files
 	fs := &testFS{
 		files: map[string][]byte{
-			"weights.bin": createValidWeights(),
+			"weights.bin":                   createValidWeights(),
+			"tokenizer/vocab.json":          []byte(`{"<unk>":0,"▁":1}`),
+			"tokenizer/merges.txt":          []byte(""),
+			"tokenizer/special_tokens.json": []byte(`{"<unk>":0}`),
 		},
 	}
 
@@ -337,10 +340,11 @@ func BenchmarkModel_LoadWeights(b *testing.B) {
 }
 
 func BenchmarkModel_ReadTernaryWeights(b *testing.B) {
-	// Create test data
+	// Create test data with valid ternary values
 	data := make([]byte, 1024)
 	for i := range data {
-		data[i] = byte(i % 256)
+		// Generate valid ternary values (0, 1, 2)
+		data[i] = byte(i % 3)
 	}
 
 	model := &Model{

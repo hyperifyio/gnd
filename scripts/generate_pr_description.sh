@@ -76,6 +76,18 @@ else
     MODEL_INFER_ALLOCS=$(extract_benchmark "BenchmarkModel_Infer" 5)
     TERNARY_WEIGHTS_TIME=$(extract_timing "BenchmarkModel_ReadTernaryWeights")
     TERNARY_WEIGHTS_ALLOCS=$(extract_benchmark "BenchmarkModel_ReadTernaryWeights" 5)
+
+    # Extract BitLinear benchmark results
+    BITLINEAR_TIME=$(extract_timing "BenchmarkBitLinear")
+    BITLINEAR_ALLOCS=$(extract_benchmark "BenchmarkBitLinear" 5)
+
+    # Set default values for unimplemented benchmarks
+    if [ "$MODEL_INFER_TIME" = "N/A" ]; then
+        MODEL_INFER_TIME="N/A (TODO #190)"
+    fi
+    if [ "$MODEL_INFER_ALLOCS" = "N/A" ]; then
+        MODEL_INFER_ALLOCS="N/A (TODO #190)"
+    fi
 fi
 
 # Generate PR description
@@ -96,12 +108,13 @@ cat << EOF > pr_description.md
   - New tensor creation: ${NEW_TENSOR_ALLOCS} allocs/op
   - Get/Set operations: ${GET_SET_ALLOCS} allocs/op
   - Parallel operations: ${PARALLEL_ALLOCS} allocs/op
+  - BitLinear operations: ${BITLINEAR_ALLOCS} allocs/op
 
 #### BitNet Model Operations
 - Allocations per operation:
-  - Model weights loading: ${MODEL_LOAD_ALLOCS} allocs/op (TODO #178)
+  - Model weights loading: ${MODEL_LOAD_ALLOCS} allocs/op
   - Model inference: ${MODEL_INFER_ALLOCS} allocs/op (TODO #190)
-  - Ternary weights reading: ${TERNARY_WEIGHTS_ALLOCS} allocs/op (TODO #178)
+  - Ternary weights reading: ${TERNARY_WEIGHTS_ALLOCS} allocs/op
 
 ### CPU Performance
 #### Tensor Operations
@@ -109,12 +122,13 @@ cat << EOF > pr_description.md
   - Basic operations: ${BASIC_OPS_TIME} ns/op
   - Parallel operations: ${PARALLEL_OPS_TIME} ns/op
   - Large tensor operations: ${LARGE_OPS_TIME} ns/op
+  - BitLinear operations: ${BITLINEAR_TIME} ns/op
 
 #### BitNet Model Operations
 - Operation timing:
-  - Model weights loading: ${MODEL_LOAD_TIME} ns/op (TODO #178)
+  - Model weights loading: ${MODEL_LOAD_TIME} ns/op
   - Model inference: ${MODEL_INFER_TIME} ns/op (TODO #190)
-  - Ternary weights reading: ${TERNARY_WEIGHTS_TIME} ns/op (TODO #178)
+  - Ternary weights reading: ${TERNARY_WEIGHTS_TIME} ns/op
 
 ## Areas for Improvement
 ### High Priority
