@@ -3,6 +3,7 @@ package model
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 
@@ -26,34 +27,14 @@ var (
 	ErrSequenceTooLong         = errors.New("bitnet: sequence length exceeds maximum")
 )
 
-// Model represents the BitNet b1.58-2B-4T model structure
+// Model represents a BitNet model
 type Model struct {
 	config    *Config
 	fs        fs.FS
+	weights   *ModelWeights
 	tokenizer *model.Tokenizer
 	done      chan struct{}
-	weights   *ModelWeights
-
-	// Channels for async operations
-	loadCh   chan loadRequest
-	inferCh  chan inferRequest
-	resultCh chan string
-	errCh    chan error
-}
-
-type loadRequest struct {
-	path string
-	done chan error
-}
-
-type inferRequest struct {
-	input string
-	done  chan inferResult
-}
-
-type inferResult struct {
-	output string
-	err    error
+	readBuf   []byte // Buffer for reading ternary weights
 }
 
 // Config holds the model configuration
@@ -79,63 +60,31 @@ func NewConfig() *Config {
 	}
 }
 
-// NewModel creates a new BitNet model instance
+// NewModel creates a new Model instance
 func NewModel(config *Config, fs fs.FS) *Model {
 	if config == nil {
 		config = NewConfig()
 	}
-	m := &Model{
-		config:   config,
-		fs:       fs,
-		done:     make(chan struct{}),
-		loadCh:   make(chan loadRequest),
-		inferCh:  make(chan inferRequest),
-		resultCh: make(chan string, 1),
-		errCh:    make(chan error, 1),
-	}
-
-	// Start the model goroutine
-	go m.run()
-	return m
-}
-
-// run handles all model operations in a single goroutine
-func (m *Model) run() {
-	for {
-		select {
-		case <-m.done:
-			return
-		case req := <-m.loadCh:
-			req.done <- m.loadWeights(req.path)
-		case req := <-m.inferCh:
-			output, err := m.infer(req.input)
-			req.done <- inferResult{output, err}
-		}
+	return &Model{
+		config: config,
+		fs:     fs,
+		done:   make(chan struct{}),
 	}
 }
 
 // LoadWeights loads the model weights from a file
 func (m *Model) LoadWeights(path string) error {
-	done := make(chan error, 1)
-	m.loadCh <- loadRequest{path: path, done: done}
-	return <-done
-}
-
-// loadWeights is the internal implementation of LoadWeights
-func (m *Model) loadWeights(path string) error {
 	// Open the weights file
 	file, err := m.fs.Open(path)
 	if err != nil {
-		loggers.Printf(loggers.Debug, "failed to open weights file: %v", err)
-		return ErrWeightsFileOpen
+		return fmt.Errorf("%w: %v", ErrWeightsFileOpen, err)
 	}
 	defer file.Close()
 
 	// Read the header
 	header := make([]byte, 8)
 	if _, err := io.ReadFull(file, header); err != nil {
-		loggers.Printf(loggers.Debug, "failed to read weights file: %v", err)
-		return ErrWeightsFileRead
+		return fmt.Errorf("%w: %v", ErrWeightsFileRead, err)
 	}
 
 	// Verify magic number
@@ -151,20 +100,95 @@ func (m *Model) loadWeights(path string) error {
 	// Initialize tokenizer
 	tokenizer, err := model.NewTokenizer(m.fs, "tokenizer")
 	if err != nil {
-		loggers.Printf(loggers.Debug, "failed to initialize tokenizer: %v", err)
-		return ErrTokenizerInit
+		return fmt.Errorf("%w: %v", ErrTokenizerInit, err)
 	}
 	m.tokenizer = tokenizer
+
+	// Pre-calculate sizes for all allocations
+	embeddingSize := m.config.VocabSize * m.config.HiddenSize
+	qkvSize := m.config.HiddenSize * 3 * m.config.HiddenSize
+	outSize := m.config.HiddenSize * m.config.HiddenSize
+	ffnUpSize := m.config.HiddenSize * m.config.IntermediateSize
+	ffnDownSize := m.config.IntermediateSize * m.config.HiddenSize
+
+	// Initialize weights structure with pre-allocated slices
+	m.weights = &ModelWeights{
+		TokenEmbedding: make([]int8, embeddingSize),
+		Blocks:         make([]*TransformerBlock, m.config.NumLayers),
+		FinalNorm:      make([]float32, m.config.HiddenSize),
+	}
+
+	// Pre-allocate all transformer blocks
+	for i := 0; i < m.config.NumLayers; i++ {
+		m.weights.Blocks[i] = &TransformerBlock{
+			QKVProj:  make([]int8, qkvSize),
+			OutProj:  make([]int8, outSize),
+			FFNUp:    make([]int8, ffnUpSize),
+			FFNDown:  make([]int8, ffnDownSize),
+			AttnNorm: make([]float32, m.config.HiddenSize),
+			FFNNorm:  make([]float32, m.config.HiddenSize),
+		}
+	}
+
+	// Read token embeddings
+	if err := m.readTernaryWeights(file, m.weights.TokenEmbedding); err != nil {
+		return err
+	}
+
+	// Read transformer blocks
+	for i := 0; i < m.config.NumLayers; i++ {
+		block := m.weights.Blocks[i]
+
+		// Read all weights for this block
+		if err := m.readTernaryWeights(file, block.QKVProj); err != nil {
+			return err
+		}
+		if err := m.readTernaryWeights(file, block.OutProj); err != nil {
+			return err
+		}
+		if err := m.readTernaryWeights(file, block.FFNUp); err != nil {
+			return err
+		}
+		if err := m.readTernaryWeights(file, block.FFNDown); err != nil {
+			return err
+		}
+
+		// Read normalization weights
+		if err := binary.Read(file, binary.LittleEndian, block.AttnNorm); err != nil {
+			return fmt.Errorf("%w: %v", ErrWeightsFileRead, err)
+		}
+		if err := binary.Read(file, binary.LittleEndian, block.FFNNorm); err != nil {
+			return fmt.Errorf("%w: %v", ErrWeightsFileRead, err)
+		}
+	}
+
+	// Read final normalization
+	if err := binary.Read(file, binary.LittleEndian, m.weights.FinalNorm); err != nil {
+		return fmt.Errorf("%w: %v", ErrWeightsFileRead, err)
+	}
 
 	return nil
 }
 
 // Infer performs inference on the input text
 func (m *Model) Infer(input string) (string, error) {
-	done := make(chan inferResult, 1)
-	m.inferCh <- inferRequest{input: input, done: done}
-	result := <-done
-	return result.output, result.err
+	if m.tokenizer == nil {
+		return "", ErrTokenizerNotLoaded
+	}
+
+	// Tokenize input
+	tokens, err := m.tokenizer.Tokenize(input)
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrTokenization, err)
+	}
+
+	// Check sequence length
+	if len(tokens) > m.config.MaxSeqLength {
+		return "", fmt.Errorf("%w: sequence length %d exceeds maximum %d", ErrSequenceTooLong, len(tokens), m.config.MaxSeqLength)
+	}
+
+	// TODO: Implement actual inference
+	return "", ErrInferenceNotImplemented
 }
 
 // infer is the internal implementation of Infer
@@ -201,22 +225,35 @@ func (m *Model) Close() {
 	}
 }
 
-// readTernaryWeights reads ternary weights from a reader
-func (m *Model) readTernaryWeights(r io.Reader, weights []int8) error {
-	// Read packed values
-	packed := make([]byte, (len(weights)+3)/4)
-	if _, err := io.ReadFull(r, packed); err != nil {
-		loggers.Printf(loggers.Debug, "failed to read weights: %v", err)
-		return ErrWeightsFileRead
+// readTernaryWeights reads and unpacks ternary weights from the file
+// Each byte contains 4 ternary values (-1, 0, +1) packed as 2 bits each
+func (m *Model) readTernaryWeights(file io.Reader, weights []int8) error {
+	if file == nil {
+		return fmt.Errorf("%w: nil reader", ErrWeightsFileRead)
+	}
+	if weights == nil {
+		return fmt.Errorf("%w: nil weights slice", ErrWeightsFileRead)
 	}
 
-	// Unpack values
-	for i := 0; i < len(weights); i++ {
-		packedIdx := i / 4
-		bitOffset := (i % 4) * 2
-		packedValue := (packed[packedIdx] >> bitOffset) & 0x03
+	// Calculate number of bytes needed
+	numBytes := (len(weights) + 3) / 4 // Round up to nearest byte
+	if cap(m.readBuf) < numBytes {
+		m.readBuf = make([]byte, numBytes)
+	} else {
+		m.readBuf = m.readBuf[:numBytes]
+	}
 
-		switch packedValue {
+	// Read packed weights
+	if _, err := io.ReadFull(file, m.readBuf); err != nil {
+		return fmt.Errorf("%w: %v", ErrWeightsFileRead, err)
+	}
+
+	// Unpack weights
+	for i := 0; i < len(weights); i++ {
+		byteIdx := i / 4
+		bitIdx := (i % 4) * 2
+		packed := m.readBuf[byteIdx] >> bitIdx & 0x03
+		switch packed {
 		case 0:
 			weights[i] = -1
 		case 1:
@@ -224,7 +261,7 @@ func (m *Model) readTernaryWeights(r io.Reader, weights []int8) error {
 		case 2:
 			weights[i] = 1
 		default:
-			return ErrInvalidWeightValue
+			return fmt.Errorf("%w: invalid ternary value %d", ErrInvalidWeightValue, packed)
 		}
 	}
 
@@ -251,11 +288,7 @@ type TransformerBlock struct {
 // ModelWeights represents all model parameters
 type ModelWeights struct {
 	// Token embeddings (shared with output layer)
-	TokenEmbeddings []float32
-
-	// Transformer blocks
-	Blocks []*TransformerBlock
-
-	// Final normalization
-	FinalNorm []float32
+	TokenEmbedding []int8 // Token embedding weights (ternary)
+	Blocks         []*TransformerBlock
+	FinalNorm      []float32
 }
