@@ -1,0 +1,61 @@
+---
+description: "Avoid mutexes for parallel computing in Go; prefer lock-free designs with goroutines and channels"
+globs: *.go, pkg/**/*.go
+alwaysApply: true
+---
+
+# Rule
+
+Avoid using `sync.Mutex`, `sync.RWMutex`, or any other explicit locking mechanisms for managing parallel access in Go code.
+
+Instead, design systems using **lock-free concurrency** patterns:
+- Use goroutines to isolate state
+- Communicate via channels (`chan`)
+- Use `sync/atomic` for low-level cases (when appropriate)
+
+This leads to simpler, more scalable, and less error-prone code.
+
+### [ OK ] Good (lock-free concurrency)
+
+```go
+type Task struct {
+    dataCh chan string
+}
+
+func NewTask() *Task {
+    t := &Task{dataCh: make(chan string)}
+    go func() {
+        for msg := range t.dataCh {
+            fmt.Println("processing:", msg)
+        }
+    }()
+    return t
+}
+
+func (t *Task) Enqueue(msg string) {
+    t.dataCh <- msg
+}
+````
+
+### [FAIL] Bad (mutex locking)
+
+```go
+type Task struct {
+    mu sync.Mutex
+    data []string
+}
+
+func (t *Task) Add(msg string) {
+    t.mu.Lock()
+    defer t.mu.Unlock()
+    t.data = append(t.data, msg)
+}
+```
+
+# [NOTE] Notes
+
+* Mutexes introduce the risk of deadlocks, contention, and complexity.
+* Channel-based designs make ownership and flow of data explicit.
+* In performance-critical sections, consider using goroutine-safe object pools or atomic primitives if channels are not suitable.
+
+Apply this rule to all concurrent logic unless you have a clear performance reason to use a mutex -- and even then, document it with a justification.

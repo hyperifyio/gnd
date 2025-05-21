@@ -1,0 +1,38 @@
+---
+description: "Enforce committing all uncommitted changes with meaningful commit messages."
+globs: "\*\*"
+alwaysApply: false
+---
+
+# Detect and Commit Uncommitted Changes
+
+You **MUST** detect uncommited changes using:
+
+    git status|cat
+
+**Purpose:** Ensure that all uncommitted changes are captured in Git commits 
+with clear, standardized commit messages:
+
+## Commit Scope
+
+* Stage all modified, added, and deleted files.
+* Exclude generated or ignored files as defined by `.gitignore`.
+
+## Commit Message Guidelines
+
+1. **Format:** `<type>(<scope>): <short summary>`
+2. **Type:** one of `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `perf`.
+3. **Scope:** optional identifier for the area of change (e.g., `api`, `ui`, `parser`).
+4. **Summary:** imperative sentence, no more than 50 characters.
+5. **Details:** optional body separated by a blank line:
+
+   * Explain *what* changed and *why*, not *how*.
+   * Reference issues or PRs with `#<number>` where applicable.
+
+## Usage Example
+
+```bash
+git add .
+git commit -m "feat(parser): add support for MDC commit rule"
+```
+

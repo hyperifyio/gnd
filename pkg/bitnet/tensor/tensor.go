@@ -7,29 +7,34 @@ import (
 
 // TensorType defines the core tensor operations
 type TensorType interface {
-	Get(indices ...int) float64
-	Set(value float64, indices ...int)
+	Get(indices ...int) int8
+	Set(value int8, indices ...int)
 	Shape() []int
-	Data() []float64
+	Data() []int8
+	Close()
 }
 
 // ParallelProcessor defines operations that can be executed in parallel
 type ParallelProcessor interface {
-	ParallelForEach(fn func(indices []int, value float64))
+	ParallelForEach(fn func(indices []int, value int8))
 }
 
-// Tensor represents a multi-dimensional array
+// Tensor represents a multi-dimensional array of ternary values (-1, 0, +1)
 type Tensor struct {
-	data   []float64
+	data   []int8
 	shape  []int
 	stride []int
+	mu     sync.RWMutex
+	closed bool
 }
 
-// workerPool manages a pool of worker goroutines
-var workerPool = sync.Pool{
-	New: func() interface{} {
-		return make(chan struct{}, 1)
-	},
+// tensorOp represents a tensor operation
+type tensorOp struct {
+	opType   string // "get" or "set"
+	indices  []int
+	value    int8
+	resultCh chan int8
+	doneCh   chan struct{}
 }
 
 // NewTensor creates a new tensor with the given shape
@@ -47,122 +52,167 @@ func NewTensor(shape ...int) *Tensor {
 	}
 
 	// Create tensor
-	return &Tensor{
-		data:   make([]float64, size),
+	t := &Tensor{
+		data:   make([]int8, size),
 		shape:  shape,
 		stride: stride,
 	}
+
+	return t
 }
 
-// Get returns the value at the given indices
-func (t *Tensor) Get(indices ...int) float64 {
+// Get retrieves a value from the tensor
+func (t *Tensor) Get(indices ...int) int8 {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	if t.closed {
+		panic("tensor: Get called on closed tensor")
+	}
+
 	if len(indices) != len(t.shape) {
-		panic("invalid number of indices")
+		panic("tensor: invalid number of indices")
 	}
 
-	// Calculate linear index
-	idx := 0
-	for i, v := range indices {
-		if v < 0 || v >= t.shape[i] {
-			panic("index out of range")
-		}
-		idx += v * t.stride[i]
+	index := t.calculateIndex(indices)
+	if index < 0 || index >= len(t.data) {
+		panic("tensor: index out of range")
 	}
 
-	return t.data[idx]
+	return t.data[index]
 }
 
-// Set sets the value at the given indices
-func (t *Tensor) Set(value float64, indices ...int) {
+// Set assigns a value to the tensor
+func (t *Tensor) Set(value int8, indices ...int) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	if t.closed {
+		panic("tensor: Set called on closed tensor")
+	}
+
 	if len(indices) != len(t.shape) {
-		panic("invalid number of indices")
+		panic("tensor: invalid number of indices")
 	}
 
-	// Calculate linear index
-	idx := 0
-	for i, v := range indices {
-		if v < 0 || v >= t.shape[i] {
-			panic("index out of range")
-		}
-		idx += v * t.stride[i]
+	index := t.calculateIndex(indices)
+	if index < 0 || index >= len(t.data) {
+		panic("tensor: index out of range")
 	}
 
-	t.data[idx] = value
+	// Clamp value to ternary range
+	if value > 1 {
+		value = 1
+	} else if value < -1 {
+		value = -1
+	}
+
+	t.data[index] = value
 }
 
-// Shape returns the shape of the tensor
+// Shape returns the tensor's dimensions
 func (t *Tensor) Shape() []int {
-	return t.shape
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	if t.closed {
+		panic("tensor: Shape called on closed tensor")
+	}
+
+	shape := make([]int, len(t.shape))
+	copy(shape, t.shape)
+	return shape
 }
 
 // Data returns the underlying data array
-func (t *Tensor) Data() []float64 {
-	return t.data
-}
+func (t *Tensor) Data() []int8 {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 
-// ParallelForEach applies the given function to each element in parallel
-func (t *Tensor) ParallelForEach(fn func(indices []int, value float64)) {
-	// Get number of CPU cores
-	numCPU := runtime.NumCPU()
-	if numCPU < 2 {
-		// Fall back to sequential processing for single CPU
-		t.forEach(fn)
-		return
+	if t.closed {
+		panic("tensor: Data called on closed tensor")
 	}
 
-	// Create work channels
-	workChan := make(chan []int, numCPU*2)
-	doneChan := make(chan struct{}, numCPU)
+	data := make([]int8, len(t.data))
+	copy(data, t.data)
+	return data
+}
 
-	// Start worker goroutines
+// ParallelForEach processes each element in parallel
+func (t *Tensor) ParallelForEach(fn func(indices []int, value int8)) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	if t.closed {
+		panic("tensor: ParallelForEach called on closed tensor")
+	}
+
 	var wg sync.WaitGroup
-	for i := 0; i < numCPU; i++ {
+	chunkSize := len(t.data) / runtime.NumCPU()
+	if chunkSize < 1 {
+		chunkSize = 1
+	}
+
+	for i := 0; i < len(t.data); i += chunkSize {
 		wg.Add(1)
-		go func() {
+		go func(start int) {
 			defer wg.Done()
-			for indices := range workChan {
-				fn(indices, t.Get(indices...))
+			end := start + chunkSize
+			if end > len(t.data) {
+				end = len(t.data)
 			}
-			doneChan <- struct{}{}
-		}()
+
+			for j := start; j < end; j++ {
+				indices := t.calculateIndices(j)
+				fn(indices, t.data[j])
+			}
+		}(i)
 	}
 
-	// Generate work
-	go func() {
-		t.forEach(func(indices []int, _ float64) {
-			workChan <- indices
-		})
-		close(workChan)
-	}()
+	wg.Wait()
+}
 
-	// Wait for completion
-	go func() {
-		wg.Wait()
-		close(doneChan)
-	}()
+// Close marks the tensor as closed and frees its resources
+// The write-lock is only held in Close(), which is called very rarely
+// (only when tearing down or freeing the tensor), so the per-access
+// RLock overhead remains negligible.
+func (t *Tensor) Close() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 
-	// Wait for all workers to finish
-	for range doneChan {
+	if !t.closed {
+		t.closed = true
+		t.data = nil
 	}
 }
 
-// forEach applies the given function to each element sequentially
-func (t *Tensor) forEach(fn func(indices []int, value float64)) {
+// calculateIndex converts multi-dimensional indices to a flat index
+func (t *Tensor) calculateIndex(indices []int) int {
+	index := 0
+	stride := 1
+
+	for i := len(t.shape) - 1; i >= 0; i-- {
+		if indices[i] < 0 || indices[i] >= t.shape[i] {
+			return -1
+		}
+		index += indices[i] * stride
+		stride *= t.shape[i]
+	}
+
+	return index
+}
+
+// calculateIndices converts a flat index to multi-dimensional indices
+func (t *Tensor) calculateIndices(index int) []int {
 	indices := make([]int, len(t.shape))
-	t.forEachRecursive(0, indices, fn)
-}
+	stride := 1
 
-// forEachRecursive recursively traverses the tensor
-func (t *Tensor) forEachRecursive(dim int, indices []int, fn func(indices []int, value float64)) {
-	if dim == len(t.shape) {
-		fn(indices, t.Get(indices...))
-		return
+	for i := len(t.shape) - 1; i >= 0; i-- {
+		indices[i] = (index / stride) % t.shape[i]
+		stride *= t.shape[i]
 	}
 
-	for i := 0; i < t.shape[dim]; i++ {
-		indices[dim] = i
-		t.forEachRecursive(dim+1, indices, fn)
-	}
+	return indices
 }
 
 // Verify interface implementation

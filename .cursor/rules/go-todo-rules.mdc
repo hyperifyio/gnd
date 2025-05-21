@@ -1,7 +1,7 @@
 ---
 description: "Enforce TODO comments in pkg/bitnet to include GitHub issue number; suggest using `gh` to find relevant tasks"
 globs: pkg/bitnet/**/*.go
-alwaysApply: false
+alwaysApply: true
 ---
 
 # Rule
