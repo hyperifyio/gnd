@@ -1,30 +1,82 @@
 #!/bin/bash
 
+# Function to safely extract benchmark values
+extract_benchmark() {
+    local pattern=$1
+    local value=$(grep "$pattern" benchmark_results.txt | head -n 1 | awk '{print $'$2'}')
+    if [ -z "$value" ]; then
+        echo "N/A"
+    else
+        echo "$value"
+    fi
+}
+
+# Function to extract timing values
+extract_timing() {
+    local pattern=$1
+    local value=$(grep "$pattern" benchmark_results.txt | head -n 1 | awk '{print $3}')
+    if [ -z "$value" ]; then
+        echo "N/A"
+    else
+        echo "$value"
+    fi
+}
+
+# Function to get previous coverage from git history
+get_previous_coverage() {
+    local previous_coverage=$(git log --all | grep -FA 1 "Current coverage:" | grep -Eo 'Current coverage:.*'|head -n 1|tr -d ' '|awk -F: '{print $2}')
+    if [ -z "$previous_coverage" ]; then
+        echo "N/A"
+    else
+        echo "$previous_coverage"
+    fi
+}
+
 # Generate test coverage report
 echo "Generating test coverage report..."
 go test ./pkg/bitnet/... -coverprofile=coverage.out
 COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}')
+PREVIOUS_COVERAGE=$(get_previous_coverage)
 
 # Run benchmarks
 echo "Running benchmarks..."
 ./scripts/run_benchmarks.sh > benchmark_results.txt
 
-# Extract tensor benchmark results
-NEW_TENSOR_ALLOCS=$(grep "BenchmarkNewTensor/shape_\[100\]" benchmark_results.txt | head -n 1 | awk '{print $5}')
-GET_SET_ALLOCS=$(grep "BenchmarkTensor_Get/2D_access" benchmark_results.txt | head -n 1 | awk '{print $5}')
-PARALLEL_ALLOCS=$(grep "BenchmarkTensor_ParallelForEach/100x100" benchmark_results.txt | head -n 1 | awk '{print $5}')
+# Check if benchmark results file exists and has content
+if [ ! -s benchmark_results.txt ]; then
+    echo "Warning: No benchmark results found. Using placeholder values."
+    # Set default values for missing benchmarks
+    NEW_TENSOR_ALLOCS="N/A"
+    GET_SET_ALLOCS="N/A"
+    PARALLEL_ALLOCS="N/A"
+    BASIC_OPS_TIME="N/A"
+    PARALLEL_OPS_TIME="N/A"
+    LARGE_OPS_TIME="N/A"
+    MODEL_LOAD_TIME="N/A"
+    MODEL_LOAD_ALLOCS="N/A"
+    MODEL_INFER_TIME="N/A"
+    MODEL_INFER_ALLOCS="N/A"
+    TERNARY_WEIGHTS_TIME="N/A"
+    TERNARY_WEIGHTS_ALLOCS="N/A"
+else
+    # Extract tensor benchmark results
+    NEW_TENSOR_ALLOCS=$(extract_benchmark "BenchmarkNewTensor/shape_\[100\]" 5)
+    GET_SET_ALLOCS=$(extract_benchmark "BenchmarkTensor_Get/2D_access" 5)
+    PARALLEL_ALLOCS=$(extract_benchmark "BenchmarkTensor_ParallelForEach/100x100" 5)
 
-BASIC_OPS_TIME=$(grep "BenchmarkTensor_Get/2D_access" benchmark_results.txt | head -n 1 | awk '{print $4}')
-PARALLEL_OPS_TIME=$(grep "BenchmarkTensor_ParallelForEach/100x100" benchmark_results.txt | head -n 1 | awk '{print $4}')
-LARGE_OPS_TIME=$(grep "BenchmarkNewTensor/shape_\[100_100\]" benchmark_results.txt | head -n 1 | awk '{print $4}')
+    # Extract timing values
+    BASIC_OPS_TIME=$(extract_timing "BenchmarkTensor_Get/2D_access")
+    PARALLEL_OPS_TIME=$(extract_timing "BenchmarkTensor_ParallelForEach/100x100")
+    LARGE_OPS_TIME=$(extract_timing "BenchmarkNewTensor/shape_\[100_100\]")
 
-# Extract BitNet model benchmark results
-MODEL_LOAD_TIME=$(grep "BenchmarkModel_LoadWeights" benchmark_results.txt | head -n 1 | awk '{print $4}')
-MODEL_LOAD_ALLOCS=$(grep "BenchmarkModel_LoadWeights" benchmark_results.txt | head -n 1 | awk '{print $5}')
-MODEL_INFER_TIME=$(grep "BenchmarkModel_Infer" benchmark_results.txt | head -n 1 | awk '{print $4}')
-MODEL_INFER_ALLOCS=$(grep "BenchmarkModel_Infer" benchmark_results.txt | head -n 1 | awk '{print $5}')
-TERNARY_WEIGHTS_TIME=$(grep "BenchmarkModel_ReadTernaryWeights" benchmark_results.txt | head -n 1 | awk '{print $4}')
-TERNARY_WEIGHTS_ALLOCS=$(grep "BenchmarkModel_ReadTernaryWeights" benchmark_results.txt | head -n 1 | awk '{print $5}')
+    # Extract BitNet model benchmark results
+    MODEL_LOAD_TIME=$(extract_timing "BenchmarkModel_LoadWeights")
+    MODEL_LOAD_ALLOCS=$(extract_benchmark "BenchmarkModel_LoadWeights" 5)
+    MODEL_INFER_TIME=$(extract_timing "BenchmarkModel_Infer")
+    MODEL_INFER_ALLOCS=$(extract_benchmark "BenchmarkModel_Infer" 5)
+    TERNARY_WEIGHTS_TIME=$(extract_timing "BenchmarkModel_ReadTernaryWeights")
+    TERNARY_WEIGHTS_ALLOCS=$(extract_benchmark "BenchmarkModel_ReadTernaryWeights" 5)
+fi
 
 # Generate PR description
 cat << EOF > pr_description.md
@@ -35,7 +87,7 @@ cat << EOF > pr_description.md
 
 ## Test Coverage
 - Current coverage: ${COVERAGE}
-- Coverage changes: <previous> → ${COVERAGE}
+- Coverage changes: ${PREVIOUS_COVERAGE} → ${COVERAGE}
 
 ## Performance Metrics
 ### Memory Usage
@@ -47,9 +99,9 @@ cat << EOF > pr_description.md
 
 #### BitNet Model Operations
 - Allocations per operation:
-  - Model weights loading: ${MODEL_LOAD_ALLOCS} allocs/op
-  - Model inference: ${MODEL_INFER_ALLOCS} allocs/op
-  - Ternary weights reading: ${TERNARY_WEIGHTS_ALLOCS} allocs/op
+  - Model weights loading: ${MODEL_LOAD_ALLOCS} allocs/op (TODO #178)
+  - Model inference: ${MODEL_INFER_ALLOCS} allocs/op (TODO #190)
+  - Ternary weights reading: ${TERNARY_WEIGHTS_ALLOCS} allocs/op (TODO #178)
 
 ### CPU Performance
 #### Tensor Operations
@@ -60,28 +112,28 @@ cat << EOF > pr_description.md
 
 #### BitNet Model Operations
 - Operation timing:
-  - Model weights loading: ${MODEL_LOAD_TIME} ns/op
-  - Model inference: ${MODEL_INFER_TIME} ns/op
-  - Ternary weights reading: ${TERNARY_WEIGHTS_TIME} ns/op
+  - Model weights loading: ${MODEL_LOAD_TIME} ns/op (TODO #178)
+  - Model inference: ${MODEL_INFER_TIME} ns/op (TODO #190)
+  - Ternary weights reading: ${TERNARY_WEIGHTS_TIME} ns/op (TODO #178)
 
 ## Areas for Improvement
 ### High Priority
-- [ ] Add tests for internal packages
-- [ ] Optimize memory allocations in model operations
-- [ ] Implement proper tokenization (TODO #174)
+- [ ] Optimize memory allocations in model operations (TODO #191)
 - [ ] Implement proper self-attention (TODO #186)
 
 ### Medium Priority
-- [ ] Improve error handling in model operations
-- [ ] Add more comprehensive benchmarks
+- [ ] Improve error handling in model operations (TODO #192)
+- [ ] Add more comprehensive benchmarks (TODO #192)
 - [ ] Enhance documentation
 - [ ] Implement proper feed-forward network (TODO #187)
 
 ### Low Priority
-- [ ] Consider SIMD optimizations
-- [ ] Add more model operations
-- [ ] Improve test organization
+- [ ] Consider SIMD optimizations (TODO #191)
+- [ ] Add more model operations (TODO #190)
+- [ ] Improve test organization (TODO #192)
 - [ ] Implement proper output generation (TODO #189)
+
+Closes #201
 EOF
 
 echo "PR description generated in pr_description.md" 
