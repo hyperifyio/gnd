@@ -7,20 +7,20 @@ import (
 
 // TensorType defines the core tensor operations
 type TensorType interface {
-	Get(indices ...int) float64
-	Set(value float64, indices ...int)
+	Get(indices ...int) int8
+	Set(value int8, indices ...int)
 	Shape() []int
-	Data() []float64
+	Data() []int8
 }
 
 // ParallelProcessor defines operations that can be executed in parallel
 type ParallelProcessor interface {
-	ParallelForEach(fn func(indices []int, value float64))
+	ParallelForEach(fn func(indices []int, value int8))
 }
 
-// Tensor represents a multi-dimensional array
+// Tensor represents a multi-dimensional array of ternary values (-1, 0, +1)
 type Tensor struct {
-	data   []float64
+	data   []int8
 	shape  []int
 	stride []int
 }
@@ -48,14 +48,14 @@ func NewTensor(shape ...int) *Tensor {
 
 	// Create tensor
 	return &Tensor{
-		data:   make([]float64, size),
+		data:   make([]int8, size),
 		shape:  shape,
 		stride: stride,
 	}
 }
 
 // Get returns the value at the given indices
-func (t *Tensor) Get(indices ...int) float64 {
+func (t *Tensor) Get(indices ...int) int8 {
 	if len(indices) != len(t.shape) {
 		panic("invalid number of indices")
 	}
@@ -73,7 +73,7 @@ func (t *Tensor) Get(indices ...int) float64 {
 }
 
 // Set sets the value at the given indices
-func (t *Tensor) Set(value float64, indices ...int) {
+func (t *Tensor) Set(value int8, indices ...int) {
 	if len(indices) != len(t.shape) {
 		panic("invalid number of indices")
 	}
@@ -87,6 +87,12 @@ func (t *Tensor) Set(value float64, indices ...int) {
 		idx += v * t.stride[i]
 	}
 
+	// Clamp to ternary values
+	if value > 1 {
+		value = 1
+	} else if value < -1 {
+		value = -1
+	}
 	t.data[idx] = value
 }
 
@@ -96,12 +102,12 @@ func (t *Tensor) Shape() []int {
 }
 
 // Data returns the underlying data array
-func (t *Tensor) Data() []float64 {
+func (t *Tensor) Data() []int8 {
 	return t.data
 }
 
 // ParallelForEach applies the given function to each element in parallel
-func (t *Tensor) ParallelForEach(fn func(indices []int, value float64)) {
+func (t *Tensor) ParallelForEach(fn func(indices []int, value int8)) {
 	// Get number of CPU cores
 	numCPU := runtime.NumCPU()
 	if numCPU < 2 {
@@ -129,7 +135,7 @@ func (t *Tensor) ParallelForEach(fn func(indices []int, value float64)) {
 
 	// Generate work
 	go func() {
-		t.forEach(func(indices []int, _ float64) {
+		t.forEach(func(indices []int, _ int8) {
 			workChan <- indices
 		})
 		close(workChan)
@@ -147,13 +153,13 @@ func (t *Tensor) ParallelForEach(fn func(indices []int, value float64)) {
 }
 
 // forEach applies the given function to each element sequentially
-func (t *Tensor) forEach(fn func(indices []int, value float64)) {
+func (t *Tensor) forEach(fn func(indices []int, value int8)) {
 	indices := make([]int, len(t.shape))
 	t.forEachRecursive(0, indices, fn)
 }
 
 // forEachRecursive recursively traverses the tensor
-func (t *Tensor) forEachRecursive(dim int, indices []int, fn func(indices []int, value float64)) {
+func (t *Tensor) forEachRecursive(dim int, indices []int, fn func(indices []int, value int8)) {
 	if dim == len(t.shape) {
 		fn(indices, t.Get(indices...))
 		return

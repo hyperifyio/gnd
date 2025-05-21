@@ -77,14 +77,16 @@ func (m *Model) LoadWeights(path string) error {
 	// Open the weights file
 	file, err := m.fs.Open(path)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrWeightsFileOpen, err)
+		loggers.Printf(loggers.Debug, "failed to open weights file: %v", err)
+		return ErrWeightsFileOpen
 	}
 	defer file.Close()
 
 	// Read the header
 	header := make([]byte, 8)
 	if _, err := io.ReadFull(file, header); err != nil {
-		return fmt.Errorf("%w: %v", ErrWeightsFileRead, err)
+		loggers.Printf(loggers.Debug, "failed to read weights file header: %v", err)
+		return ErrWeightsFileRead
 	}
 
 	// Verify magic number
@@ -100,7 +102,8 @@ func (m *Model) LoadWeights(path string) error {
 	// Initialize tokenizer
 	tokenizer, err := model.NewTokenizer(m.fs, "tokenizer")
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrTokenizerInit, err)
+		loggers.Printf(loggers.Debug, "failed to initialize tokenizer: %v", err)
+		return ErrTokenizerInit
 	}
 	m.tokenizer = tokenizer
 
@@ -115,7 +118,7 @@ func (m *Model) LoadWeights(path string) error {
 	m.weights = &ModelWeights{
 		TokenEmbedding: make([]int8, embeddingSize),
 		Blocks:         make([]*TransformerBlock, m.config.NumLayers),
-		FinalNorm:      make([]float32, m.config.HiddenSize),
+		FinalNorm:      make([]int8, m.config.HiddenSize),
 	}
 
 	// Pre-allocate all transformer blocks
@@ -125,8 +128,8 @@ func (m *Model) LoadWeights(path string) error {
 			OutProj:  make([]int8, outSize),
 			FFNUp:    make([]int8, ffnUpSize),
 			FFNDown:  make([]int8, ffnDownSize),
-			AttnNorm: make([]float32, m.config.HiddenSize),
-			FFNNorm:  make([]float32, m.config.HiddenSize),
+			AttnNorm: make([]int8, m.config.HiddenSize),
+			FFNNorm:  make([]int8, m.config.HiddenSize),
 		}
 	}
 
@@ -154,17 +157,17 @@ func (m *Model) LoadWeights(path string) error {
 		}
 
 		// Read normalization weights
-		if err := binary.Read(file, binary.LittleEndian, block.AttnNorm); err != nil {
-			return fmt.Errorf("%w: %v", ErrWeightsFileRead, err)
+		if err := m.readTernaryWeights(file, block.AttnNorm); err != nil {
+			return err
 		}
-		if err := binary.Read(file, binary.LittleEndian, block.FFNNorm); err != nil {
-			return fmt.Errorf("%w: %v", ErrWeightsFileRead, err)
+		if err := m.readTernaryWeights(file, block.FFNNorm); err != nil {
+			return err
 		}
 	}
 
 	// Read final normalization
-	if err := binary.Read(file, binary.LittleEndian, m.weights.FinalNorm); err != nil {
-		return fmt.Errorf("%w: %v", ErrWeightsFileRead, err)
+	if err := m.readTernaryWeights(file, m.weights.FinalNorm); err != nil {
+		return err
 	}
 
 	return nil
@@ -229,10 +232,12 @@ func (m *Model) Close() {
 // Each byte contains 4 ternary values (-1, 0, +1) packed as 2 bits each
 func (m *Model) readTernaryWeights(file io.Reader, weights []int8) error {
 	if file == nil {
-		return fmt.Errorf("%w: nil reader", ErrWeightsFileRead)
+		loggers.Printf(loggers.Debug, "nil reader")
+		return ErrWeightsFileRead
 	}
 	if weights == nil {
-		return fmt.Errorf("%w: nil weights slice", ErrWeightsFileRead)
+		loggers.Printf(loggers.Debug, "nil weights slice")
+		return ErrWeightsFileRead
 	}
 
 	// Calculate number of bytes needed
@@ -245,14 +250,15 @@ func (m *Model) readTernaryWeights(file io.Reader, weights []int8) error {
 
 	// Read packed weights
 	if _, err := io.ReadFull(file, m.readBuf); err != nil {
-		return fmt.Errorf("%w: %v", ErrWeightsFileRead, err)
+		loggers.Printf(loggers.Debug, "failed to read weights: %v", err)
+		return ErrWeightsFileRead
 	}
 
 	// Unpack weights
 	for i := 0; i < len(weights); i++ {
 		byteIdx := i / 4
-		bitIdx := (i % 4) * 2
-		packed := m.readBuf[byteIdx] >> bitIdx & 0x03
+		bitOffset := (i % 4) * 2
+		packed := m.readBuf[byteIdx] >> bitOffset & 0x03
 		switch packed {
 		case 0:
 			weights[i] = -1
@@ -261,7 +267,8 @@ func (m *Model) readTernaryWeights(file io.Reader, weights []int8) error {
 		case 2:
 			weights[i] = 1
 		default:
-			return fmt.Errorf("%w: invalid ternary value %d", ErrInvalidWeightValue, packed)
+			loggers.Printf(loggers.Debug, "invalid weight value: %d", packed)
+			return ErrInvalidWeightValue
 		}
 	}
 
@@ -281,8 +288,8 @@ type TransformerBlock struct {
 	FFNDown []int8 // Second FFN layer weights (ternary)
 
 	// Normalization parameters
-	AttnNorm []float32 // Attention normalization weights
-	FFNNorm  []float32 // FFN normalization weights
+	AttnNorm []int8 // Attention normalization weights (ternary)
+	FFNNorm  []int8 // FFN normalization weights (ternary)
 }
 
 // ModelWeights represents all model parameters
@@ -290,5 +297,5 @@ type ModelWeights struct {
 	// Token embeddings (shared with output layer)
 	TokenEmbedding []int8 // Token embedding weights (ternary)
 	Blocks         []*TransformerBlock
-	FinalNorm      []float32
+	FinalNorm      []int8 // Final normalization weights (ternary)
 }

@@ -57,32 +57,34 @@ func TestTensor_Get(t *testing.T) {
 	// Initialize with test values
 	for i := 0; i < 2; i++ {
 		for j := 0; j < 3; j++ {
-			tensor.Set(float64(i*3+j), i, j)
+			// Use ternary values (-1, 0, +1)
+			val := int8((i*3+j)%3 - 1)
+			tensor.Set(val, i, j)
 		}
 	}
 
 	tests := []struct {
 		name    string
 		indices []int
-		want    float64
+		want    int8
 		wantErr bool
 	}{
 		{
 			name:    "valid indices",
 			indices: []int{1, 2},
-			want:    5.0,
+			want:    1, // (1*3+2) % 3 - 1 = 5 % 3 - 1 = 2 - 1 = 1
 			wantErr: false,
 		},
 		{
 			name:    "out of bounds",
 			indices: []int{2, 0},
-			want:    0.0,
+			want:    0,
 			wantErr: true,
 		},
 		{
 			name:    "wrong dimensions",
 			indices: []int{1},
-			want:    0.0,
+			want:    0,
 			wantErr: true,
 		},
 	}
@@ -109,27 +111,39 @@ func TestTensor_Set(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		value   float64
+		value   int8
 		indices []int
 		wantErr bool
 	}{
 		{
 			name:    "valid indices",
-			value:   42.0,
+			value:   1,
 			indices: []int{1, 2},
 			wantErr: false,
 		},
 		{
 			name:    "out of bounds",
-			value:   42.0,
+			value:   1,
 			indices: []int{2, 0},
 			wantErr: true,
 		},
 		{
 			name:    "wrong dimensions",
-			value:   42.0,
+			value:   1,
 			indices: []int{1},
 			wantErr: true,
+		},
+		{
+			name:    "clamp to ternary",
+			value:   2,
+			indices: []int{0, 0},
+			wantErr: false,
+		},
+		{
+			name:    "clamp to ternary negative",
+			value:   -2,
+			indices: []int{0, 0},
+			wantErr: false,
 		},
 	}
 
@@ -144,8 +158,14 @@ func TestTensor_Set(t *testing.T) {
 			tensor.Set(tt.value, tt.indices...)
 			if !tt.wantErr {
 				got := tensor.Get(tt.indices...)
-				if got != tt.value {
-					t.Errorf("Set() value = %v, want %v", got, tt.value)
+				expected := tt.value
+				if expected > 1 {
+					expected = 1
+				} else if expected < -1 {
+					expected = -1
+				}
+				if got != expected {
+					t.Errorf("Set() value = %v, want %v", got, expected)
 				}
 			}
 		})
@@ -167,36 +187,36 @@ func TestTensor_Shape(t *testing.T) {
 // TestTensor_Data tests tensor data retrieval
 func TestTensor_Data(t *testing.T) {
 	tensor := NewTensor(2, 2)
-	tensor.Set(1.0, 0, 0)
-	tensor.Set(2.0, 0, 1)
-	tensor.Set(3.0, 1, 0)
-	tensor.Set(4.0, 1, 1)
+	tensor.Set(1, 0, 0)
+	tensor.Set(-1, 0, 1)
+	tensor.Set(0, 1, 0)
+	tensor.Set(1, 1, 1)
 
 	data := tensor.Data()
 	if len(data) != 4 {
 		t.Errorf("Tensor.Data() length = %v, want %v", len(data), 4)
 	}
-	if data[0] != 1.0 || data[1] != 2.0 || data[2] != 3.0 || data[3] != 4.0 {
-		t.Errorf("Tensor.Data() = %v, want %v", data, []float64{1.0, 2.0, 3.0, 4.0})
+	if data[0] != 1 || data[1] != -1 || data[2] != 0 || data[3] != 1 {
+		t.Errorf("Tensor.Data() = %v, want %v", data, []int8{1, -1, 0, 1})
 	}
 }
 
 // TestTensor_ParallelForEach tests parallel processing
 func TestTensor_ParallelForEach(t *testing.T) {
 	tensor := NewTensor(3, 3)
-	sum := 0.0
+	sum := int32(0)
 	count := 0
 
-	tensor.ParallelForEach(func(indices []int, value float64) {
-		sum += value
+	tensor.ParallelForEach(func(indices []int, value int8) {
+		sum += int32(value)
 		count++
 	})
 
 	if count != 9 {
 		t.Errorf("ParallelForEach() count = %v, want %v", count, 9)
 	}
-	if sum != 0.0 {
-		t.Errorf("ParallelForEach() sum = %v, want %v", sum, 0.0)
+	if sum != 0 {
+		t.Errorf("ParallelForEach() sum = %v, want %v", sum, 0)
 	}
 }
 
@@ -253,14 +273,14 @@ func BenchmarkTensor_Set(b *testing.B) {
 	tensor := NewTensor(100, 100)
 	b.Run("2D_assignment", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			tensor.Set(float64(i), 50, 50)
+			tensor.Set(1, 50, 50)
 		}
 	})
 
 	b.Run("2D_assignment_sequential", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			for j := 0; j < 100; j++ {
-				tensor.Set(float64(i), i%100, j)
+				tensor.Set(1, i%100, j)
 			}
 		}
 	})
@@ -279,7 +299,7 @@ func BenchmarkTensor_ParallelForEach(b *testing.B) {
 			tensor := NewTensor(size...)
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				tensor.ParallelForEach(func(indices []int, value float64) {
+				tensor.ParallelForEach(func(indices []int, value int8) {
 					// Do nothing, just measure overhead
 				})
 			}
@@ -300,7 +320,7 @@ func BenchmarkTensor_Data(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			data := tensor.Data()
 			for j := range data {
-				data[j] = float64(j)
+				data[j] = 1
 			}
 		}
 	})
@@ -331,7 +351,7 @@ func BenchmarkTensor_Operations(b *testing.B) {
 	b.Run("get_set_cycle", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			val := tensor.Get(50, 50)
-			tensor.Set(val+1, 50, 50)
+			tensor.Set(val, 50, 50)
 		}
 	})
 
@@ -340,7 +360,7 @@ func BenchmarkTensor_Operations(b *testing.B) {
 			for j := 0; j < 100; j++ {
 				for k := 0; k < 100; k++ {
 					val := tensor.Get(j, k)
-					tensor.Set(val+1, j, k)
+					tensor.Set(val, j, k)
 				}
 			}
 		}
