@@ -13,7 +13,8 @@ type Tokenizer struct {
 	fs            fs.FS
 	modelPath     string
 	Vocab         map[string]int    `json:"vocab"`
-	Merges        map[string]string `json:"merges"`
+	Merges        []string          // Ordered list of merge pairs
+	MergeMap      map[string]string // Map for fast lookup
 	SpecialTokens map[string]int    `json:"special_tokens"`
 	MaxTokens     int               `json:"max_tokens"`
 }
@@ -61,7 +62,8 @@ func (t *Tokenizer) load() error {
 	}
 	defer mergesFile.Close()
 
-	t.Merges = make(map[string]string)
+	t.Merges = make([]string, 0)
+	t.MergeMap = make(map[string]string)
 	scanner := bufio.NewScanner(mergesFile)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -72,7 +74,10 @@ func (t *Tokenizer) load() error {
 		if len(parts) != 2 {
 			continue
 		}
-		t.Merges[parts[0]] = parts[1]
+		pair := parts[0]
+		merge := parts[1]
+		t.Merges = append(t.Merges, pair)
+		t.MergeMap[pair] = merge
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -185,42 +190,35 @@ func (t *Tokenizer) applyBPE(word string) []string {
 
 	// Convert word to bytes for BPE
 	bytes := []byte(word)
-	subwords := make([]string, 0, len(bytes))
-
-	// Start with individual bytes
+	symbols := make([]string, len(bytes))
 	for i := 0; i < len(bytes); i++ {
-		subwords = append(subwords, string(bytes[i:i+1]))
+		symbols[i] = string(bytes[i : i+1])
 	}
 
-	// Apply merges
+	// Keep merging pairs as long as possible
 	for {
-		bestScore := 0
-		bestPos := -1
-		bestMerge := ""
-
-		// Find the best merge
-		for i := 0; i < len(subwords)-1; i++ {
-			pair := subwords[i] + subwords[i+1]
-			if merge, ok := t.Merges[pair]; ok {
-				score := len(merge)
-				if score > bestScore {
-					bestScore = score
-					bestPos = i
-					bestMerge = merge
+		found := false
+		for _, pair := range t.Merges {
+			// Find the pair in the current symbols
+			for i := 0; i < len(symbols)-1; i++ {
+				if symbols[i]+symbols[i+1] == pair {
+					// Merge the pair
+					merged := t.MergeMap[pair]
+					symbols = append(symbols[:i], append([]string{merged}, symbols[i+2:]...)...)
+					found = true
+					break
 				}
 			}
+			if found {
+				break
+			}
 		}
-
-		if bestPos == -1 {
+		if !found {
 			break
 		}
-
-		// Apply the best merge
-		subwords[bestPos] = bestMerge
-		subwords = append(subwords[:bestPos+1], subwords[bestPos+2:]...)
 	}
 
-	return subwords
+	return symbols
 }
 
 // Detokenize converts token IDs back into text
