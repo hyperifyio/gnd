@@ -2,7 +2,6 @@ package model
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/fs"
 	"strings"
 	"unicode/utf8"
@@ -48,17 +47,20 @@ func (t *Tokenizer) load() error {
 	// Read vocabulary
 	vocabData, err := fs.ReadFile(t.fs, t.modelPath+"/vocab.json")
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrVocabRead, err)
+		loggers.Printf(loggers.Debug, "failed to read vocabulary file: %v", err)
+		return ErrVocabRead
 	}
 
 	if err := json.Unmarshal(vocabData, &t.Vocab); err != nil {
-		return fmt.Errorf("%w: %v", ErrVocabParse, err)
+		loggers.Printf(loggers.Debug, "failed to parse vocabulary file: %v", err)
+		return ErrVocabParse
 	}
 
 	// Read merges
 	mergesData, err := fs.ReadFile(t.fs, t.modelPath+"/merges.txt")
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrMergesRead, err)
+		loggers.Printf(loggers.Debug, "failed to read merges file: %v", err)
+		return ErrMergesRead
 	}
 
 	// Parse merges into ordered list and map
@@ -80,11 +82,13 @@ func (t *Tokenizer) load() error {
 	// Read special tokens
 	specialData, err := fs.ReadFile(t.fs, t.modelPath+"/special_tokens.json")
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrSpecialRead, err)
+		loggers.Printf(loggers.Debug, "failed to read special tokens file: %v", err)
+		return ErrSpecialRead
 	}
 
 	if err := json.Unmarshal(specialData, &t.SpecialTokens); err != nil {
-		return fmt.Errorf("%w: %v", ErrSpecialParse, err)
+		loggers.Printf(loggers.Debug, "failed to parse special tokens file: %v", err)
+		return ErrSpecialParse
 	}
 
 	return nil
