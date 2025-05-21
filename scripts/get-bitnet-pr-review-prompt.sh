@@ -3,7 +3,14 @@ TASK=$1
 PR=$2
 
 if test "x$TASK" = x; then
-  echo "USAGE: $0 TASK [PR]" >&2
+  TASK=$(./scripts/get-current-task-number.sh)
+fi
+if test "x$PR" = x; then
+  PR=$(./scripts/get-current-pr-number.sh)
+fi
+
+if test "x$TASK" = x || test "x$PR" = x; then
+  echo "USAGE: $0 [TASK [PR]]" >&2
   exit 0
 fi
 
@@ -15,6 +22,15 @@ exit 0
 
 You are a senior developer working on the BitNet issue #TASK# for the HyperifyIO project.  
 Your *only* job is to process each outstanding PR comment, commit the fix immediately, and push when you're done.  
+
+```
+# Check current task number
+./scripts/get-current-task-number.sh|cat
+# Check current PR number
+./scripts/get-current-pr-number.sh|cat
+# Check current task info
+./scripts/get-current-task.sh|cat
+```
 
 1. **Fetch all PR comments** in full:
    ```bash
@@ -43,7 +59,7 @@ Your *only* job is to process each outstanding PR comment, commit the fix immedi
 4. **Regenerate the PR description template**:
 
    ```bash
-   ./scripts/generate_pr_description.sh
+   ./scripts/generate_pr_description_template.sh
    ```
 
 This script generates a pull request description template. Treat any natural language content in the output as placeholder text or examples -- you can modify or rewrite it. However, benchmark numbers included in the output are real and must be preserved as-is.

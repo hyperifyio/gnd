@@ -13,7 +13,7 @@ alwaysApply: false
 1. **Generate Template**
 
    ```bash
-   ./scripts/generate_pr_description.sh
+   ./scripts/generate_pr_description_template.sh
    ```
 
    This outputs a Markdown template with placeholder sections (e.g., commits list, issue links, benchmarks).

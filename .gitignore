@@ -6,6 +6,7 @@ coverage.out
 benchmark_results.txt
 pr_description.md
 tensor.test
+model.test
 
 # Profiles
 profiles/

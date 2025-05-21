@@ -2,7 +2,7 @@
 description: "Automatically run Go tests and resolve any test failures."
 globs: "**/*.go"
 alwaysApply: false
-------------------
+---
 
 # Test and Repair Rule
 

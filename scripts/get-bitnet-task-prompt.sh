@@ -2,12 +2,15 @@
 TASK=$1
 PR=$2
 
+if test "x$TASK" = x; then
+  TASK=$(./scripts/get-current-task-number.sh)
+fi
 if test "x$PR" = x; then
-  PR=YOUR-PR-NUMBER
+  PR=$(./scripts/get-current-pr-number.sh)
 fi
 
-if test "x$TASK" = x; then
-  echo "USAGE: $0 TASK [PR]" >&2
+if test "x$TASK" = x || test "x$PR" = x; then
+  echo "USAGE: $0 [TASK [PR]]" >&2
   exit 0
 fi
 
@@ -24,6 +27,15 @@ ready as soon as possible -- without doing any unnecessary work.**
 Focus strictly on GitHub issue #TASK#. That is the task. Do not touch unrelated 
 files, do not refactor existing code, and do not fix things that aren't broken. 
 Extra changes mean extra review cycles and wasted time.
+
+```
+# Check current task info
+./scripts/get-current-task.sh|cat
+# Check current task number
+./scripts/get-current-task-number.sh|cat
+# Check current PR number
+./scripts/get-current-pr-number.sh|cat
+```
 
 The overall project direction is defined in GitHub issue #170. Keep that in 
 mind to avoid drifting off-course. To find all related issues, use the `bitnet` 
@@ -77,7 +89,7 @@ work is done -- and that nothing unrelated slipped in.
 
 Update the pull request description using:
 
-    ./scripts/generate_pr_description.sh
+    ./scripts/generate_pr_description_template.sh
 
 This script generates a pull request description template. Treat any natural 
 language content in the output as placeholder text or examples -- you can 
