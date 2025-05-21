@@ -10,7 +10,7 @@ const (
 	HiddenSize     = 2048
 	NumHeads       = 16
 	NumLayers      = 24
-	VocabSize      = 32000
+	VocabSize      = 128000
 	MaxContextSize = 4096
 
 	// Quantization
