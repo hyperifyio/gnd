@@ -7,11 +7,18 @@ import (
 // Model constants based on BitNet b1.58-2B-4T specifications
 const (
 	// Model dimensions
-	HiddenSize     = 2048
-	NumHeads       = 16
-	NumLayers      = 24
-	VocabSize      = 128000
-	MaxContextSize = 4096
+	HiddenSize            = 2560
+	IntermediateSize      = 6912
+	NumHiddenLayers       = 30
+	NumAttentionHeads     = 20
+	NumKeyValueHeads      = 5
+	VocabSize             = 128000
+	MaxPositionEmbeddings = 4096
+
+	// Activation and normalization
+	HiddenAct  = "relu2" // Squared ReLU activation
+	NormType   = "rms"   // RMS normalization
+	RMSNormEps = 1e-6    // RMS normalization epsilon
 
 	// Quantization
 	BitsPerWeight = 1.58
