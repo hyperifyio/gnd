@@ -11,6 +11,7 @@ type TensorType interface {
 	Set(value int8, indices ...int)
 	Shape() []int
 	Data() []int8
+	Close()
 }
 
 // ParallelProcessor defines operations that can be executed in parallel
@@ -23,14 +24,17 @@ type Tensor struct {
 	data   []int8
 	shape  []int
 	stride []int
-	mu     sync.RWMutex // Protect concurrent access to data
+	ops    chan tensorOp
+	done   chan struct{}
 }
 
-// workerPool manages a pool of worker goroutines
-var workerPool = sync.Pool{
-	New: func() interface{} {
-		return make(chan struct{}, 1)
-	},
+// tensorOp represents a tensor operation
+type tensorOp struct {
+	opType   string // "get" or "set"
+	indices  []int
+	value    int8
+	resultCh chan int8
+	doneCh   chan struct{}
 }
 
 // NewTensor creates a new tensor with the given shape
@@ -48,58 +52,115 @@ func NewTensor(shape ...int) *Tensor {
 	}
 
 	// Create tensor
-	return &Tensor{
+	t := &Tensor{
 		data:   make([]int8, size),
 		shape:  shape,
 		stride: stride,
+		ops:    make(chan tensorOp, 100), // Buffer size of 100 for better performance
+		done:   make(chan struct{}),
 	}
+
+	// Start operation handler goroutine
+	go t.handleOps()
+
+	return t
+}
+
+// Close closes the tensor and signals the handler to exit
+func (t *Tensor) Close() {
+	close(t.done)
+}
+
+// handleOps processes tensor operations in a single goroutine
+func (t *Tensor) handleOps() {
+	for {
+		select {
+		case <-t.done:
+			// After done, keep draining ops and close result/done channels to unblock senders
+			for op := range t.ops {
+				if op.opType == "get" && op.resultCh != nil {
+					close(op.resultCh)
+				} else if op.opType == "set" && op.doneCh != nil {
+					close(op.doneCh)
+				}
+			}
+			return
+		case op := <-t.ops:
+			select {
+			case <-t.done:
+				if op.opType == "get" && op.resultCh != nil {
+					close(op.resultCh)
+				} else if op.opType == "set" && op.doneCh != nil {
+					close(op.doneCh)
+				}
+				continue
+			default:
+				if op.opType == "get" {
+					idx := t.calculateIndex(op.indices)
+					op.resultCh <- t.data[idx]
+					close(op.resultCh)
+				} else if op.opType == "set" {
+					idx := t.calculateIndex(op.indices)
+					if op.value > 1 {
+						op.value = 1
+					} else if op.value < -1 {
+						op.value = -1
+					}
+					t.data[idx] = op.value
+					close(op.doneCh)
+				}
+			}
+		}
+	}
+}
+
+// calculateIndex calculates the linear index from multi-dimensional indices
+func (t *Tensor) calculateIndex(indices []int) int {
+	if len(indices) != len(t.shape) {
+		panic("invalid number of indices")
+	}
+
+	idx := 0
+	for i, v := range indices {
+		if v < 0 || v >= t.shape[i] {
+			panic("index out of range")
+		}
+		idx += v * t.stride[i]
+	}
+	return idx
 }
 
 // Get returns the value at the given indices
 func (t *Tensor) Get(indices ...int) int8 {
-	if len(indices) != len(t.shape) {
-		panic("invalid number of indices")
-	}
-
-	// Calculate linear index
-	idx := 0
-	for i, v := range indices {
-		if v < 0 || v >= t.shape[i] {
-			panic("index out of range")
+	select {
+	case <-t.done:
+		panic("tensor is closed")
+	default:
+		resultCh := make(chan int8, 1)
+		t.ops <- tensorOp{
+			opType:   "get",
+			indices:  indices,
+			resultCh: resultCh,
 		}
-		idx += v * t.stride[i]
+		return <-resultCh
 	}
-
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	return t.data[idx]
 }
 
 // Set sets the value at the given indices
 func (t *Tensor) Set(value int8, indices ...int) {
-	if len(indices) != len(t.shape) {
-		panic("invalid number of indices")
-	}
-
-	// Calculate linear index
-	idx := 0
-	for i, v := range indices {
-		if v < 0 || v >= t.shape[i] {
-			panic("index out of range")
+	select {
+	case <-t.done:
+		panic("tensor is closed")
+	default:
+		doneCh := make(chan struct{})
+		t.ops <- tensorOp{
+			opType:  "set",
+			indices: indices,
+			value:   value,
+			doneCh:  doneCh,
 		}
-		idx += v * t.stride[i]
+		<-doneCh
 	}
-
-	// Clamp to ternary values
-	if value > 1 {
-		value = 1
-	} else if value < -1 {
-		value = -1
-	}
-
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.data[idx] = value
 }
 
 // Shape returns the shape of the tensor

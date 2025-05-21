@@ -202,9 +202,35 @@ func TestTensor_Data(t *testing.T) {
 	}
 }
 
+// TestTensor_Close tests tensor cleanup
+func TestTensor_Close(t *testing.T) {
+	tensor := NewTensor(2, 2)
+	tensor.Set(1, 0, 0)
+	tensor.Set(-1, 0, 1)
+	tensor.Set(0, 1, 0)
+	tensor.Set(1, 1, 1)
+
+	// Verify tensor is working before close
+	if tensor.Get(0, 0) != 1 {
+		t.Errorf("Get(0, 0) = %v, want %v", tensor.Get(0, 0), 1)
+	}
+
+	// Close tensor
+	tensor.Close()
+
+	// Verify operations panic after close
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("Get() did not panic after Close()")
+		}
+	}()
+	tensor.Get(0, 0)
+}
+
 // TestTensor_ParallelForEach tests parallel processing
 func TestTensor_ParallelForEach(t *testing.T) {
 	tensor := NewTensor(3, 3)
+	defer tensor.Close()
 	var sum atomic.Int32
 	var count atomic.Int32
 
