@@ -7,7 +7,9 @@ alwaysApply: false
 # Commit Uncommitted Changes
 
 **Purpose:** Ensure that all uncommitted changes are captured in Git commits 
-with clear, standardized commit messages.
+with clear, standardized commit messages:
+
+    git status|cat
 
 ## Commit Scope
 
