@@ -278,6 +278,25 @@ func (t *Tensor) Reshape(shape ...int) *Tensor {
 	return newTensor
 }
 
+// NewTensorFromData creates a new tensor from raw data
+func NewTensorFromData(data []int8) *Tensor {
+	if len(data) == 0 {
+		return nil
+	}
+
+	// Create tensor with 1D shape
+	t := &Tensor{
+		data:   make([]int8, len(data)),
+		shape:  []int{len(data)},
+		stride: []int{1},
+	}
+
+	// Copy data
+	copy(t.data, data)
+
+	return t
+}
+
 // Verify interface implementation
 var (
 	_ TensorType        = (*Tensor)(nil)

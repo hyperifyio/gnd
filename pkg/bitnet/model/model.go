@@ -6,7 +6,9 @@ import (
 	"io"
 	"io/fs"
 
+	bitnetmath "github.com/hyperifyio/gnd/pkg/bitnet/internal/math"
 	"github.com/hyperifyio/gnd/pkg/bitnet/internal/model"
+	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
 	"github.com/hyperifyio/gnd/pkg/loggers"
 )
 
@@ -36,15 +38,22 @@ type Model struct {
 	readBuf   []byte // Buffer for reading ternary weights
 }
 
-// Config holds the model configuration
+// Config represents the model configuration
 type Config struct {
-	// Model dimensions
-	HiddenSize       int
-	NumHeads         int
-	NumLayers        int
-	VocabSize        int
-	MaxSeqLength     int
+	// Vocabulary size
+	VocabSize int
+	// Hidden dimension
+	HiddenSize int
+	// Number of attention heads
+	NumHeads int
+	// Number of key/value heads (for grouped-query attention)
+	NumKVHeads int
+	// Number of transformer layers
+	NumLayers int
+	// Intermediate dimension for feed-forward network
 	IntermediateSize int
+	// Maximum sequence length
+	MaxSeqLength int
 }
 
 // NewConfig creates a new default configuration for BitNet b1.58-2B-4T
@@ -172,33 +181,66 @@ func (m *Model) LoadWeights(path string) error {
 	return nil
 }
 
-// Infer performs inference on the input text
-func (m *Model) Infer(input string) (string, error) {
-	if m.tokenizer == nil {
-		return "", ErrTokenizerNotLoaded
-	}
-
-	// Tokenize input
-	tokens, err := m.tokenizer.Tokenize(input)
-	if err != nil {
-		loggers.Printf(loggers.Debug, "tokenization error: %v", err)
-		return "", ErrTokenization
-	}
-
-	// Check sequence length
-	if len(tokens) > m.config.MaxSeqLength {
-		loggers.Printf(loggers.Debug, "sequence length %d exceeds maximum %d", len(tokens), m.config.MaxSeqLength)
-		return "", ErrSequenceTooLong
-	}
-
+// Infer performs inference on the input tokens
+func (m *Model) Infer(tokens []int) ([]int, error) {
 	// Convert tokens to hidden states using embedding layer
-	if _, err = m.embedTokens(tokens); err != nil {
-		return "", err
+	hiddenStates := make([]int8, len(tokens)*m.config.HiddenSize)
+	for i, token := range tokens {
+		embedding := m.weights.TokenEmbedding[token]
+		copy(hiddenStates[i*m.config.HiddenSize:], embedding)
 	}
 
-	// TODO(#176): Process hidden states through transformer blocks
-	// TODO(#177): Generate output tokens
-	return "", ErrInferenceNotImplemented
+	// Create tensor for hidden states
+	hiddenStatesTensor := tensor.NewTensorFromData(hiddenStates)
+	hiddenStatesTensor = hiddenStatesTensor.Reshape(len(tokens), m.config.HiddenSize)
+
+	// Process through transformer blocks
+	for i := 0; i < m.config.NumLayers; i++ {
+		block := m.weights.Blocks[i]
+
+		// Create attention sublayer
+		attn := bitnetmath.NewAttentionSublayer(m.config.HiddenSize, m.config.NumHeads, m.config.NumKVHeads)
+		attn.SetWeights(block.QKVProj, block.QKVProj, block.QKVProj, block.OutProj)
+		attn.SetGamma(block.AttnNorm)
+
+		// Apply attention
+		hiddenStatesTensor = attn.Forward(hiddenStatesTensor)
+
+		// Create feed-forward sublayer
+		ffn := bitnetmath.NewFFNSublayer(m.config.HiddenSize, m.config.IntermediateSize)
+		ffn.SetWeights(block.FFNUp, block.FFNDown)
+		ffn.SetGamma(block.FFNNorm)
+
+		// Apply feed-forward
+		hiddenStatesTensor = ffn.Forward(hiddenStatesTensor)
+	}
+
+	// Apply final normalization
+	finalNorm := bitnetmath.NewSubLN(m.config.HiddenSize, 1e-5)
+	finalNorm.SetGamma(m.weights.FinalNorm)
+
+	// Convert hidden states to float32 for normalization
+	hiddenStatesFloat := make([][]float32, len(tokens))
+	for i := 0; i < len(tokens); i++ {
+		hiddenStatesFloat[i] = make([]float32, m.config.HiddenSize)
+		for j := 0; j < m.config.HiddenSize; j++ {
+			hiddenStatesFloat[i][j] = float32(hiddenStatesTensor.Get(i, j))
+		}
+	}
+
+	// Apply final normalization
+	normalizedStates := finalNorm.Normalize(hiddenStatesFloat)
+
+	// Convert back to tensor
+	finalStates := tensor.NewTensor(len(tokens), m.config.HiddenSize)
+	for i := 0; i < len(tokens); i++ {
+		for j := 0; j < m.config.HiddenSize; j++ {
+			finalStates.Set(int8(normalizedStates[i][j]), i, j)
+		}
+	}
+
+	// TODO: Generate output tokens from final states
+	return nil, nil
 }
 
 // embedTokens converts token IDs to their corresponding hidden vectors
@@ -353,4 +395,13 @@ type ModelWeights struct {
 	TokenEmbedding []int8 // Token embedding weights (ternary)
 	Blocks         []*TransformerBlock
 	FinalNorm      []int8 // Final normalization weights (ternary)
+}
+
+// convertInt8ToFloat32 converts a slice of int8 values to float32
+func convertInt8ToFloat32(values []int8) []float32 {
+	result := make([]float32, len(values))
+	for i, v := range values {
+		result[i] = float32(v)
+	}
+	return result
 }
