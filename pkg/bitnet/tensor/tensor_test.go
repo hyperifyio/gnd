@@ -4,9 +4,7 @@ import (
 	"fmt"
 	"math"
 	"sync"
-	"sync/atomic"
 	"testing"
-	"time"
 )
 
 // TestNewTensor tests tensor creation with various shapes
@@ -206,68 +204,101 @@ func TestTensor_Data(t *testing.T) {
 
 // TestTensor_Close tests tensor cleanup
 func TestTensor_Close(t *testing.T) {
-	tensor := NewTensor(2, 2)
-	defer tensor.Close()
-
-	// Set initial values
-	tensor.Set(1, 0, 0)
-	tensor.Set(-1, 0, 1)
-	tensor.Set(0, 1, 0)
-	tensor.Set(1, 1, 1)
-
-	// Verify tensor is working before close
-	if tensor.Get(0, 0) != 1 {
-		t.Errorf("Get(0, 0) = %v, want %v", tensor.Get(0, 0), 1)
+	tensor := NewTensor(2, 3)
+	if tensor == nil {
+		t.Fatal("NewTensor returned nil")
 	}
 
-	// Close tensor
+	// Fill with some data
+	for i := 0; i < 6; i++ {
+		tensor.Set(int8(i%3-1), tensor.calculateIndices(i)...)
+	}
+
+	// Close the tensor
 	tensor.Close()
 
-	// Add a delay to ensure handler has exited and ops channel is drained
-	time.Sleep(100 * time.Millisecond)
+	// Verify that operations panic after close
+	operations := []struct {
+		name string
+		fn   func()
+	}{
+		{
+			name: "Get",
+			fn:   func() { tensor.Get(0, 0) },
+		},
+		{
+			name: "Set",
+			fn:   func() { tensor.Set(1, 0, 0) },
+		},
+		{
+			name: "Shape",
+			fn:   func() { tensor.Shape() },
+		},
+		{
+			name: "Data",
+			fn:   func() { tensor.Data() },
+		},
+		{
+			name: "ParallelForEach",
+			fn:   func() { tensor.ParallelForEach(func(indices []int, value int8) {}) },
+		},
+		{
+			name: "Reshape",
+			fn:   func() { tensor.Reshape(3, 2) },
+		},
+	}
 
-	// Verify operations panic after close
-	func() {
-		defer func() {
-			if r := recover(); r == nil {
-				t.Error("Get() did not panic after Close()")
-			}
-		}()
-		tensor.Get(0, 0)
-	}()
-
-	// Verify no concurrent access after close
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		defer func() {
-			if r := recover(); r == nil {
-				t.Error("Get() did not panic in goroutine after Close()")
-			}
-		}()
-		tensor.Get(0, 0)
-	}()
-	wg.Wait()
+	for _, op := range operations {
+		t.Run(op.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r == nil {
+					t.Errorf("%s did not panic after Close", op.name)
+				}
+			}()
+			op.fn()
+		})
+	}
 }
 
 // TestTensor_ParallelForEach tests parallel processing
 func TestTensor_ParallelForEach(t *testing.T) {
-	tensor := NewTensor(3, 3)
-	defer tensor.Close()
-	var sum atomic.Int32
-	var count atomic.Int32
+	tensor := NewTensor(2, 3)
+	if tensor == nil {
+		t.Fatal("NewTensor returned nil")
+	}
 
+	// Fill with test data
+	for i := 0; i < 6; i++ {
+		tensor.Set(int8(i%3-1), tensor.calculateIndices(i)...)
+	}
+
+	// Create a map to track visited elements
+	visited := make(map[string]int8)
+	var mu sync.Mutex
+
+	// Process each element
 	tensor.ParallelForEach(func(indices []int, value int8) {
-		sum.Add(int32(value))
-		count.Add(1)
+		mu.Lock()
+		defer mu.Unlock()
+		key := fmt.Sprintf("%v", indices)
+		visited[key] = value
 	})
 
-	if count.Load() != 9 {
-		t.Errorf("ParallelForEach() count = %v, want %v", count.Load(), 9)
+	// Verify all elements were processed
+	if len(visited) != 6 {
+		t.Errorf("Processed %d elements, want 6", len(visited))
 	}
-	if sum.Load() != 0 {
-		t.Errorf("ParallelForEach() sum = %v, want %v", sum.Load(), 0)
+
+	// Verify values
+	for i := 0; i < 2; i++ {
+		for j := 0; j < 3; j++ {
+			key := fmt.Sprintf("[%d %d]", i, j)
+			got := visited[key]
+			want := int8((i*3+j)%3 - 1)
+			if got != want {
+				t.Errorf("visited[%s] = %v, want %v", key, got, want)
+			}
+		}
 	}
 }
 
@@ -416,4 +447,200 @@ func BenchmarkTensor_Operations(b *testing.B) {
 			}
 		}
 	})
+}
+
+func TestTensor_Reshape(t *testing.T) {
+	tests := []struct {
+		name         string
+		initialShape []int
+		newShape     []int
+		wantErr      bool
+	}{
+		{
+			name:         "valid reshape 2x3 to 3x2",
+			initialShape: []int{2, 3},
+			newShape:     []int{3, 2},
+			wantErr:      false,
+		},
+		{
+			name:         "valid reshape 2x2x2 to 4x2",
+			initialShape: []int{2, 2, 2},
+			newShape:     []int{4, 2},
+			wantErr:      false,
+		},
+		{
+			name:         "invalid reshape - different total size",
+			initialShape: []int{2, 3},
+			newShape:     []int{4, 2},
+			wantErr:      true,
+		},
+		{
+			name:         "invalid reshape - zero dimension",
+			initialShape: []int{2, 3},
+			newShape:     []int{0, 6},
+			wantErr:      true,
+		},
+		{
+			name:         "invalid reshape - negative dimension",
+			initialShape: []int{2, 3},
+			newShape:     []int{-1, 6},
+			wantErr:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create initial tensor
+			tensor := NewTensor(tt.initialShape...)
+			if tensor == nil {
+				t.Fatal("NewTensor returned nil")
+			}
+
+			// Fill with some test data
+			for i := 0; i < len(tensor.Data()); i++ {
+				tensor.Set(int8(i%3-1), tensor.calculateIndices(i)...)
+			}
+
+			// Test reshape
+			if tt.wantErr {
+				defer func() {
+					if r := recover(); r == nil {
+						t.Error("Reshape did not panic as expected")
+					}
+				}()
+			}
+
+			reshaped := tensor.Reshape(tt.newShape...)
+			if !tt.wantErr {
+				if reshaped == nil {
+					t.Fatal("Reshape returned nil")
+				}
+
+				// Verify shape
+				gotShape := reshaped.Shape()
+				if len(gotShape) != len(tt.newShape) {
+					t.Errorf("Shape length = %v, want %v", len(gotShape), len(tt.newShape))
+				}
+				for i := range gotShape {
+					if gotShape[i] != tt.newShape[i] {
+						t.Errorf("Shape[%d] = %v, want %v", i, gotShape[i], tt.newShape[i])
+					}
+				}
+
+				// Verify data is preserved
+				originalData := tensor.Data()
+				reshapedData := reshaped.Data()
+				if len(originalData) != len(reshapedData) {
+					t.Errorf("Data length = %v, want %v", len(reshapedData), len(originalData))
+				}
+				for i := range originalData {
+					if originalData[i] != reshapedData[i] {
+						t.Errorf("Data[%d] = %v, want %v", i, reshapedData[i], originalData[i])
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestTensor_CalculateIndices(t *testing.T) {
+	tensor := NewTensor(2, 3, 4)
+	if tensor == nil {
+		t.Fatal("NewTensor returned nil")
+	}
+
+	tests := []struct {
+		flatIndex int
+		want      []int
+	}{
+		{0, []int{0, 0, 0}},
+		{1, []int{0, 0, 1}},
+		{3, []int{0, 0, 3}},
+		{4, []int{0, 1, 0}},
+		{11, []int{0, 2, 3}},
+		{12, []int{1, 0, 0}},
+		{23, []int{1, 2, 3}},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("index_%d", tt.flatIndex), func(t *testing.T) {
+			got := tensor.calculateIndices(tt.flatIndex)
+			if len(got) != len(tt.want) {
+				t.Errorf("len(got) = %v, want %v", len(got), len(tt.want))
+				return
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("got[%d] = %v, want %v", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestTensor_CalculateIndex(t *testing.T) {
+	tensor := NewTensor(2, 3, 4)
+	if tensor == nil {
+		t.Fatal("NewTensor returned nil")
+	}
+
+	tests := []struct {
+		indices []int
+		want    int
+	}{
+		{[]int{0, 0, 0}, 0},
+		{[]int{0, 0, 1}, 1},
+		{[]int{0, 0, 3}, 3},
+		{[]int{0, 1, 0}, 4},
+		{[]int{0, 2, 3}, 11},
+		{[]int{1, 0, 0}, 12},
+		{[]int{1, 2, 3}, 23},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("indices_%v", tt.indices), func(t *testing.T) {
+			got := tensor.calculateIndex(tt.indices)
+			if got != tt.want {
+				t.Errorf("calculateIndex(%v) = %v, want %v", tt.indices, got, tt.want)
+			}
+		})
+	}
+
+	// Test panics for invalid index count
+	panicTests := []struct {
+		name    string
+		indices []int
+	}{
+		{"too few indices", []int{0, 0}},
+		{"too many indices", []int{0, 0, 0, 0}},
+	}
+
+	for _, tt := range panicTests {
+		t.Run(tt.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r == nil {
+					t.Errorf("calculateIndex(%v) did not panic as expected", tt.indices)
+				}
+			}()
+			_ = tensor.calculateIndex(tt.indices)
+		})
+	}
+
+	// Test -1 for out-of-bounds/negative indices
+	invalidValueTests := []struct {
+		name    string
+		indices []int
+	}{
+		{"negative index", []int{0, -1, 0}},
+		{"index out of range", []int{0, 0, 4}},
+	}
+
+	for _, tt := range invalidValueTests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tensor.calculateIndex(tt.indices)
+			if got != -1 {
+				t.Errorf("calculateIndex(%v) = %v, want -1", tt.indices, got)
+			}
+		})
+	}
 }

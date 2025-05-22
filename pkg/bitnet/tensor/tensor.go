@@ -209,17 +209,16 @@ func (t *Tensor) Close() {
 
 // calculateIndex converts multi-dimensional indices to a flat index
 func (t *Tensor) calculateIndex(indices []int) int {
+	if len(indices) != len(t.shape) {
+		panic("number of indices does not match tensor rank")
+	}
 	index := 0
-	stride := 1
-
-	for i := len(t.shape) - 1; i >= 0; i-- {
-		if indices[i] < 0 || indices[i] >= t.shape[i] {
+	for i, idx := range indices {
+		if idx < 0 || idx >= t.shape[i] {
 			return -1
 		}
-		index += indices[i] * stride
-		stride *= t.shape[i]
+		index = index*t.shape[i] + idx
 	}
-
 	return index
 }
 
