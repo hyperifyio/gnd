@@ -28,11 +28,14 @@ func ScaledDotProductAttention(q, k, v *tensor.Tensor) *tensor.Tensor {
 	seqLen := q.Shape()[0]
 	headDim := q.Shape()[1]
 
-	// Compute attention scores: Q * K^T
-	// Convert to float32 for better numerical stability
+	// Pre-allocate slices for scores and weights to avoid repeated allocations
 	scores := make([][]float32, seqLen)
 	for i := range scores {
 		scores[i] = make([]float32, seqLen)
+	}
+	weights := make([][]float32, seqLen)
+	for i := range weights {
+		weights[i] = make([]float32, seqLen)
 	}
 
 	// Process in parallel chunks
@@ -68,12 +71,6 @@ func ScaledDotProductAttention(q, k, v *tensor.Tensor) *tensor.Tensor {
 	wg.Wait()
 
 	// Apply softmax to get attention weights
-	weights := make([][]float32, seqLen)
-	for i := range weights {
-		weights[i] = make([]float32, seqLen)
-	}
-
-	// Process in parallel chunks
 	for i := 0; i < seqLen; i += chunkSize {
 		wg.Add(1)
 		go func(start int) {
