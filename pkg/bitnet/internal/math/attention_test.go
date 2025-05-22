@@ -142,3 +142,27 @@ func TestScaledDotProductAttentionPanics(t *testing.T) {
 		})
 	}
 }
+
+func BenchmarkScaledDotProductAttention(b *testing.B) {
+	seqLen := 128
+	headDim := 64
+
+	q := tensor.NewTensor(seqLen, headDim)
+	k := tensor.NewTensor(seqLen, headDim)
+	v := tensor.NewTensor(seqLen, headDim)
+
+	// Fill with pseudo-random but deterministic data
+	for i := 0; i < seqLen; i++ {
+		for j := 0; j < headDim; j++ {
+			q.Set(int8((i+j)%8-4), i, j)
+			k.Set(int8((i-j)%8-4), i, j)
+			v.Set(int8((i*j)%8-4), i, j)
+		}
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = ScaledDotProductAttention(q, k, v)
+	}
+}
