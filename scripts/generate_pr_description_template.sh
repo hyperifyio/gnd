@@ -1,5 +1,16 @@
 #!/bin/bash
 
+# Parse command line arguments
+WITH_BENCHMARKS=false
+for arg in "$@"; do
+    case $arg in
+        --with-benchmarks)
+            WITH_BENCHMARKS=true
+            shift
+            ;;
+    esac
+done
+
 # Function to safely extract benchmark values
 extract_benchmark() {
     local pattern=$1
@@ -41,55 +52,60 @@ go test ./pkg/bitnet/... -coverprofile=coverage.out
 COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}')
 PREVIOUS_COVERAGE=$(get_previous_coverage)
 
-# Run benchmarks
-echo "Running benchmarks..."
-./scripts/run_benchmarks.sh > benchmark_results.txt
+# Initialize benchmark variables with N/A
+NEW_TENSOR_ALLOCS="N/A"
+GET_SET_ALLOCS="N/A"
+PARALLEL_ALLOCS="N/A"
+BASIC_OPS_TIME="N/A"
+PARALLEL_OPS_TIME="N/A"
+LARGE_OPS_TIME="N/A"
+MODEL_LOAD_TIME="N/A"
+MODEL_LOAD_ALLOCS="N/A"
+MODEL_INFER_TIME="N/A"
+MODEL_INFER_ALLOCS="N/A"
+TERNARY_WEIGHTS_TIME="N/A"
+TERNARY_WEIGHTS_ALLOCS="N/A"
+BITLINEAR_TIME="N/A"
+BITLINEAR_ALLOCS="N/A"
 
-# Check if benchmark results file exists and has content
-if [ ! -s benchmark_results.txt ]; then
-    echo "Warning: No benchmark results found. Using placeholder values."
-    # Set default values for missing benchmarks
-    NEW_TENSOR_ALLOCS="N/A"
-    GET_SET_ALLOCS="N/A"
-    PARALLEL_ALLOCS="N/A"
-    BASIC_OPS_TIME="N/A"
-    PARALLEL_OPS_TIME="N/A"
-    LARGE_OPS_TIME="N/A"
-    MODEL_LOAD_TIME="N/A"
-    MODEL_LOAD_ALLOCS="N/A"
-    MODEL_INFER_TIME="N/A"
-    MODEL_INFER_ALLOCS="N/A"
-    TERNARY_WEIGHTS_TIME="N/A"
-    TERNARY_WEIGHTS_ALLOCS="N/A"
-else
-    # Extract tensor benchmark results
-    NEW_TENSOR_ALLOCS=$(extract_benchmark "BenchmarkNewTensor/shape_\[100\]" 5)
-    GET_SET_ALLOCS=$(extract_benchmark "BenchmarkTensor_Get/2D_access" 5)
-    PARALLEL_ALLOCS=$(extract_benchmark "BenchmarkTensor_ParallelForEach/100x100" 5)
+# Run benchmarks if requested
+if [ "$WITH_BENCHMARKS" = true ]; then
+    echo "Running benchmarks..."
+    ./scripts/run_benchmarks.sh > benchmark_results.txt
 
-    # Extract timing values
-    BASIC_OPS_TIME=$(extract_timing "BenchmarkTensor_Get/2D_access")
-    PARALLEL_OPS_TIME=$(extract_timing "BenchmarkTensor_ParallelForEach/100x100")
-    LARGE_OPS_TIME=$(extract_timing "BenchmarkNewTensor/shape_\[100_100\]")
+    # Check if benchmark results file exists and has content
+    if [ -s benchmark_results.txt ]; then
+        # Extract tensor benchmark results
+        NEW_TENSOR_ALLOCS=$(extract_benchmark "BenchmarkNewTensor/shape_\[100\]" 5)
+        GET_SET_ALLOCS=$(extract_benchmark "BenchmarkTensor_Get/2D_access" 5)
+        PARALLEL_ALLOCS=$(extract_benchmark "BenchmarkTensor_ParallelForEach/100x100" 5)
 
-    # Extract BitNet model benchmark results
-    MODEL_LOAD_TIME=$(extract_timing "BenchmarkModel_LoadWeights")
-    MODEL_LOAD_ALLOCS=$(extract_benchmark "BenchmarkModel_LoadWeights" 5)
-    MODEL_INFER_TIME=$(extract_timing "BenchmarkModel_Infer")
-    MODEL_INFER_ALLOCS=$(extract_benchmark "BenchmarkModel_Infer" 5)
-    TERNARY_WEIGHTS_TIME=$(extract_timing "BenchmarkModel_ReadTernaryWeights")
-    TERNARY_WEIGHTS_ALLOCS=$(extract_benchmark "BenchmarkModel_ReadTernaryWeights" 5)
+        # Extract timing values
+        BASIC_OPS_TIME=$(extract_timing "BenchmarkTensor_Get/2D_access")
+        PARALLEL_OPS_TIME=$(extract_timing "BenchmarkTensor_ParallelForEach/100x100")
+        LARGE_OPS_TIME=$(extract_timing "BenchmarkNewTensor/shape_\[100_100\]")
 
-    # Extract BitLinear benchmark results
-    BITLINEAR_TIME=$(extract_timing "BenchmarkBitLinear")
-    BITLINEAR_ALLOCS=$(extract_benchmark "BenchmarkBitLinear" 5)
+        # Extract BitNet model benchmark results
+        MODEL_LOAD_TIME=$(extract_timing "BenchmarkModel_LoadWeights")
+        MODEL_LOAD_ALLOCS=$(extract_benchmark "BenchmarkModel_LoadWeights" 5)
+        MODEL_INFER_TIME=$(extract_timing "BenchmarkModel_Infer")
+        MODEL_INFER_ALLOCS=$(extract_benchmark "BenchmarkModel_Infer" 5)
+        TERNARY_WEIGHTS_TIME=$(extract_timing "BenchmarkModel_ReadTernaryWeights")
+        TERNARY_WEIGHTS_ALLOCS=$(extract_benchmark "BenchmarkModel_ReadTernaryWeights" 5)
 
-    # Set default values for unimplemented benchmarks
-    if [ "$MODEL_INFER_TIME" = "N/A" ]; then
-        MODEL_INFER_TIME="N/A (TODO #190)"
-    fi
-    if [ "$MODEL_INFER_ALLOCS" = "N/A" ]; then
-        MODEL_INFER_ALLOCS="N/A (TODO #190)"
+        # Extract BitLinear benchmark results
+        BITLINEAR_TIME=$(extract_timing "BenchmarkBitLinear")
+        BITLINEAR_ALLOCS=$(extract_benchmark "BenchmarkBitLinear" 5)
+
+        # Set default values for unimplemented benchmarks
+        if [ "$MODEL_INFER_TIME" = "N/A" ]; then
+            MODEL_INFER_TIME="N/A (TODO #190)"
+        fi
+        if [ "$MODEL_INFER_ALLOCS" = "N/A" ]; then
+            MODEL_INFER_ALLOCS="N/A (TODO #190)"
+        fi
+    else
+        echo "Warning: No benchmark results found. Using placeholder values."
     fi
 fi
 
@@ -103,6 +119,11 @@ cat << EOF > pr_description.md
 ## Test Coverage
 - Current coverage: ${COVERAGE}
 - Coverage changes: ${PREVIOUS_COVERAGE} → ${COVERAGE}
+EOF
+
+# Add benchmark section only if benchmarks were run
+if [ "$WITH_BENCHMARKS" = true ]; then
+    cat << EOF >> pr_description.md
 
 ## Performance Metrics
 ### Memory Usage
@@ -132,6 +153,11 @@ cat << EOF > pr_description.md
   - Model weights loading: ${MODEL_LOAD_TIME} ns/op
   - Model inference: ${MODEL_INFER_TIME} ns/op (TODO #190)
   - Ternary weights reading: ${TERNARY_WEIGHTS_TIME} ns/op
+EOF
+fi
+
+# Add remaining sections
+cat << EOF >> pr_description.md
 
 ## Areas for Improvement
 ### High Priority
