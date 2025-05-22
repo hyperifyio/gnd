@@ -1,6 +1,8 @@
 package math
 
 import (
+	"fmt"
+	"os"
 	"runtime"
 	"sync"
 
@@ -50,6 +52,8 @@ func NewQKVProjection(hiddenDim, numHeads, numKVHeads int) *QKVProjection {
 // input: [batch_size, seq_len, hidden_dim] or [seq_len, hidden_dim]
 // Returns: Q, K, V tensors of shape [batch_size, num_heads, seq_len, head_dim]
 func (qkv *QKVProjection) Project(input *tensor.Tensor) (*tensor.Tensor, *tensor.Tensor, *tensor.Tensor) {
+	// Debug output for input tensor
+	fmt.Fprintf(os.Stderr, "[DEBUG] Input tensor shape: %v, data length: %d\n", input.Shape(), len(input.Data()))
 	shape := input.Shape()
 	if len(shape) != 2 && len(shape) != 3 {
 		panic("input must be 2D tensor [seq_len, hidden_dim] or 3D tensor [batch_size, seq_len, hidden_dim]")
@@ -68,12 +72,21 @@ func (qkv *QKVProjection) Project(input *tensor.Tensor) (*tensor.Tensor, *tensor
 		hiddenDim = shape[2]
 	}
 
-	// First flatten the input tensor to 1D
-	flatData := input.Data()
-	flatInput := tensor.NewTensorFromData(flatData)
-
-	// Now reshape to 2D for projection
-	flatInput = flatInput.Reshape(batchSize*seqLen, hiddenDim)
+	// Create a 2D view of the input for matrix multiplication
+	input2d := tensor.NewTensor(batchSize*seqLen, hiddenDim)
+	for b := 0; b < batchSize; b++ {
+		for s := 0; s < seqLen; s++ {
+			for d := 0; d < hiddenDim; d++ {
+				var val int8
+				if len(shape) == 2 {
+					val = input.Get(s, d)
+				} else {
+					val = input.Get(b, s, d)
+				}
+				input2d.Set(val, b*seqLen+s, d)
+			}
+		}
+	}
 
 	// Reshape projection matrices
 	qProj := qkv.qProj.Reshape(qkv.numHeads*qkv.headDim, hiddenDim)
@@ -81,34 +94,44 @@ func (qkv *QKVProjection) Project(input *tensor.Tensor) (*tensor.Tensor, *tensor
 	vProj := qkv.vProj.Reshape(qkv.numKVHeads*qkv.headDim, hiddenDim)
 
 	// Apply projections
-	q2d := tensor.BitLinear(flatInput, qProj) // shape: (batchSize*seqLen, numHeads*headDim)
-	k2d := tensor.BitLinear(flatInput, kProj) // shape: (batchSize*seqLen, numKVHeads*headDim)
-	v2d := tensor.BitLinear(flatInput, vProj) // shape: (batchSize*seqLen, numKVHeads*headDim)
+	q2d := tensor.BitLinear(input2d, qProj) // shape: (batchSize*seqLen, numHeads*headDim)
+	k2d := tensor.BitLinear(input2d, kProj) // shape: (batchSize*seqLen, numKVHeads*headDim)
+	v2d := tensor.BitLinear(input2d, vProj) // shape: (batchSize*seqLen, numKVHeads*headDim)
 
-	// Reshape to (batchSize, seqLen, numHeads, headDim)
-	q4d := q2d.Reshape(batchSize, seqLen, qkv.numHeads, qkv.headDim)
-	k4d := k2d.Reshape(batchSize, seqLen, qkv.numKVHeads, qkv.headDim)
-	v4d := v2d.Reshape(batchSize, seqLen, qkv.numKVHeads, qkv.headDim)
+	// Create output tensors with correct shapes
+	q := tensor.NewTensor(batchSize, qkv.numHeads, seqLen, qkv.headDim)
+	k := tensor.NewTensor(batchSize, qkv.numKVHeads, seqLen, qkv.headDim)
+	v := tensor.NewTensor(batchSize, qkv.numKVHeads, seqLen, qkv.headDim)
 
-	// Manually reorder to (batchSize, numHeads, seqLen, headDim)
-	reorder := func(src *tensor.Tensor, numHeads int, headDim int) *tensor.Tensor {
-		dst := tensor.NewTensor(batchSize, numHeads, seqLen, headDim)
-		for b := 0; b < batchSize; b++ {
-			for s := 0; s < seqLen; s++ {
-				for h := 0; h < numHeads; h++ {
-					for d := 0; d < headDim; d++ {
-						val := src.Get(b, s, h, d)
-						dst.Set(val, b, h, s, d)
-					}
+	// Copy data to output tensors
+	for b := 0; b < batchSize; b++ {
+		for s := 0; s < seqLen; s++ {
+			// Copy Q data
+			for h := 0; h < qkv.numHeads; h++ {
+				for d := 0; d < qkv.headDim; d++ {
+					idx := b*seqLen + s
+					val := q2d.Get(idx, h*qkv.headDim+d)
+					q.Set(val, b, h, s, d)
+				}
+			}
+			// Copy K data
+			for h := 0; h < qkv.numKVHeads; h++ {
+				for d := 0; d < qkv.headDim; d++ {
+					idx := b*seqLen + s
+					val := k2d.Get(idx, h*qkv.headDim+d)
+					k.Set(val, b, h, s, d)
+				}
+			}
+			// Copy V data
+			for h := 0; h < qkv.numKVHeads; h++ {
+				for d := 0; d < qkv.headDim; d++ {
+					idx := b*seqLen + s
+					val := v2d.Get(idx, h*qkv.headDim+d)
+					v.Set(val, b, h, s, d)
 				}
 			}
 		}
-		return dst
 	}
-
-	q := reorder(q4d, qkv.numHeads, qkv.headDim)
-	k := reorder(k4d, qkv.numKVHeads, qkv.headDim)
-	v := reorder(v4d, qkv.numKVHeads, qkv.headDim)
 
 	// Expand KV heads if needed
 	if qkv.numKVHeads < qkv.numHeads {
