@@ -6,7 +6,10 @@ if test "x$TASK" = x; then
   TASK=$(./scripts/get-current-task-number.sh)
 fi
 if test "x$PR" = x; then
-  PR=$(./scripts/get-current-pr-number.sh)
+  PR=$(./scripts/get-current-pr-number.sh 2> /dev/null)
+  if test "x$PR" = x; then
+    PR="YOUR-PR-NUMBER"
+  fi
 fi
 
 if test "x$TASK" = x || test "x$PR" = x; then
@@ -28,19 +31,17 @@ Focus strictly on GitHub issue #TASK#. That is the task. Do not touch unrelated
 files, do not refactor existing code, and do not fix things that aren't broken. 
 Extra changes mean extra review cycles and wasted time.
 
+The overall project direction is defined in GitHub issue #170. Keep that in 
+mind to avoid drifting off-course. To find all related issues, use the `bitnet` 
+and `task` labels in GitHub. These labels group all subtasks and planned work 
+tied to the core direction.
+
 ```
 # Check current task info
 ./scripts/get-current-task.sh|cat
 # Check current task number
 ./scripts/get-current-task-number.sh|cat
-# Check current PR number
-./scripts/get-current-pr-number.sh|cat
 ```
-
-The overall project direction is defined in GitHub issue #170. Keep that in 
-mind to avoid drifting off-course. To find all related issues, use the `bitnet` 
-and `task` labels in GitHub. These labels group all subtasks and planned work 
-tied to the core direction.
 
 Check and follow the contents of `pkg/bitnet/README.md`. Update this file only 
 if your changes directly affect what's documented.
@@ -60,6 +61,11 @@ While working:
 * **Do not leave files uncommitted or untracked.**
 * Only add tests and benchmarks for the new code you're writing now.
 * Minimize memory allocations and CPU usage -- but don't overdo it.
+
+```
+# Check current PR number
+./scripts/get-current-pr-number.sh|cat
+```
 
 You **must** run the following command to fetch and review **all PR comments** 
 before finalizing your work:
