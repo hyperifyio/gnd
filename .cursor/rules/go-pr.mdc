@@ -8,6 +8,17 @@ alwaysApply: false
 
 **Purpose:** Generate a structured PR description using the project script as a template and apply it to the current Pull Request.
 
+```bash
+# Read current task number
+./scripts/get-current-task-number.sh
+
+# Read current task info
+./scripts/get-current-task.sh
+
+# Read current PR number:
+./scripts/get-current-pr-number.sh
+``` 
+
 ## Steps
 
 1. **Generate Template**
