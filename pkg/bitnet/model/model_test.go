@@ -10,8 +10,11 @@ import (
 	"math/rand"
 	"reflect"
 	"runtime"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
 )
 
 // testFS implements fs.FS for testing
@@ -612,6 +615,235 @@ func BenchmarkEmbedTokens(b *testing.B) {
 					b.Fatal(err)
 				}
 			}
+		})
+	}
+}
+
+func TestModel_Infer(t *testing.T) {
+	// Create a test model with minimal configuration
+	config := &Config{
+		HiddenSize:       4,
+		NumHeads:         2,
+		NumLayers:        1,
+		VocabSize:        10,
+		MaxSeqLength:     8,
+		IntermediateSize: 8,
+	}
+	model := NewModel(config, testDataFS)
+
+	// Create test weights
+	model.weights = &ModelWeights{
+		TokenEmbedding: make([]int8, config.VocabSize*config.HiddenSize),
+		Blocks:         make([]*TransformerBlock, config.NumLayers),
+		FinalNorm:      make([]int8, config.HiddenSize),
+	}
+
+	// Initialize token embeddings with test values
+	for i := 0; i < config.VocabSize*config.HiddenSize; i++ {
+		model.weights.TokenEmbedding[i] = int8(i%3 - 1) // -1, 0, or 1
+	}
+
+	// Initialize transformer block
+	block := &TransformerBlock{
+		QKVProj:  make([]int8, config.HiddenSize*3*config.HiddenSize),
+		OutProj:  make([]int8, config.HiddenSize*config.HiddenSize),
+		FFNUp:    make([]int8, config.HiddenSize*config.IntermediateSize),
+		FFNDown:  make([]int8, config.IntermediateSize*config.HiddenSize),
+		AttnNorm: make([]int8, config.HiddenSize),
+		FFNNorm:  make([]int8, config.HiddenSize),
+	}
+
+	// Initialize block weights with test values
+	for i := range block.QKVProj {
+		block.QKVProj[i] = int8(i%3 - 1)
+	}
+	for i := range block.OutProj {
+		block.OutProj[i] = int8(i%3 - 1)
+	}
+	for i := range block.FFNUp {
+		block.FFNUp[i] = int8(i%3 - 1)
+	}
+	for i := range block.FFNDown {
+		block.FFNDown[i] = int8(i%3 - 1)
+	}
+	for i := range block.AttnNorm {
+		block.AttnNorm[i] = int8(i%3 - 1)
+	}
+	for i := range block.FFNNorm {
+		block.FFNNorm[i] = int8(i%3 - 1)
+	}
+
+	model.weights.Blocks[0] = block
+
+	// Initialize final normalization weights
+	for i := range model.weights.FinalNorm {
+		model.weights.FinalNorm[i] = int8(i%3 - 1)
+	}
+
+	tests := []struct {
+		name    string
+		tokens  []int
+		wantErr error
+	}{
+		{
+			name:    "empty input",
+			tokens:  []int{},
+			wantErr: nil,
+		},
+		{
+			name:    "single token",
+			tokens:  []int{1},
+			wantErr: nil,
+		},
+		{
+			name:    "multiple tokens",
+			tokens:  []int{1, 2, 3},
+			wantErr: nil,
+		},
+		{
+			name:    "invalid token",
+			tokens:  []int{config.VocabSize + 1},
+			wantErr: ErrInvalidToken,
+		},
+		{
+			name:    "sequence too long",
+			tokens:  make([]int, config.MaxSeqLength+1),
+			wantErr: ErrSequenceTooLong,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := model.Infer(tt.tokens)
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("Infer() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestModel_TensorOperations(t *testing.T) {
+	// Create a test tensor
+	tensor := tensor.NewTensor(2, 3)
+
+	// Test tensor creation
+	if tensor == nil {
+		t.Fatal("NewTensor returned nil")
+	}
+
+	// Test tensor shape
+	shape := tensor.Shape()
+	if len(shape) != 2 || shape[0] != 2 || shape[1] != 3 {
+		t.Errorf("Tensor.Shape() = %v, want [2 3]", shape)
+	}
+
+	// Test tensor operations
+	tests := []struct {
+		name    string
+		value   int8
+		indices []int
+		want    int8
+	}{
+		{
+			name:    "set and get value",
+			value:   1,
+			indices: []int{0, 0},
+			want:    1,
+		},
+		{
+			name:    "clamp positive value",
+			value:   2,
+			indices: []int{0, 1},
+			want:    1,
+		},
+		{
+			name:    "clamp negative value",
+			value:   -2,
+			indices: []int{1, 0},
+			want:    -1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tensor.Set(tt.value, tt.indices...)
+			got := tensor.Get(tt.indices...)
+			if got != tt.want {
+				t.Errorf("Tensor.Get() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+
+	// Test tensor data
+	data := tensor.Data()
+	if len(data) != 6 {
+		t.Errorf("Tensor.Data() length = %v, want %v", len(data), 6)
+	}
+
+	// Test tensor reshape
+	reshaped := tensor.Reshape(3, 2)
+	if reshaped == nil {
+		t.Fatal("Reshape returned nil")
+	}
+
+	reshapedShape := reshaped.Shape()
+	if len(reshapedShape) != 2 || reshapedShape[0] != 3 || reshapedShape[1] != 2 {
+		t.Errorf("Reshaped tensor shape = %v, want [3 2]", reshapedShape)
+	}
+
+	// Test parallel operations
+	var wg sync.WaitGroup
+	wg.Add(1)
+	tensor.ParallelForEach(func(indices []int, value int8) {
+		defer wg.Done()
+		if len(indices) != 2 {
+			t.Errorf("ParallelForEach indices length = %v, want 2", len(indices))
+		}
+	})
+	wg.Wait()
+
+	// Test tensor cleanup
+	tensor.Close()
+
+	// Verify operations panic after close
+	operations := []struct {
+		name string
+		fn   func()
+	}{
+		{
+			name: "Get",
+			fn:   func() { tensor.Get(0, 0) },
+		},
+		{
+			name: "Set",
+			fn:   func() { tensor.Set(1, 0, 0) },
+		},
+		{
+			name: "Shape",
+			fn:   func() { tensor.Shape() },
+		},
+		{
+			name: "Data",
+			fn:   func() { tensor.Data() },
+		},
+		{
+			name: "ParallelForEach",
+			fn:   func() { tensor.ParallelForEach(func(indices []int, value int8) {}) },
+		},
+		{
+			name: "Reshape",
+			fn:   func() { tensor.Reshape(3, 2) },
+		},
+	}
+
+	for _, op := range operations {
+		t.Run(op.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r == nil {
+					t.Errorf("%s did not panic after Close()", op.name)
+				}
+			}()
+			op.fn()
 		})
 	}
 }

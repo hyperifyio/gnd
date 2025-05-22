@@ -183,11 +183,18 @@ func (m *Model) LoadWeights(path string) error {
 
 // Infer performs inference on the input tokens
 func (m *Model) Infer(tokens []int) ([]int, error) {
+	if m.weights == nil {
+		return nil, ErrWeightsNotLoaded
+	}
+
 	// Convert tokens to hidden states using embedding layer
 	hiddenStates := make([]int8, len(tokens)*m.config.HiddenSize)
 	for i, token := range tokens {
-		embedding := m.weights.TokenEmbedding[token]
-		copy(hiddenStates[i*m.config.HiddenSize:], embedding)
+		if token < 0 || token >= m.config.VocabSize {
+			return nil, ErrInvalidToken
+		}
+		embeddingStart := token * m.config.HiddenSize
+		copy(hiddenStates[i*m.config.HiddenSize:], m.weights.TokenEmbedding[embeddingStart:embeddingStart+m.config.HiddenSize])
 	}
 
 	// Create tensor for hidden states
@@ -200,16 +207,28 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 
 		// Create attention sublayer
 		attn := bitnetmath.NewAttentionSublayer(m.config.HiddenSize, m.config.NumHeads, m.config.NumKVHeads)
-		attn.SetWeights(block.QKVProj, block.QKVProj, block.QKVProj, block.OutProj)
-		attn.SetGamma(block.AttnNorm)
+
+		// Convert weights to tensors
+		qkvTensor := tensor.NewTensorFromData(block.QKVProj)
+		outTensor := tensor.NewTensorFromData(block.OutProj)
+		attnNormTensor := tensor.NewTensorFromData(block.AttnNorm)
+
+		attn.SetWeights(qkvTensor, qkvTensor, qkvTensor, outTensor)
+		attn.SetGamma(convertInt8ToFloat32(attnNormTensor.Data()))
 
 		// Apply attention
 		hiddenStatesTensor = attn.Forward(hiddenStatesTensor)
 
 		// Create feed-forward sublayer
 		ffn := bitnetmath.NewFFNSublayer(m.config.HiddenSize, m.config.IntermediateSize)
-		ffn.SetWeights(block.FFNUp, block.FFNDown)
-		ffn.SetGamma(block.FFNNorm)
+
+		// Convert weights to tensors
+		ffnUpTensor := tensor.NewTensorFromData(block.FFNUp)
+		ffnDownTensor := tensor.NewTensorFromData(block.FFNDown)
+		ffnNormTensor := tensor.NewTensorFromData(block.FFNNorm)
+
+		ffn.SetWeights(ffnUpTensor, ffnDownTensor)
+		ffn.SetGamma(convertInt8ToFloat32(ffnNormTensor.Data()))
 
 		// Apply feed-forward
 		hiddenStatesTensor = ffn.Forward(hiddenStatesTensor)
@@ -217,7 +236,8 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 
 	// Apply final normalization
 	finalNorm := bitnetmath.NewSubLN(m.config.HiddenSize, 1e-5)
-	finalNorm.SetGamma(m.weights.FinalNorm)
+	finalNormTensor := tensor.NewTensorFromData(m.weights.FinalNorm)
+	finalNorm.SetGamma(convertInt8ToFloat32(finalNormTensor.Data()))
 
 	// Convert hidden states to float32 for normalization
 	hiddenStatesFloat := make([][]float32, len(tokens))
