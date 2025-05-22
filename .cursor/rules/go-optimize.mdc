@@ -1,0 +1,102 @@
+---
+description: "Instrument line-level benchmarks in Go to collect and analyze per-line CPU and memory statistics."
+globs: *.go, pkg/**/*.go
+alwaysApply: true
+---
+
+# Line-Level Performance Benchmarking Rule
+
+**Purpose:** Enable precise identification of hot lines in performance-critical Go code via inline profiling and statistical benchmarks.
+
+## Benchmark Structure
+
+1. **CPU Profiling**
+
+   * In each `BenchmarkXxx`, start a CPU profile before the timing loop and stop it after.
+   * Write the profile to a unique file (e.g., `cpu_<benchmark>.prof`).
+
+   ```go
+   import (
+     "os"
+     "runtime/pprof"
+     "testing"
+   )
+
+   func BenchmarkMyFunc(b *testing.B) {
+     f, err := os.Create("cpu_MyFunc.prof")
+     if err != nil {
+       b.Fatal(err)
+     }
+     defer f.Close()
+     pprof.StartCPUProfile(f)
+     defer pprof.StopCPUProfile()
+
+     b.ResetTimer()
+     for i := 0; i < b.N; i++ {
+       MyFunc()
+     }
+   }
+   ```
+
+2. **Memory Profiling**
+
+   * At the end of the benchmark, trigger garbage collection, then write a heap profile.
+   * Use `b.ReportAllocs()` to track allocation counts.
+
+   ```go
+   import (
+     "os"
+     "runtime"
+     "runtime/pprof"
+     "testing"
+   )
+
+   func BenchmarkMyFuncAlloc(b *testing.B) {
+     b.ReportAllocs()
+     b.ResetTimer()
+     for i := 0; i < b.N; i++ {
+       MyFunc()
+     }
+
+     runtime.GC()
+     f, err := os.Create("mem_MyFunc.prof")
+     if err != nil {
+       b.Fatal(err)
+     }
+     defer f.Close()
+     pprof.WriteHeapProfile(f)
+   }
+   ```
+
+3. **Line-Level Analysis**
+
+   * After running benchmarks, invoke:
+
+     ```bash
+     go tool pprof -lines cpu_MyFunc.prof
+     go tool pprof -lines mem_MyFunc.prof
+     ```
+   * Inspect the fraction of samples per source line to pinpoint hotspots and heavy allocators.
+
+4. **Statistical Comparison**
+
+   * Store baseline profiles in a versioned directory (e.g., `profiles/baseline/`).
+
+   ```bash
+   go test -bench=MyFunc -cpuprofile=profiles/baseline/cpu_MyFunc.prof \
+     -benchmem -memprofile=profiles/baseline/mem_MyFunc.prof
+   ```
+
+   * Compare against current runs:
+
+   ```bash
+   benchstat profiles/baseline/cpu_MyFunc.pprof current/cpu_MyFunc.prof
+   benchstat profiles/baseline/mem_MyFunc.pprof current/mem_MyFunc.prof
+   ```
+
+## Best Practices
+
+* **Isolate benchmarks**: Keep setup/teardown outside the timed loop.
+* **Benchmark realistic scenarios**: Reflect real input sizes and patterns.
+* **Automate profile collection** in CI\*\*: Archive `.prof` files for trend analysis.
+* **Review line-level flame graphs** (`go tool pprof -http`) for visual insights.
