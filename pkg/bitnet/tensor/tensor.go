@@ -236,6 +236,49 @@ func (t *Tensor) calculateIndices(index int) []int {
 	return indices
 }
 
+// Reshape creates a new tensor with the same data but different shape
+func (t *Tensor) Reshape(shape ...int) *Tensor {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	if t.closed {
+		panic("tensor: Reshape called on closed tensor")
+	}
+
+	// Calculate total size of new shape
+	newSize := 1
+	for _, dim := range shape {
+		if dim <= 0 {
+			panic("tensor: invalid shape dimension")
+		}
+		newSize *= dim
+	}
+
+	// Verify total size matches
+	if newSize != len(t.data) {
+		panic("tensor: total size must match")
+	}
+
+	// Create new tensor with same data but new shape
+	newTensor := &Tensor{
+		data:   make([]int8, len(t.data)),
+		shape:  shape,
+		stride: make([]int, len(shape)),
+	}
+
+	// Copy data
+	copy(newTensor.data, t.data)
+
+	// Calculate new strides
+	stride := 1
+	for i := len(shape) - 1; i >= 0; i-- {
+		newTensor.stride[i] = stride
+		stride *= shape[i]
+	}
+
+	return newTensor
+}
+
 // Verify interface implementation
 var (
 	_ TensorType        = (*Tensor)(nil)

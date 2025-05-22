@@ -1,0 +1,187 @@
+package math
+
+import (
+	"testing"
+
+	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
+)
+
+func TestQKVProjection(t *testing.T) {
+	tests := []struct {
+		name       string
+		hiddenDim  int
+		numHeads   int
+		numKVHeads int
+		input      [][][]int8
+		qWeights   [][]int8
+		kWeights   [][]int8
+		vWeights   [][]int8
+	}{
+		{
+			name:       "standard attention",
+			hiddenDim:  8,
+			numHeads:   2,
+			numKVHeads: 2,
+			input: [][][]int8{
+				{
+					{1, 0, -1, 1, 0, -1, 1, 0},
+					{-1, 1, 0, -1, 1, 0, -1, 1},
+				},
+			},
+			qWeights: [][]int8{
+				{1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1},
+			},
+			kWeights: [][]int8{
+				{1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1},
+			},
+			vWeights: [][]int8{
+				{1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1},
+			},
+		},
+		{
+			name:       "grouped-query attention",
+			hiddenDim:  8,
+			numHeads:   4,
+			numKVHeads: 2,
+			input: [][][]int8{
+				{
+					{1, 0, -1, 1, 0, -1, 1, 0},
+					{-1, 1, 0, -1, 1, 0, -1, 1},
+				},
+			},
+			qWeights: [][]int8{
+				{1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1},
+			},
+			kWeights: [][]int8{
+				{1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1},
+			},
+			vWeights: [][]int8{
+				{1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create QKV projection
+			qkv := NewQKVProjection(tt.hiddenDim, tt.numHeads, tt.numKVHeads)
+
+			// Create input tensor
+			input := tensor.NewTensor(len(tt.input), len(tt.input[0]), len(tt.input[0][0]))
+			for i := range tt.input {
+				for j := range tt.input[i] {
+					for k := range tt.input[i][j] {
+						input.Set(tt.input[i][j][k], i, j, k)
+					}
+				}
+			}
+
+			// Create weight tensors
+			qWeights := tensor.NewTensor(len(tt.qWeights), len(tt.qWeights[0]))
+			for i := range tt.qWeights {
+				for j := range tt.qWeights[i] {
+					qWeights.Set(tt.qWeights[i][j], i, j)
+				}
+			}
+
+			kWeights := tensor.NewTensor(len(tt.kWeights), len(tt.kWeights[0]))
+			for i := range tt.kWeights {
+				for j := range tt.kWeights[i] {
+					kWeights.Set(tt.kWeights[i][j], i, j)
+				}
+			}
+
+			vWeights := tensor.NewTensor(len(tt.vWeights), len(tt.vWeights[0]))
+			for i := range tt.vWeights {
+				for j := range tt.vWeights[i] {
+					vWeights.Set(tt.vWeights[i][j], i, j)
+				}
+			}
+
+			// Set weights
+			qkv.SetWeights(qWeights, kWeights, vWeights)
+
+			// Project input
+			q, k, v := qkv.Project(input)
+
+			// Verify shapes
+			if len(q.Shape()) != 4 {
+				t.Errorf("Q shape = %v, want 4 dimensions", q.Shape())
+			}
+			if len(k.Shape()) != 4 {
+				t.Errorf("K shape = %v, want 4 dimensions", k.Shape())
+			}
+			if len(v.Shape()) != 4 {
+				t.Errorf("V shape = %v, want 4 dimensions", v.Shape())
+			}
+
+			// Verify dimensions
+			if q.Shape()[0] != len(tt.input) {
+				t.Errorf("Q batch size = %d, want %d", q.Shape()[0], len(tt.input))
+			}
+			if q.Shape()[1] != tt.numHeads {
+				t.Errorf("Q num heads = %d, want %d", q.Shape()[1], tt.numHeads)
+			}
+			if q.Shape()[2] != len(tt.input[0]) {
+				t.Errorf("Q seq len = %d, want %d", q.Shape()[2], len(tt.input[0]))
+			}
+			if q.Shape()[3] != tt.hiddenDim/tt.numHeads {
+				t.Errorf("Q head dim = %d, want %d", q.Shape()[3], tt.hiddenDim/tt.numHeads)
+			}
+
+			// Verify K and V have same dimensions as Q
+			if !equalShapes(k.Shape(), q.Shape()) {
+				t.Errorf("K shape = %v, want %v", k.Shape(), q.Shape())
+			}
+			if !equalShapes(v.Shape(), q.Shape()) {
+				t.Errorf("V shape = %v, want %v", v.Shape(), q.Shape())
+			}
+		})
+	}
+}
+
+func equalShapes(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
