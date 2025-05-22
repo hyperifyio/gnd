@@ -1,0 +1,24 @@
+---
+description: "Invoke the BitNet task prompt generator and follow its guidance to implement the feature."
+globs: "\*\*"
+alwaysApply: false
+---
+
+# BitNet Task Prompt Guidance
+
+**Purpose:** Generate and follow a tailored task prompt for the current BitNet 
+issue using the project script to implement the feature.
+
+## Usage
+
+Run the helper script to output the current task prompt:
+
+```bash
+./scripts/get-bitnet-task-prompt.sh
+```
+
+The script will print step-by-step instructions related to your active BitNet issue (e.g., issue overview, goals, verification steps).
+
+**Follow** the printed guidance precisely, executing any commands or review steps it suggests.
+
+*No additional rules or automations: simply generate the prompt and act on it.*

@@ -1,0 +1,182 @@
+package math
+
+import (
+	"testing"
+
+	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
+)
+
+func TestAttentionOutputProjection(t *testing.T) {
+	tests := []struct {
+		name      string
+		hiddenDim int
+		numHeads  int
+		input     [][][]int8
+		weights   [][]int8
+		expected  [][][]int8
+	}{
+		{
+			name:      "simple projection",
+			hiddenDim: 8,
+			numHeads:  2,
+			input: [][][]int8{
+				{
+					{1, 0, -1, 1, 0, -1, 1, 0},
+					{-1, 1, 0, -1, 1, 0, -1, 1},
+				},
+			},
+			weights: [][]int8{
+				{1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1},
+			},
+			expected: [][][]int8{
+				{
+					{5, -3, 5, -3, 5, -3, 5, -3},
+					{-3, 6, -3, 6, -3, 6, -3, 6},
+				},
+			},
+		},
+		{
+			name:      "larger projection",
+			hiddenDim: 16,
+			numHeads:  4,
+			input: [][][]int8{
+				{
+					{1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0},
+					{-1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1},
+				},
+			},
+			weights: [][]int8{
+				{1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1},
+			},
+			expected: [][][]int8{
+				{
+					{10, -6, 10, -6, 10, -6, 10, -6, 10, -6, 10, -6, 10, -6, 10, -6},
+					{-6, 12, -6, 12, -6, 12, -6, 12, -6, 12, -6, 12, -6, 12, -6, 12},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create attention output projection
+			out := NewAttentionOutputProjection(tt.hiddenDim, tt.numHeads)
+
+			// Create input tensor
+			input := tensor.NewTensor(len(tt.input), len(tt.input[0]), len(tt.input[0][0]))
+			for i := range tt.input {
+				for j := range tt.input[i] {
+					for k := range tt.input[i][j] {
+						input.Set(tt.input[i][j][k], i, j, k)
+					}
+				}
+			}
+
+			// Create weight tensor
+			weights := tensor.NewTensor(len(tt.weights), len(tt.weights[0]))
+			for i := range tt.weights {
+				for j := range tt.weights[i] {
+					weights.Set(tt.weights[i][j], i, j)
+				}
+			}
+
+			// Set weights
+			out.SetWeights(weights)
+
+			// Project input
+			output := out.Project(input)
+
+			// Verify output shape
+			if len(output.Shape()) != 3 {
+				t.Errorf("output shape = %v, want 3 dimensions", output.Shape())
+			}
+			if output.Shape()[0] != len(tt.input) {
+				t.Errorf("output batch size = %d, want %d", output.Shape()[0], len(tt.input))
+			}
+			if output.Shape()[1] != len(tt.input[0]) {
+				t.Errorf("output seq len = %d, want %d", output.Shape()[1], len(tt.input[0]))
+			}
+			if output.Shape()[2] != tt.hiddenDim {
+				t.Errorf("output hidden dim = %d, want %d", output.Shape()[2], tt.hiddenDim)
+			}
+
+			// Verify output values
+			for i := range tt.expected {
+				for j := range tt.expected[i] {
+					for k := range tt.expected[i][j] {
+						got := output.Get(i, j, k)
+						want := tt.expected[i][j][k]
+						if got != want {
+							t.Errorf("output[%d][%d][%d] = %d, want %d", i, j, k, got, want)
+						}
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestAttentionOutputProjectionPanics(t *testing.T) {
+	tests := []struct {
+		name      string
+		hiddenDim int
+		numHeads  int
+		input     *tensor.Tensor
+		weights   *tensor.Tensor
+	}{
+		{
+			name:      "invalid input shape",
+			hiddenDim: 8,
+			numHeads:  2,
+			input:     tensor.NewTensor(2, 2),
+			weights:   tensor.NewTensor(8, 8),
+		},
+		{
+			name:      "invalid weights shape",
+			hiddenDim: 8,
+			numHeads:  2,
+			input:     tensor.NewTensor(1, 2, 8),
+			weights:   tensor.NewTensor(4, 4),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r == nil {
+					t.Error("expected panic")
+				}
+			}()
+
+			out := NewAttentionOutputProjection(tt.hiddenDim, tt.numHeads)
+			if tt.weights != nil {
+				out.SetWeights(tt.weights)
+			}
+			if tt.input != nil {
+				out.Project(tt.input)
+			}
+		})
+	}
+}
