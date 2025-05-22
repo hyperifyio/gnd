@@ -13,8 +13,9 @@ alwaysApply: false
 * Execute full test suite on demand or when files change:
 
   ```bash
-  go test ./pkg/bitnet/... -race -cover
+  go test ./pkg/bitnet/... -race
   ```
+
 * Highlight any failures, panics, or unexpected behavior.
 
 ## Failure Handling

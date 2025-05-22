@@ -1,6 +1,8 @@
 package tensor
 
 import (
+	"fmt"
+	"os"
 	"runtime"
 	"sync"
 	"unsafe"
@@ -48,10 +50,16 @@ func BitLinear(input, weights *Tensor) *Tensor {
 	inFeatures := input.shape[1]
 	outFeatures := weights.shape[0]
 
+	// Debug output for shapes
+	fmt.Fprintf(os.Stderr, "[DEBUG] BitLinear input shape: %v\n", input.shape)
+	fmt.Fprintf(os.Stderr, "[DEBUG] BitLinear weights shape: %v\n", weights.shape)
+	fmt.Fprintf(os.Stderr, "[DEBUG] BitLinear output shape: [%d %d]\n", batchSize, outFeatures)
+
 	// Pre-allocate output tensor with aligned memory
 	output := &Tensor{
-		shape: []int{batchSize, outFeatures},
-		data:  alignedAlloc[int8](batchSize * outFeatures),
+		shape:  []int{batchSize, outFeatures},
+		stride: []int{outFeatures, 1},
+		data:   alignedAlloc[int8](batchSize * outFeatures),
 	}
 
 	// Process in parallel chunks

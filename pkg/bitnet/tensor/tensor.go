@@ -1,6 +1,8 @@
 package tensor
 
 import (
+	"fmt"
+	"os"
 	"runtime"
 	"sync"
 )
@@ -217,7 +219,7 @@ func (t *Tensor) calculateIndex(indices []int) int {
 		if idx < 0 || idx >= t.shape[i] {
 			return -1
 		}
-		index = index*t.shape[i] + idx
+		index += idx * t.stride[i]
 	}
 	return index
 }
@@ -248,6 +250,7 @@ func (t *Tensor) Reshape(shape ...int) *Tensor {
 	newSize := 1
 	for _, dim := range shape {
 		if dim <= 0 {
+			fmt.Fprintf(os.Stderr, "[DEBUG] Invalid shape dimension encountered: %v\n", shape)
 			panic("tensor: invalid shape dimension")
 		}
 		newSize *= dim
@@ -256,6 +259,35 @@ func (t *Tensor) Reshape(shape ...int) *Tensor {
 	// Verify total size matches
 	if newSize != len(t.data) {
 		panic("tensor: total size must match")
+	}
+
+	// Debug output for current shape, stride, and data length
+	fmt.Fprintf(os.Stderr, "[DEBUG] Current shape: %v, stride: %v, data length: %d\n", t.shape, t.stride, len(t.data))
+	fmt.Fprintf(os.Stderr, "[DEBUG] Target shape: %v, product: %d\n", shape, newSize)
+
+	// Check if the data is contiguous (C-order: stride[i] == product(shape[i+1:]))
+	isContiguous := true
+	expectedStride := 1
+	for i := len(t.shape) - 1; i >= 0; i-- {
+		if t.stride[i] != expectedStride {
+			isContiguous = false
+			break
+		}
+		expectedStride *= t.shape[i]
+	}
+
+	// If not contiguous, copy data into a new contiguous tensor
+	if !isContiguous {
+		contiguousData := make([]int8, len(t.data))
+		for i := 0; i < len(t.data); i++ {
+			indices := t.calculateIndices(i)
+			contiguousData[i] = t.data[t.calculateIndex(indices)]
+		}
+		t.data = contiguousData
+		t.stride = make([]int, len(t.shape))
+		for i := 0; i < len(t.shape); i++ {
+			t.stride[i] = 1
+		}
 	}
 
 	// Create new tensor with same data but new shape

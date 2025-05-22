@@ -652,3 +652,29 @@ func BenchmarkTensor_CalculateIndex(b *testing.B) {
 		_ = tensor.calculateIndex([]int{50, 50})
 	}
 }
+
+func TestTensorReshapeEdgeCase(t *testing.T) {
+	tensor := NewTensor(1, 4)
+	// Fill with valid ternary values (-1, 0, 1)
+	for i := 0; i < 4; i++ {
+		tensor.Set(int8(i%3-1), 0, i)
+	}
+	// Attempt to reshape to [1,1,4]
+	reshaped := tensor.Reshape(1, 1, 4)
+	if reshaped == nil {
+		t.Fatal("Reshape returned nil")
+	}
+	shape := reshaped.Shape()
+	if len(shape) != 3 || shape[0] != 1 || shape[1] != 1 || shape[2] != 4 {
+		t.Errorf("Reshaped tensor shape = %v, want [1 1 4]", shape)
+	}
+	// Debug output
+	fmt.Printf("Reshaped tensor data: %v\n", reshaped.Data())
+	fmt.Printf("Reshaped tensor shape: %v\n", reshaped.Shape())
+	// Check data integrity
+	for i := 0; i < 4; i++ {
+		if reshaped.Get(0, 0, i) != int8(i%3-1) {
+			t.Errorf("Reshaped tensor data mismatch at %d: got %v, want %v", i, reshaped.Get(0, 0, i), int8(i%3-1))
+		}
+	}
+}

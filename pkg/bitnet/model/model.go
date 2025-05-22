@@ -3,8 +3,10 @@ package model
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
+	"os"
 
 	bitnetmath "github.com/hyperifyio/gnd/pkg/bitnet/internal/math"
 	"github.com/hyperifyio/gnd/pkg/bitnet/internal/model"
@@ -26,6 +28,8 @@ var (
 	ErrTokenization            = errors.New("bitnet: tokenization error")
 	ErrInvalidWeightValue      = errors.New("bitnet: invalid weight value")
 	ErrSequenceTooLong         = errors.New("bitnet: sequence length exceeds maximum")
+	ErrDetokenization          = errors.New("bitnet: detokenization error")
+	ErrInvalidInputShape       = errors.New("bitnet: invalid input shape")
 )
 
 // Model represents a BitNet model
@@ -182,63 +186,111 @@ func (m *Model) LoadWeights(path string) error {
 }
 
 // Infer performs inference on the input tokens
+// input: slice of token IDs
+// Returns: slice of output token IDs
 func (m *Model) Infer(tokens []int) ([]int, error) {
 	if m.weights == nil {
 		return nil, ErrWeightsNotLoaded
 	}
+
+	// Handle empty input
 	if len(tokens) == 0 {
-		return nil, nil
+		return []int{}, nil
 	}
-	if m.config != nil && len(tokens) > m.config.MaxSeqLength {
+
+	// Check sequence length
+	if len(tokens) > m.config.MaxSeqLength {
 		return nil, ErrSequenceTooLong
-	}
-	for _, token := range tokens {
-		if token < 0 || (m.config != nil && token >= m.config.VocabSize) {
-			return nil, ErrInvalidToken
-		}
 	}
 
 	// Convert tokens to hidden states using embedding layer
-	hiddenStates := make([]int8, len(tokens)*m.config.HiddenSize)
-	for i, token := range tokens {
-		embeddingStart := token * m.config.HiddenSize
-		copy(hiddenStates[i*m.config.HiddenSize:], m.weights.TokenEmbedding[embeddingStart:embeddingStart+m.config.HiddenSize])
+	hiddenStates, err := m.embedTokens(tokens)
+	if err != nil {
+		return nil, err
 	}
 
-	// Create tensor for hidden states
-	hiddenStatesTensor := tensor.NewTensorFromData(hiddenStates)
-	hiddenStatesTensor = hiddenStatesTensor.Reshape(len(tokens), m.config.HiddenSize)
+	// Convert hidden states to tensor
+	hiddenStatesTensor := tensor.NewTensor(len(tokens), m.config.HiddenSize)
+	for i := 0; i < len(tokens); i++ {
+		for j := 0; j < m.config.HiddenSize; j++ {
+			hiddenStatesTensor.Set(int8(hiddenStates[i][j]), i, j)
+		}
+	}
+
+	// Create attention and feed-forward sublayers once
+	attn := bitnetmath.NewAttentionSublayer(m.config.HiddenSize, m.config.NumHeads, m.config.NumKVHeads)
+	ffn := bitnetmath.NewFFNSublayer(m.config.HiddenSize, m.config.IntermediateSize)
 
 	// Process through transformer blocks
-	for i := 0; i < m.config.NumLayers; i++ {
-		block := m.weights.Blocks[i]
-
-		// Create attention sublayer
-		attn := bitnetmath.NewAttentionSublayer(m.config.HiddenSize, m.config.NumHeads, m.config.NumKVHeads)
-
+	for _, block := range m.weights.Blocks {
 		// Convert weights to tensors
 		qkvProj := block.QKVProj
 		h := m.config.HiddenSize
-		qTensor := tensor.NewTensorFromData(qkvProj[:h*h]).Reshape(h, h)
-		kTensor := tensor.NewTensorFromData(qkvProj[h*h:2*h*h]).Reshape(h, h)
-		vTensor := tensor.NewTensorFromData(qkvProj[2*h*h:3*h*h]).Reshape(h, h)
-		outTensor := tensor.NewTensorFromData(block.OutProj).Reshape(h, h)
-		attnNormTensor := tensor.NewTensorFromData(block.AttnNorm)
 
+		// Create QKV projection tensors with correct shapes
+		// Each projection matrix is [hidden_size, hidden_size]
+		qTensor := tensor.NewTensor(h, h)
+		kTensor := tensor.NewTensor(h, h)
+		vTensor := tensor.NewTensor(h, h)
+
+		// Copy weights into projection matrices
+		for i := 0; i < h; i++ {
+			for j := 0; j < h; j++ {
+				// Q projection
+				qTensor.Set(qkvProj[i*h+j], i, j)
+				// K projection
+				kTensor.Set(qkvProj[h*h+i*h+j], i, j)
+				// V projection
+				vTensor.Set(qkvProj[2*h*h+i*h+j], i, j)
+			}
+		}
+
+		outTensor := tensor.NewTensor(h, h)
+		for i := 0; i < h; i++ {
+			for j := 0; j < h; j++ {
+				outTensor.Set(block.OutProj[i*h+j], i, j)
+			}
+		}
+
+		attnNormTensor := tensor.NewTensor(h)
+		for i := 0; i < h; i++ {
+			attnNormTensor.Set(block.AttnNorm[i], i)
+		}
+
+		// Debug output for tensor shapes
+		fmt.Fprintf(os.Stderr, "[DEBUG] Q tensor shape: %v\n", qTensor.Shape())
+		fmt.Fprintf(os.Stderr, "[DEBUG] K tensor shape: %v\n", kTensor.Shape())
+		fmt.Fprintf(os.Stderr, "[DEBUG] V tensor shape: %v\n", vTensor.Shape())
+		fmt.Fprintf(os.Stderr, "[DEBUG] Out tensor shape: %v\n", outTensor.Shape())
+
+		// Set attention weights
 		attn.SetWeights(qTensor, kTensor, vTensor, outTensor)
 		attn.SetGamma(convertInt8ToFloat32(attnNormTensor.Data()))
 
 		// Apply attention
 		hiddenStatesTensor = attn.Forward(hiddenStatesTensor)
 
-		// Create feed-forward sublayer
-		ffn := bitnetmath.NewFFNSublayer(m.config.HiddenSize, m.config.IntermediateSize)
-
 		// Convert weights to tensors
-		ffnUpTensor := tensor.NewTensorFromData(block.FFNUp)
-		ffnDownTensor := tensor.NewTensorFromData(block.FFNDown)
-		ffnNormTensor := tensor.NewTensorFromData(block.FFNNorm)
+		ffnUpTensor := tensor.NewTensor(m.config.IntermediateSize, h)
+		for i := 0; i < m.config.IntermediateSize; i++ {
+			for j := 0; j < h; j++ {
+				ffnUpTensor.Set(block.FFNUp[i*h+j], i, j)
+			}
+		}
 
+		ffnDownTensor := tensor.NewTensor(h, m.config.IntermediateSize)
+		for i := 0; i < h; i++ {
+			for j := 0; j < m.config.IntermediateSize; j++ {
+				ffnDownTensor.Set(block.FFNDown[i*m.config.IntermediateSize+j], i, j)
+			}
+		}
+
+		ffnNormTensor := tensor.NewTensor(h)
+		for i := 0; i < h; i++ {
+			ffnNormTensor.Set(block.FFNNorm[i], i)
+		}
+
+		// Set feed-forward weights
 		ffn.SetWeights(ffnUpTensor, ffnDownTensor)
 		ffn.SetGamma(convertInt8ToFloat32(ffnNormTensor.Data()))
 
@@ -271,8 +323,47 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 		}
 	}
 
-	// TODO: Generate output tokens from final states
-	return nil, nil
+	// Generate output tokens using the final states
+	outputTokens := make([]int, len(tokens))
+	for i := 0; i < len(tokens); i++ {
+		// Get the hidden state for this token
+		hiddenState := make([]float32, m.config.HiddenSize)
+		for j := 0; j < m.config.HiddenSize; j++ {
+			hiddenState[j] = float32(finalStates.Get(i, j))
+		}
+
+		// Find the token with the highest probability
+		maxProb := float32(-1)
+		maxToken := 0
+		for tokenID := 0; tokenID < m.config.VocabSize; tokenID++ {
+			// Get the embedding vector for this token
+			embeddingStart := tokenID * m.config.HiddenSize
+			var prob float32
+			for j := 0; j < m.config.HiddenSize; j++ {
+				weight := m.weights.TokenEmbedding[embeddingStart+j]
+				// Convert ternary value (-1, 0, +1) to float32
+				var weightFloat float32
+				switch weight {
+				case -1:
+					weightFloat = -1.0
+				case 0:
+					weightFloat = 0.0
+				case 1:
+					weightFloat = 1.0
+				default:
+					return nil, ErrInvalidWeightValue
+				}
+				prob += hiddenState[j] * weightFloat
+			}
+			if prob > maxProb {
+				maxProb = prob
+				maxToken = tokenID
+			}
+		}
+		outputTokens[i] = maxToken
+	}
+
+	return outputTokens, nil
 }
 
 // embedTokens converts token IDs to their corresponding hidden vectors
@@ -337,14 +428,21 @@ func (m *Model) infer(input string) (string, error) {
 		return "", ErrSequenceTooLong
 	}
 
-	// Convert tokens to hidden states using embedding layer
-	if _, err = m.embedTokens(tokens); err != nil {
+	// Perform inference
+	outputTokens, err := m.Infer(tokens)
+	if err != nil {
+		loggers.Printf(loggers.Debug, "inference error: %v", err)
 		return "", err
 	}
 
-	// TODO(#176): Process hidden states through transformer blocks
-	// TODO(#177): Generate output tokens
-	return "", ErrInferenceNotImplemented
+	// Detokenize output
+	output, err := m.tokenizer.Detokenize(outputTokens)
+	if err != nil {
+		loggers.Printf(loggers.Debug, "detokenization error: %v", err)
+		return "", ErrDetokenization
+	}
+
+	return output, nil
 }
 
 // Close releases any resources held by the model

@@ -1,7 +1,9 @@
 package math
 
 import (
+	"fmt"
 	"math"
+	"os"
 	"runtime"
 	"sync"
 
@@ -38,8 +40,18 @@ func NewAttentionSublayer(hiddenDim, numHeads, numKVHeads int) *AttentionSublaye
 
 // Forward performs the forward pass through the attention sublayer
 func (a *AttentionSublayer) Forward(input *tensor.Tensor) *tensor.Tensor {
-	// Get input dimensions
 	shape := input.Shape()
+
+	// Handle empty sequence case
+	if len(shape) == 2 && shape[0] == 0 {
+		// For empty sequence, return a zero tensor with same hidden dimension
+		return tensor.NewTensor(0, a.hiddenDim)
+	}
+	if len(shape) == 3 && shape[1] == 0 {
+		// For empty sequence in 3D case, return a zero tensor with same batch and hidden dimensions
+		return tensor.NewTensor(shape[0], 0, a.hiddenDim)
+	}
+
 	if len(shape) == 2 {
 		// If input is 2D [seqLen, hiddenDim], add batch dimension
 		seqLen := shape[0]
@@ -66,11 +78,30 @@ func (a *AttentionSublayer) Forward(input *tensor.Tensor) *tensor.Tensor {
 			}
 		}
 
+		// Define headDim for correct reshape
+		headDim := hiddenDim / a.numHeads
+
 		// Project to Q, K, V
 		q, k, v := a.qkv.Project(normalizedTensor)
 
+		// Debug output for Q, K, V shapes after projection
+		fmt.Fprintf(os.Stderr, "[DEBUG] Q projection shape: %v\n", q.Shape())
+		fmt.Fprintf(os.Stderr, "[DEBUG] K projection shape: %v\n", k.Shape())
+		fmt.Fprintf(os.Stderr, "[DEBUG] V projection shape: %v\n", v.Shape())
+
+		// Always ensure Q, K, V are [batchSize, a.numHeads, seqLen, headDim]
+		targetShape := []int{batchSize, a.numHeads, seqLen, headDim}
+		if !equalShape(q.Shape(), targetShape) {
+			q = q.Reshape(batchSize, a.numHeads, seqLen, headDim)
+		}
+		if !equalShape(k.Shape(), targetShape) {
+			k = k.Reshape(batchSize, a.numHeads, seqLen, headDim)
+		}
+		if !equalShape(v.Shape(), targetShape) {
+			v = v.Reshape(batchSize, a.numHeads, seqLen, headDim)
+		}
+
 		// Compute attention for each head
-		headDim := hiddenDim / a.numHeads
 		attentionOutput := tensor.NewTensor(batchSize, a.numHeads, seqLen, headDim)
 
 		// Process in parallel chunks
@@ -94,26 +125,27 @@ func (a *AttentionSublayer) Forward(input *tensor.Tensor) *tensor.Tensor {
 						// Get corresponding KV head index (for grouped-query attention)
 						kvHeadIdx := h % a.numKVHeads
 
-						// Extract Q, K, V for this head
-						qHead := tensor.NewTensor(seqLen, headDim)
-						kHead := tensor.NewTensor(seqLen, headDim)
-						vHead := tensor.NewTensor(seqLen, headDim)
+						// Create 4D tensors for this head
+						qHead := tensor.NewTensor(1, 1, seqLen, headDim)
+						kHead := tensor.NewTensor(1, 1, seqLen, headDim)
+						vHead := tensor.NewTensor(1, 1, seqLen, headDim)
 
+						// Copy data maintaining 4D structure
 						for s := 0; s < seqLen; s++ {
 							for d := 0; d < headDim; d++ {
-								qHead.Set(q.Get(b, h, s, d), s, d)
-								kHead.Set(k.Get(b, kvHeadIdx, s, d), s, d)
-								vHead.Set(v.Get(b, kvHeadIdx, s, d), s, d)
+								qHead.Set(q.Get(b, h, s, d), 0, 0, s, d)
+								kHead.Set(k.Get(b, kvHeadIdx, s, d), 0, 0, s, d)
+								vHead.Set(v.Get(b, kvHeadIdx, s, d), 0, 0, s, d)
 							}
 						}
 
 						// Compute attention for this head
 						headOutput := ScaledDotProductAttention(qHead, kHead, vHead)
 
-						// Store output
+						// Store output maintaining 4D structure
 						for s := 0; s < seqLen; s++ {
 							for d := 0; d < headDim; d++ {
-								attentionOutput.Set(headOutput.Get(s, d), b, h, s, d)
+								attentionOutput.Set(headOutput.Get(0, 0, s, d), b, h, s, d)
 							}
 						}
 					}
@@ -123,7 +155,7 @@ func (a *AttentionSublayer) Forward(input *tensor.Tensor) *tensor.Tensor {
 		wg.Wait()
 
 		// Reshape attention output for final projection
-		attentionOutput = attentionOutput.Reshape(batchSize, seqLen, hiddenDim)
+		attentionOutput = attentionOutput.Reshape(batchSize, seqLen, a.numHeads*headDim)
 
 		// Apply output projection
 		output := a.out.Project(attentionOutput)
@@ -195,11 +227,30 @@ func (a *AttentionSublayer) Forward(input *tensor.Tensor) *tensor.Tensor {
 			}
 		}
 
+		// Define headDim for correct reshape
+		headDim := hiddenDim / a.numHeads
+
 		// Project to Q, K, V
 		q, k, v := a.qkv.Project(normalizedTensor)
 
+		// Debug output for Q, K, V shapes after projection
+		fmt.Fprintf(os.Stderr, "[DEBUG] Q projection shape: %v\n", q.Shape())
+		fmt.Fprintf(os.Stderr, "[DEBUG] K projection shape: %v\n", k.Shape())
+		fmt.Fprintf(os.Stderr, "[DEBUG] V projection shape: %v\n", v.Shape())
+
+		// Always ensure Q, K, V are [batchSize, a.numHeads, seqLen, headDim]
+		targetShape := []int{batchSize, a.numHeads, seqLen, headDim}
+		if !equalShape(q.Shape(), targetShape) {
+			q = q.Reshape(batchSize, a.numHeads, seqLen, headDim)
+		}
+		if !equalShape(k.Shape(), targetShape) {
+			k = k.Reshape(batchSize, a.numHeads, seqLen, headDim)
+		}
+		if !equalShape(v.Shape(), targetShape) {
+			v = v.Reshape(batchSize, a.numHeads, seqLen, headDim)
+		}
+
 		// Compute attention for each head
-		headDim := hiddenDim / a.numHeads
 		attentionOutput := tensor.NewTensor(batchSize, a.numHeads, seqLen, headDim)
 
 		// Process in parallel chunks
@@ -223,26 +274,27 @@ func (a *AttentionSublayer) Forward(input *tensor.Tensor) *tensor.Tensor {
 						// Get corresponding KV head index (for grouped-query attention)
 						kvHeadIdx := h % a.numKVHeads
 
-						// Extract Q, K, V for this head
-						qHead := tensor.NewTensor(seqLen, headDim)
-						kHead := tensor.NewTensor(seqLen, headDim)
-						vHead := tensor.NewTensor(seqLen, headDim)
+						// Create 4D tensors for this head
+						qHead := tensor.NewTensor(1, 1, seqLen, headDim)
+						kHead := tensor.NewTensor(1, 1, seqLen, headDim)
+						vHead := tensor.NewTensor(1, 1, seqLen, headDim)
 
+						// Copy data maintaining 4D structure
 						for s := 0; s < seqLen; s++ {
 							for d := 0; d < headDim; d++ {
-								qHead.Set(q.Get(b, h, s, d), s, d)
-								kHead.Set(k.Get(b, kvHeadIdx, s, d), s, d)
-								vHead.Set(v.Get(b, kvHeadIdx, s, d), s, d)
+								qHead.Set(q.Get(b, h, s, d), 0, 0, s, d)
+								kHead.Set(k.Get(b, kvHeadIdx, s, d), 0, 0, s, d)
+								vHead.Set(v.Get(b, kvHeadIdx, s, d), 0, 0, s, d)
 							}
 						}
 
 						// Compute attention for this head
 						headOutput := ScaledDotProductAttention(qHead, kHead, vHead)
 
-						// Store output
+						// Store output maintaining 4D structure
 						for s := 0; s < seqLen; s++ {
 							for d := 0; d < headDim; d++ {
-								attentionOutput.Set(headOutput.Get(s, d), b, h, s, d)
+								attentionOutput.Set(headOutput.Get(0, 0, s, d), b, h, s, d)
 							}
 						}
 					}
@@ -252,7 +304,7 @@ func (a *AttentionSublayer) Forward(input *tensor.Tensor) *tensor.Tensor {
 		wg.Wait()
 
 		// Reshape attention output for final projection
-		attentionOutput = attentionOutput.Reshape(batchSize, seqLen, hiddenDim)
+		attentionOutput = attentionOutput.Reshape(batchSize, seqLen, a.numHeads*headDim)
 
 		// Apply output projection
 		output := a.out.Project(attentionOutput)
@@ -306,4 +358,17 @@ func (a *AttentionSublayer) SetWeights(qWeights, kWeights, vWeights, outWeights 
 // SetGamma sets the scale parameter for sublayer normalization
 func (a *AttentionSublayer) SetGamma(gamma []float32) {
 	a.subln.SetGamma(gamma)
+}
+
+// Helper function for shape comparison
+func equalShape(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

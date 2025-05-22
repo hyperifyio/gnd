@@ -1,6 +1,9 @@
 package math
 
 import (
+	"fmt"
+	"os"
+
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
 )
 
@@ -36,16 +39,46 @@ func (out *AttentionOutputProjection) Project(input *tensor.Tensor) *tensor.Tens
 
 	batchSize := input.Shape()[0]
 	seqLen := input.Shape()[1]
-	headDim := input.Shape()[2] / out.numHeads
+	hiddenIn := input.Shape()[2]
+	headDim := hiddenIn / out.numHeads
 
-	// Reshape input for linear projection
-	flatInput := input.Reshape(batchSize*seqLen, out.numHeads*headDim)
+	fmt.Fprintf(os.Stderr, "[DEBUG] AttentionOutputProjection input shape: %v\n", input.Shape())
 
-	// Apply output projection
+	flatSize := batchSize * seqLen
+	if flatSize*out.numHeads*headDim != len(input.Data()) {
+		panic("AttentionOutputProjection: shape product does not match data length")
+	}
+
+	var flatInput *tensor.Tensor
+	if batchSize == 1 && seqLen == 1 {
+		// Single-token case: manually flatten
+		data := input.Data()
+		flatInput = tensor.NewTensor(1, out.numHeads*headDim)
+		for i := 0; i < out.numHeads*headDim; i++ {
+			flatInput.Set(data[i], 0, i)
+		}
+	} else {
+		flatInput = input.Reshape(flatSize, out.numHeads*headDim)
+	}
+
+	fmt.Fprintf(os.Stderr, "[DEBUG] AttentionOutputProjection flat input shape: %v\n", flatInput.Shape())
+
 	output := tensor.BitLinear(flatInput, out.outProj)
 
-	// Reshape back to [batch_size, seq_len, hidden_dim]
-	return output.Reshape(batchSize, seqLen, out.hiddenDim)
+	if batchSize == 1 && seqLen == 1 {
+		// Single-token case: manually reshape
+		reshaped := tensor.NewTensor(1, 1, out.hiddenDim)
+		outData := output.Data()
+		for i := 0; i < out.hiddenDim; i++ {
+			reshaped.Set(outData[i], 0, 0, i)
+		}
+		fmt.Fprintf(os.Stderr, "[DEBUG] AttentionOutputProjection output shape: %v\n", reshaped.Shape())
+		return reshaped
+	}
+
+	output = output.Reshape(batchSize, seqLen, out.hiddenDim)
+	fmt.Fprintf(os.Stderr, "[DEBUG] AttentionOutputProjection output shape: %v\n", output.Shape())
+	return output
 }
 
 // SetWeights sets the output projection weights

@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	bitnetmath "github.com/hyperifyio/gnd/pkg/bitnet/internal/math"
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
 )
 
@@ -215,6 +216,70 @@ func TestReadTernaryWeights(t *testing.T) {
 	}
 }
 
+func TestReadTernaryWeightsEdgeCases(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   []byte
+		size    int
+		want    []int8
+		wantErr error
+	}{
+		{
+			name:    "empty input",
+			input:   []byte{},
+			size:    0,
+			want:    []int8{},
+			wantErr: nil,
+		},
+		{
+			name:    "single byte with all values",
+			input:   []byte{0x1A}, // 00011010 -> [1, 1, 0, -1]
+			size:    4,
+			want:    []int8{1, 1, 0, -1},
+			wantErr: nil,
+		},
+		{
+			name:    "multiple bytes with mixed values",
+			input:   []byte{0x1A, 0x2A}, // [1,1,0,-1,1,1,1,-1]
+			size:    8,
+			want:    []int8{1, 1, 0, -1, 1, 1, 1, -1},
+			wantErr: nil,
+		},
+		{
+			name:    "invalid weight value",
+			input:   []byte{0x3A}, // 00111010 -> [3,1,0,-1] (3 is invalid)
+			size:    4,
+			want:    nil,
+			wantErr: ErrInvalidWeightValue,
+		},
+		{
+			name:    "incomplete byte",
+			input:   []byte{0x1A},
+			size:    5, // Request 5 weights but only 4 available
+			want:    nil,
+			wantErr: ErrWeightsFileRead,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			model := &Model{
+				config: NewConfig(),
+			}
+
+			weights := make([]int8, tt.size)
+			err := model.readTernaryWeights(bytes.NewReader(tt.input), weights)
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("readTernaryWeights() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if err == nil && !reflect.DeepEqual(weights, tt.want) {
+				t.Errorf("readTernaryWeights() = %v, want %v", weights, tt.want)
+			}
+		})
+	}
+}
+
 // createValidWeights creates a valid weights file for testing
 func createValidWeights() []byte {
 	// Create header
@@ -298,6 +363,66 @@ func TestLoadWeights(t *testing.T) {
 					t.Errorf("LoadWeights() error = %v, wantErr %v", err, tt.wantErr)
 				}
 			} else if err != nil {
+				t.Errorf("LoadWeights() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestLoadWeightsInvalidData(t *testing.T) {
+	// Create test filesystem with invalid weights
+	fs := &testFS{
+		files: map[string][]byte{
+			"invalid_weights.bin": []byte{
+				// Invalid magic number
+				0x00, 0x00, 0x00, 0x00,
+				// Version 1
+				0x01, 0x00, 0x00, 0x00,
+			},
+			"invalid_version.bin": []byte{
+				// Valid magic number "BNET"
+				0x42, 0x4E, 0x45, 0x54,
+				// Invalid version 2
+				0x02, 0x00, 0x00, 0x00,
+			},
+			"truncated_weights.bin": []byte{
+				// Valid magic number "BNET"
+				0x42, 0x4E, 0x45, 0x54,
+				// Version 1
+				0x01, 0x00, 0x00, 0x00,
+				// Truncated data
+				0x00,
+			},
+		},
+	}
+
+	tests := []struct {
+		name    string
+		path    string
+		wantErr error
+	}{
+		{
+			name:    "invalid magic number",
+			path:    "invalid_weights.bin",
+			wantErr: ErrInvalidWeightsFile,
+		},
+		{
+			name:    "invalid version",
+			path:    "invalid_version.bin",
+			wantErr: ErrUnsupportedVersion,
+		},
+		{
+			name:    "truncated weights",
+			path:    "truncated_weights.bin",
+			wantErr: ErrWeightsFileRead,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			model := NewModel(nil, fs)
+			err := model.LoadWeights(tt.path)
+			if !errors.Is(err, tt.wantErr) {
 				t.Errorf("LoadWeights() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
@@ -624,6 +749,7 @@ func TestModel_Infer(t *testing.T) {
 	config := &Config{
 		HiddenSize:       4,
 		NumHeads:         2,
+		NumKVHeads:       2,
 		NumLayers:        1,
 		VocabSize:        10,
 		MaxSeqLength:     8,
@@ -649,28 +775,47 @@ func TestModel_Infer(t *testing.T) {
 		QKVProj: make([]int8, 3*config.HiddenSize*config.HiddenSize),
 		// Output projection: [hidden_size, hidden_size]
 		OutProj: make([]int8, config.HiddenSize*config.HiddenSize),
-		// FFN up projection: [hidden_size, intermediate_size]
-		FFNUp: make([]int8, config.HiddenSize*config.IntermediateSize),
-		// FFN down projection: [intermediate_size, hidden_size]
-		FFNDown: make([]int8, config.IntermediateSize*config.HiddenSize),
+		// FFN up projection: [intermediate_size, hidden_size]
+		FFNUp: make([]int8, config.IntermediateSize*config.HiddenSize),
+		// FFN down projection: [hidden_size, intermediate_size]
+		FFNDown: make([]int8, config.HiddenSize*config.IntermediateSize),
 		// Layer norms: [hidden_size]
 		AttnNorm: make([]int8, config.HiddenSize),
 		FFNNorm:  make([]int8, config.HiddenSize),
 	}
 
 	// Initialize block weights with test values
-	for i := range block.QKVProj {
+	// QKV projection: [3 * hidden_size * hidden_size]
+	// Each projection matrix is [hidden_size, hidden_size]
+	for i := 0; i < config.HiddenSize*config.HiddenSize; i++ {
+		// Q projection
 		block.QKVProj[i] = int8(i%3 - 1)
+		// K projection
+		block.QKVProj[i+config.HiddenSize*config.HiddenSize] = int8(i%3 - 1)
+		// V projection
+		block.QKVProj[i+2*config.HiddenSize*config.HiddenSize] = int8(i%3 - 1)
 	}
+
+	// Output projection: [hidden_size, hidden_size]
 	for i := range block.OutProj {
 		block.OutProj[i] = int8(i%3 - 1)
 	}
-	for i := range block.FFNUp {
-		block.FFNUp[i] = int8(i%3 - 1)
+
+	// FFN up projection: [intermediate_size, hidden_size]
+	for i := 0; i < config.IntermediateSize; i++ {
+		for j := 0; j < config.HiddenSize; j++ {
+			block.FFNUp[i*config.HiddenSize+j] = int8((i+j)%3 - 1)
+		}
 	}
-	for i := range block.FFNDown {
-		block.FFNDown[i] = int8(i%3 - 1)
+
+	// FFN down projection: [hidden_size, intermediate_size]
+	for i := 0; i < config.HiddenSize; i++ {
+		for j := 0; j < config.IntermediateSize; j++ {
+			block.FFNDown[i*config.IntermediateSize+j] = int8((i+j)%3 - 1)
+		}
 	}
+
+	// Layer norms: [hidden_size]
 	for i := range block.AttnNorm {
 		block.AttnNorm[i] = int8(i%3 - 1)
 	}
@@ -849,6 +994,401 @@ func TestModel_TensorOperations(t *testing.T) {
 				}
 			}()
 			op.fn()
+		})
+	}
+}
+
+func TestModelTensorOperations(t *testing.T) {
+	// Create a test model with minimal configuration
+	config := &Config{
+		HiddenSize:       4,
+		NumHeads:         2,
+		NumKVHeads:       2,
+		NumLayers:        1,
+		VocabSize:        10,
+		MaxSeqLength:     8,
+		IntermediateSize: 8,
+	}
+	model := NewModel(config, testDataFS)
+
+	// Create test weights with known values
+	model.weights = &ModelWeights{
+		TokenEmbedding: make([]int8, config.VocabSize*config.HiddenSize),
+		Blocks:         make([]*TransformerBlock, config.NumLayers),
+		FinalNorm:      make([]int8, config.HiddenSize),
+	}
+
+	// Initialize token embeddings with test values
+	for i := 0; i < config.VocabSize*config.HiddenSize; i++ {
+		model.weights.TokenEmbedding[i] = int8(i%3 - 1) // -1, 0, or 1
+	}
+
+	// Initialize transformer block
+	block := &TransformerBlock{
+		QKVProj:  make([]int8, 3*config.HiddenSize*config.HiddenSize),
+		OutProj:  make([]int8, config.HiddenSize*config.HiddenSize),
+		FFNUp:    make([]int8, config.IntermediateSize*config.HiddenSize),
+		FFNDown:  make([]int8, config.HiddenSize*config.IntermediateSize),
+		AttnNorm: make([]int8, config.HiddenSize),
+		FFNNorm:  make([]int8, config.HiddenSize),
+	}
+
+	// Initialize block weights with test values
+	for i := range block.QKVProj {
+		block.QKVProj[i] = int8(i%3 - 1)
+	}
+	for i := range block.OutProj {
+		block.OutProj[i] = int8(i%3 - 1)
+	}
+	for i := range block.FFNUp {
+		block.FFNUp[i] = int8(i%3 - 1)
+	}
+	for i := range block.FFNDown {
+		block.FFNDown[i] = int8(i%3 - 1)
+	}
+	for i := range block.AttnNorm {
+		block.AttnNorm[i] = int8(i%3 - 1)
+	}
+	for i := range block.FFNNorm {
+		block.FFNNorm[i] = int8(i%3 - 1)
+	}
+
+	model.weights.Blocks[0] = block
+
+	// Initialize final normalization weights
+	for i := range model.weights.FinalNorm {
+		model.weights.FinalNorm[i] = int8(i%3 - 1)
+	}
+
+	tests := []struct {
+		name    string
+		tokens  []int
+		wantErr error
+	}{
+		{
+			name:    "single token inference",
+			tokens:  []int{1},
+			wantErr: nil,
+		},
+		{
+			name:    "multiple tokens inference",
+			tokens:  []int{1, 2, 3},
+			wantErr: nil,
+		},
+		{
+			name:    "invalid token dimensions",
+			tokens:  []int{config.VocabSize + 1},
+			wantErr: ErrInvalidToken,
+		},
+		{
+			name:    "sequence too long",
+			tokens:  make([]int, config.MaxSeqLength+1),
+			wantErr: ErrSequenceTooLong,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Convert tokens to hidden states
+			hiddenStates, err := model.embedTokens(tt.tokens)
+			if err != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Errorf("embedTokens() error = %v, wantErr %v", err, tt.wantErr)
+				}
+				return
+			}
+
+			// Verify hidden states dimensions
+			if len(hiddenStates) != len(tt.tokens) {
+				t.Errorf("hiddenStates length = %v, want %v", len(hiddenStates), len(tt.tokens))
+			}
+			for i, state := range hiddenStates {
+				if len(state) != config.HiddenSize {
+					t.Errorf("hiddenStates[%d] length = %v, want %v", i, len(state), config.HiddenSize)
+				}
+			}
+
+			// Convert to tensor and verify shape
+			hiddenStatesTensor := tensor.NewTensor(len(tt.tokens), config.HiddenSize)
+			for i := 0; i < len(tt.tokens); i++ {
+				for j := 0; j < config.HiddenSize; j++ {
+					hiddenStatesTensor.Set(int8(hiddenStates[i][j]), i, j)
+				}
+			}
+
+			shape := hiddenStatesTensor.Shape()
+			if len(shape) != 2 || shape[0] != len(tt.tokens) || shape[1] != config.HiddenSize {
+				t.Errorf("tensor shape = %v, want [%d %d]", shape, len(tt.tokens), config.HiddenSize)
+			}
+		})
+	}
+}
+
+func TestModelAttentionMechanism(t *testing.T) {
+	// Create a test model with minimal configuration
+	config := &Config{
+		HiddenSize:       4,
+		NumHeads:         2,
+		NumKVHeads:       2,
+		NumLayers:        1,
+		VocabSize:        10,
+		MaxSeqLength:     8,
+		IntermediateSize: 8,
+	}
+	model := NewModel(config, testDataFS)
+
+	// Create test weights
+	model.weights = &ModelWeights{
+		TokenEmbedding: make([]int8, config.VocabSize*config.HiddenSize),
+		Blocks:         make([]*TransformerBlock, config.NumLayers),
+		FinalNorm:      make([]int8, config.HiddenSize),
+	}
+
+	// Initialize transformer block with test values
+	block := &TransformerBlock{
+		QKVProj:  make([]int8, 3*config.HiddenSize*config.HiddenSize),
+		OutProj:  make([]int8, config.HiddenSize*config.HiddenSize),
+		FFNUp:    make([]int8, config.IntermediateSize*config.HiddenSize),
+		FFNDown:  make([]int8, config.HiddenSize*config.IntermediateSize),
+		AttnNorm: make([]int8, config.HiddenSize),
+		FFNNorm:  make([]int8, config.HiddenSize),
+	}
+
+	// Initialize QKV projection weights with test values
+	// Each projection matrix is [hidden_size, hidden_size]
+	h := config.HiddenSize
+	for i := 0; i < h; i++ {
+		for j := 0; j < h; j++ {
+			// Q projection
+			block.QKVProj[i*h+j] = int8((i+j)%3 - 1)
+			// K projection
+			block.QKVProj[h*h+i*h+j] = int8((i+j)%3 - 1)
+			// V projection
+			block.QKVProj[2*h*h+i*h+j] = int8((i+j)%3 - 1)
+		}
+	}
+
+	// Initialize output projection weights
+	for i := 0; i < h; i++ {
+		for j := 0; j < h; j++ {
+			block.OutProj[i*h+j] = int8((i+j)%3 - 1)
+		}
+	}
+
+	// Initialize normalization weights
+	for i := range block.AttnNorm {
+		block.AttnNorm[i] = int8(i%3 - 1)
+	}
+	for i := range block.FFNNorm {
+		block.FFNNorm[i] = int8(i%3 - 1)
+	}
+
+	model.weights.Blocks[0] = block
+
+	tests := []struct {
+		name    string
+		tokens  []int
+		wantErr error
+	}{
+		{
+			name:    "single token attention",
+			tokens:  []int{1},
+			wantErr: nil,
+		},
+		{
+			name:    "multiple tokens attention",
+			tokens:  []int{1, 2, 3},
+			wantErr: nil,
+		},
+		{
+			name:    "invalid token dimensions",
+			tokens:  []int{config.VocabSize + 1},
+			wantErr: ErrInvalidToken,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Convert tokens to hidden states
+			hiddenStates, err := model.embedTokens(tt.tokens)
+			if err != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Errorf("embedTokens() error = %v, wantErr %v", err, tt.wantErr)
+				}
+				return
+			}
+
+			// Convert hidden states to tensor
+			hiddenStatesTensor := tensor.NewTensor(len(tt.tokens), config.HiddenSize)
+			for i := 0; i < len(tt.tokens); i++ {
+				for j := 0; j < config.HiddenSize; j++ {
+					hiddenStatesTensor.Set(int8(hiddenStates[i][j]), i, j)
+				}
+			}
+
+			// Create attention sublayer
+			attn := bitnetmath.NewAttentionSublayer(config.HiddenSize, config.NumHeads, config.NumKVHeads)
+
+			// Convert weights to tensors
+			qkvProj := block.QKVProj
+			qTensor := tensor.NewTensor(h, h)
+			kTensor := tensor.NewTensor(h, h)
+			vTensor := tensor.NewTensor(h, h)
+
+			// Copy weights into projection matrices
+			for i := 0; i < h; i++ {
+				for j := 0; j < h; j++ {
+					// Q projection
+					qTensor.Set(qkvProj[i*h+j], i, j)
+					// K projection
+					kTensor.Set(qkvProj[h*h+i*h+j], i, j)
+					// V projection
+					vTensor.Set(qkvProj[2*h*h+i*h+j], i, j)
+				}
+			}
+
+			outTensor := tensor.NewTensor(h, h)
+			for i := 0; i < h; i++ {
+				for j := 0; j < h; j++ {
+					outTensor.Set(block.OutProj[i*h+j], i, j)
+				}
+			}
+
+			attnNormTensor := tensor.NewTensor(h)
+			for i := 0; i < h; i++ {
+				attnNormTensor.Set(block.AttnNorm[i], i)
+			}
+
+			// Set attention weights
+			attn.SetWeights(qTensor, kTensor, vTensor, outTensor)
+			attn.SetGamma(convertInt8ToFloat32(attnNormTensor.Data()))
+
+			// Apply attention
+			output := attn.Forward(hiddenStatesTensor)
+
+			// Verify output dimensions
+			shape := output.Shape()
+			if len(shape) != 2 || shape[0] != len(tt.tokens) || shape[1] != config.HiddenSize {
+				t.Errorf("attention output shape = %v, want [%d %d]", shape, len(tt.tokens), config.HiddenSize)
+			}
+		})
+	}
+}
+
+func TestModelFFNSublayer(t *testing.T) {
+	// Create a test model with minimal configuration
+	config := &Config{
+		HiddenSize:       4,
+		NumHeads:         2,
+		NumKVHeads:       2,
+		NumLayers:        1,
+		VocabSize:        10,
+		MaxSeqLength:     8,
+		IntermediateSize: 8,
+	}
+	model := NewModel(config, testDataFS)
+
+	// Create test weights
+	model.weights = &ModelWeights{
+		TokenEmbedding: make([]int8, config.VocabSize*config.HiddenSize),
+		Blocks:         make([]*TransformerBlock, config.NumLayers),
+		FinalNorm:      make([]int8, config.HiddenSize),
+	}
+
+	// Initialize transformer block with test values
+	block := &TransformerBlock{
+		QKVProj:  make([]int8, 3*config.HiddenSize*config.HiddenSize),
+		OutProj:  make([]int8, config.HiddenSize*config.HiddenSize),
+		FFNUp:    make([]int8, config.IntermediateSize*config.HiddenSize),
+		FFNDown:  make([]int8, config.HiddenSize*config.IntermediateSize),
+		AttnNorm: make([]int8, config.HiddenSize),
+		FFNNorm:  make([]int8, config.HiddenSize),
+	}
+
+	// Initialize FFN weights with test values
+	for i := range block.FFNUp {
+		block.FFNUp[i] = int8(i%3 - 1)
+	}
+	for i := range block.FFNDown {
+		block.FFNDown[i] = int8(i%3 - 1)
+	}
+	for i := range block.FFNNorm {
+		block.FFNNorm[i] = int8(i%3 - 1)
+	}
+
+	model.weights.Blocks[0] = block
+
+	tests := []struct {
+		name    string
+		input   [][]float32
+		wantErr error
+	}{
+		{
+			name: "valid input",
+			input: [][]float32{
+				{1.0, -1.0, 0.0, 1.0},
+			},
+			wantErr: nil,
+		},
+		{
+			name: "invalid input length",
+			input: [][]float32{
+				{1.0, -1.0}, // Too short
+			},
+			wantErr: ErrInvalidInputShape,
+		},
+		{
+			name:    "empty input",
+			input:   [][]float32{},
+			wantErr: ErrInvalidInputShape,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create input tensor with shape [batchSize=1, seqLen=1, hiddenDim]
+			inputTensor := tensor.NewTensor(1, 1, config.HiddenSize)
+			if len(tt.input) > 0 {
+				for i, v := range tt.input[0] {
+					inputTensor.Set(int8(v), 0, 0, i)
+				}
+			}
+
+			// Create FFN sublayer
+			ffn := bitnetmath.NewFFNSublayer(config.HiddenSize, config.IntermediateSize)
+
+			// Convert weights to tensors
+			ffnUpTensor := tensor.NewTensor(config.IntermediateSize, config.HiddenSize)
+			ffnDownTensor := tensor.NewTensor(config.HiddenSize, config.IntermediateSize)
+			ffnNormTensor := tensor.NewTensor(config.HiddenSize)
+
+			// Copy weights into tensors
+			for i := 0; i < config.IntermediateSize; i++ {
+				for j := 0; j < config.HiddenSize; j++ {
+					ffnUpTensor.Set(block.FFNUp[i*config.HiddenSize+j], i, j)
+				}
+			}
+			for i := 0; i < config.HiddenSize; i++ {
+				for j := 0; j < config.IntermediateSize; j++ {
+					ffnDownTensor.Set(block.FFNDown[i*config.IntermediateSize+j], i, j)
+				}
+			}
+			for i := 0; i < config.HiddenSize; i++ {
+				ffnNormTensor.Set(block.FFNNorm[i], i)
+			}
+
+			// Set FFN weights
+			ffn.SetWeights(ffnUpTensor, ffnDownTensor)
+			ffn.SetGamma(convertInt8ToFloat32(ffnNormTensor.Data()))
+
+			// Apply FFN
+			output := ffn.Forward(inputTensor)
+
+			// Verify output dimensions
+			shape := output.Shape()
+			if len(shape) != 3 || shape[0] != 1 || shape[1] != 1 || shape[2] != config.HiddenSize {
+				t.Errorf("FFN output shape = %v, want [1 1 %d]", shape, config.HiddenSize)
+			}
 		})
 	}
 }
