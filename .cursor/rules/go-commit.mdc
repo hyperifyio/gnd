@@ -4,7 +4,7 @@ globs: "\*\*"
 alwaysApply: false
 ---
 
-# Detect and Commit Uncommitted Changes
+# Detect, Commit Uncommitted and Push Changes
 
 You **MUST** detect uncommited changes using:
 
@@ -34,5 +34,5 @@ with clear, standardized commit messages:
 ```bash
 git add .
 git commit -m "feat(parser): add support for MDC commit rule"
+git push
 ```
-
