@@ -209,17 +209,16 @@ func (t *Tensor) Close() {
 
 // calculateIndex converts multi-dimensional indices to a flat index
 func (t *Tensor) calculateIndex(indices []int) int {
+	if len(indices) != len(t.shape) {
+		panic("number of indices does not match tensor rank")
+	}
 	index := 0
-	stride := 1
-
-	for i := len(t.shape) - 1; i >= 0; i-- {
-		if indices[i] < 0 || indices[i] >= t.shape[i] {
+	for i, idx := range indices {
+		if idx < 0 || idx >= t.shape[i] {
 			return -1
 		}
-		index += indices[i] * stride
-		stride *= t.shape[i]
+		index = index*t.shape[i] + idx
 	}
-
 	return index
 }
 
@@ -234,6 +233,49 @@ func (t *Tensor) calculateIndices(index int) []int {
 	}
 
 	return indices
+}
+
+// Reshape creates a new tensor with the same data but different shape
+func (t *Tensor) Reshape(shape ...int) *Tensor {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	if t.closed {
+		panic("tensor: Reshape called on closed tensor")
+	}
+
+	// Calculate total size of new shape
+	newSize := 1
+	for _, dim := range shape {
+		if dim <= 0 {
+			panic("tensor: invalid shape dimension")
+		}
+		newSize *= dim
+	}
+
+	// Verify total size matches
+	if newSize != len(t.data) {
+		panic("tensor: total size must match")
+	}
+
+	// Create new tensor with same data but new shape
+	newTensor := &Tensor{
+		data:   make([]int8, len(t.data)),
+		shape:  shape,
+		stride: make([]int, len(shape)),
+	}
+
+	// Copy data
+	copy(newTensor.data, t.data)
+
+	// Calculate new strides
+	stride := 1
+	for i := len(shape) - 1; i >= 0; i-- {
+		newTensor.stride[i] = stride
+		stride *= shape[i]
+	}
+
+	return newTensor
 }
 
 // Verify interface implementation

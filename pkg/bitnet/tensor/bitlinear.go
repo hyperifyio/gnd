@@ -3,7 +3,34 @@ package tensor
 import (
 	"runtime"
 	"sync"
+	"unsafe"
 )
+
+// workBuffer represents a pre-allocated buffer for computations
+type workBuffer struct {
+	sums []int32
+}
+
+// bufferPool is a sync.Pool for work buffers
+var bufferPool = sync.Pool{
+	New: func() interface{} {
+		// Pre-allocate a buffer with a reasonable default size
+		// This will be resized if needed
+		return &workBuffer{
+			sums: make([]int32, 1024),
+		}
+	},
+}
+
+// alignedAlloc allocates a slice with proper alignment for better cache performance
+func alignedAlloc[T any](size int) []T {
+	// Calculate size needed for alignment
+	var zero T
+	align := int(unsafe.Alignof(zero))
+	// Add padding to ensure alignment
+	paddedSize := (size + align - 1) & ^(align - 1)
+	return make([]T, paddedSize)
+}
 
 // BitLinear performs a linear transformation using 1.58-bit weights
 // input: 8-bit activations [batch_size, in_features]
@@ -17,68 +44,104 @@ func BitLinear(input, weights *Tensor) *Tensor {
 		panic("bitlinear: input and weight dimensions must match")
 	}
 
-	// Convert to rawTensor for efficient computation
-	rawInput := newRawTensorFrom(input)
-	rawWeights := newRawTensorFrom(weights)
-
 	batchSize := input.shape[0]
 	inFeatures := input.shape[1]
 	outFeatures := weights.shape[0]
 
-	// Create raw output tensor
-	rawOutput := newRawTensor(batchSize, outFeatures)
-
-	// Process in parallel chunks
-	var wg sync.WaitGroup
-	chunkSize := batchSize / runtime.NumCPU()
-	if chunkSize < 1 {
-		chunkSize = 1
+	// Pre-allocate output tensor with aligned memory
+	output := &Tensor{
+		shape: []int{batchSize, outFeatures},
+		data:  alignedAlloc[int8](batchSize * outFeatures),
 	}
 
-	for i := 0; i < batchSize; i += chunkSize {
-		wg.Add(1)
-		go func(start int) {
+	// Process in parallel chunks
+	numCPU := runtime.NumCPU()
+	chunkSize := (batchSize + numCPU - 1) / numCPU // Ceiling division
+
+	var wg sync.WaitGroup
+	wg.Add(numCPU)
+
+	for cpu := 0; cpu < numCPU; cpu++ {
+		go func(cpu int) {
 			defer wg.Done()
+			start := cpu * chunkSize
 			end := start + chunkSize
 			if end > batchSize {
 				end = batchSize
 			}
 
+			// Get a buffer from the pool
+			buf := bufferPool.Get().(*workBuffer)
+			defer bufferPool.Put(buf)
+
+			// Resize buffer if needed
+			if cap(buf.sums) < outFeatures {
+				buf.sums = alignedAlloc[int32](outFeatures)
+			} else {
+				buf.sums = buf.sums[:outFeatures]
+			}
+
 			// Process each batch element
 			for b := start; b < end; b++ {
+				// Reset sums for this batch element
+				for o := range buf.sums {
+					buf.sums[o] = 0
+				}
+
 				// Process each output feature
 				for o := 0; o < outFeatures; o++ {
-					var sum int32
-					// Compute dot product
-					for f := 0; f < inFeatures; f++ {
-						// Get input activation (8-bit)
-						act := rawInput.At(b, f)
-						// Get weight (1.58-bit, stored as -1, 0, +1)
-						w := rawWeights.At(o, f)
+					// Compute dot product with loop unrolling
+					f := 0
+					// Process 4 elements at a time
+					for ; f+3 < inFeatures; f += 4 {
+						// Get input activations (8-bit)
+						act0 := int32(input.Get(b, f))
+						act1 := int32(input.Get(b, f+1))
+						act2 := int32(input.Get(b, f+2))
+						act3 := int32(input.Get(b, f+3))
+						// Get weights (1.58-bit)
+						w0 := int32(weights.Get(o, f))
+						w1 := int32(weights.Get(o, f+1))
+						w2 := int32(weights.Get(o, f+2))
+						w3 := int32(weights.Get(o, f+3))
 						// Multiply and accumulate
-						sum += int32(act) * int32(w)
+						buf.sums[o] += act0*w0 + act1*w1 + act2*w2 + act3*w3
 					}
-					// Clamp to int8 range and store
-					if sum > 127 {
-						sum = 127
-					} else if sum < -128 {
-						sum = -128
+					// Process remaining elements
+					for ; f < inFeatures; f++ {
+						act := int32(input.Get(b, f))
+						w := int32(weights.Get(o, f))
+						buf.sums[o] += act * w
 					}
-					rawOutput.Set(b, o, int8(sum))
+				}
+
+				// Clamp and store results
+				for o := 0; o < outFeatures; o++ {
+					sum := buf.sums[o]
+					// Branchless clamping using min/max
+					sum = min(max(sum, -128), 127)
+					output.setRaw(int8(sum), b, o)
 				}
 			}
-		}(i)
+		}(cpu)
 	}
 
 	wg.Wait()
-
-	// Convert result back to Tensor
-	output := NewTensor(batchSize, outFeatures)
-	for i := 0; i < batchSize; i++ {
-		for j := 0; j < outFeatures; j++ {
-			output.setRaw(rawOutput.At(i, j), i, j)
-		}
-	}
-
 	return output
+}
+
+// min returns the minimum of two int32 values
+func min(a, b int32) int32 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// max returns the maximum of two int32 values
+func max(a, b int32) int32 {
+	if a > b {
+		return a
+	}
+	return b
 }
