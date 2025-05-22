@@ -370,7 +370,7 @@ func BenchmarkModel_Infer(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := model.Infer("test input")
+		_, err := model.Infer([]int{0, 1, 2})
 		if err != ErrInferenceNotImplemented {
 			b.Fatal(err)
 		}
@@ -645,10 +645,15 @@ func TestModel_Infer(t *testing.T) {
 
 	// Initialize transformer block
 	block := &TransformerBlock{
-		QKVProj:  make([]int8, config.HiddenSize*3*config.HiddenSize),
-		OutProj:  make([]int8, config.HiddenSize*config.HiddenSize),
-		FFNUp:    make([]int8, config.HiddenSize*config.IntermediateSize),
-		FFNDown:  make([]int8, config.IntermediateSize*config.HiddenSize),
+		// QKV projection: [3 * hidden_size * hidden_size] (Q, K, V concatenated)
+		QKVProj: make([]int8, 3*config.HiddenSize*config.HiddenSize),
+		// Output projection: [hidden_size, hidden_size]
+		OutProj: make([]int8, config.HiddenSize*config.HiddenSize),
+		// FFN up projection: [hidden_size, intermediate_size]
+		FFNUp: make([]int8, config.HiddenSize*config.IntermediateSize),
+		// FFN down projection: [intermediate_size, hidden_size]
+		FFNDown: make([]int8, config.IntermediateSize*config.HiddenSize),
+		// Layer norms: [hidden_size]
 		AttnNorm: make([]int8, config.HiddenSize),
 		FFNNorm:  make([]int8, config.HiddenSize),
 	}

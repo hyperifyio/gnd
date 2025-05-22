@@ -47,33 +47,70 @@ func NewQKVProjection(hiddenDim, numHeads, numKVHeads int) *QKVProjection {
 }
 
 // Project performs the QKV projection on the input hidden states
-// input: [batch_size, seq_len, hidden_dim]
+// input: [batch_size, seq_len, hidden_dim] or [seq_len, hidden_dim]
 // Returns: Q, K, V tensors of shape [batch_size, num_heads, seq_len, head_dim]
 func (qkv *QKVProjection) Project(input *tensor.Tensor) (*tensor.Tensor, *tensor.Tensor, *tensor.Tensor) {
-	if len(input.Shape()) != 3 {
-		panic("input must be 3D tensor [batch_size, seq_len, hidden_dim]")
+	shape := input.Shape()
+	if len(shape) != 2 && len(shape) != 3 {
+		panic("input must be 2D tensor [seq_len, hidden_dim] or 3D tensor [batch_size, seq_len, hidden_dim]")
 	}
 
-	batchSize := input.Shape()[0]
-	seqLen := input.Shape()[1]
-	hiddenDim := input.Shape()[2]
+	var batchSize, seqLen, hiddenDim int
+	if len(shape) == 2 {
+		// 2D input [seq_len, hidden_dim]
+		seqLen = shape[0]
+		hiddenDim = shape[1]
+		batchSize = 1
+	} else {
+		// 3D input [batch_size, seq_len, hidden_dim]
+		batchSize = shape[0]
+		seqLen = shape[1]
+		hiddenDim = shape[2]
+	}
 
-	flatInput := input.Reshape(batchSize*seqLen, hiddenDim)
+	// First flatten the input tensor to 1D
+	flatData := input.Data()
+	flatInput := tensor.NewTensorFromData(flatData)
 
+	// Now reshape to 2D for projection
+	flatInput = flatInput.Reshape(batchSize*seqLen, hiddenDim)
+
+	// Reshape projection matrices
 	qProj := qkv.qProj.Reshape(qkv.numHeads*qkv.headDim, hiddenDim)
 	kProj := qkv.kProj.Reshape(qkv.numKVHeads*qkv.headDim, hiddenDim)
 	vProj := qkv.vProj.Reshape(qkv.numKVHeads*qkv.headDim, hiddenDim)
 
-	q2d := tensor.BitLinear(flatInput, qProj)
-	k2d := tensor.BitLinear(flatInput, kProj)
-	v2d := tensor.BitLinear(flatInput, vProj)
+	// Apply projections
+	q2d := tensor.BitLinear(flatInput, qProj) // shape: (batchSize*seqLen, numHeads*headDim)
+	k2d := tensor.BitLinear(flatInput, kProj) // shape: (batchSize*seqLen, numKVHeads*headDim)
+	v2d := tensor.BitLinear(flatInput, vProj) // shape: (batchSize*seqLen, numKVHeads*headDim)
 
-	var q, k, v *tensor.Tensor
+	// Reshape to (batchSize, seqLen, numHeads, headDim)
+	q4d := q2d.Reshape(batchSize, seqLen, qkv.numHeads, qkv.headDim)
+	k4d := k2d.Reshape(batchSize, seqLen, qkv.numKVHeads, qkv.headDim)
+	v4d := v2d.Reshape(batchSize, seqLen, qkv.numKVHeads, qkv.headDim)
 
-	q = q2d.Reshape(batchSize, qkv.numHeads, seqLen, qkv.headDim)
-	k = k2d.Reshape(batchSize, qkv.numKVHeads, seqLen, qkv.headDim)
-	v = v2d.Reshape(batchSize, qkv.numKVHeads, seqLen, qkv.headDim)
+	// Manually reorder to (batchSize, numHeads, seqLen, headDim)
+	reorder := func(src *tensor.Tensor, numHeads int, headDim int) *tensor.Tensor {
+		dst := tensor.NewTensor(batchSize, numHeads, seqLen, headDim)
+		for b := 0; b < batchSize; b++ {
+			for s := 0; s < seqLen; s++ {
+				for h := 0; h < numHeads; h++ {
+					for d := 0; d < headDim; d++ {
+						val := src.Get(b, s, h, d)
+						dst.Set(val, b, h, s, d)
+					}
+				}
+			}
+		}
+		return dst
+	}
 
+	q := reorder(q4d, qkv.numHeads, qkv.headDim)
+	k := reorder(k4d, qkv.numKVHeads, qkv.headDim)
+	v := reorder(v4d, qkv.numKVHeads, qkv.headDim)
+
+	// Expand KV heads if needed
 	if qkv.numKVHeads < qkv.numHeads {
 		k = qkv.expandKVHeads(k)
 		v = qkv.expandKVHeads(v)

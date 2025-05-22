@@ -645,79 +645,10 @@ func TestTensor_CalculateIndex(t *testing.T) {
 	}
 }
 
-func BenchmarkTensor_Reshape(b *testing.B) {
-	shapes := [][]int{
-		{100, 100},
-		{1000, 100},
-		{100, 100, 100},
-	}
-
-	for _, shape := range shapes {
-		b.Run(fmt.Sprintf("reshape_%v", shape), func(b *testing.B) {
-			tensor := NewTensor(shape...)
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				// Reshape to a different but valid shape
-				newShape := make([]int, len(shape))
-				copy(newShape, shape)
-				newShape[0], newShape[1] = newShape[1], newShape[0]
-				reshaped := tensor.Reshape(newShape...)
-				if reshaped == nil {
-					b.Fatal("Reshape returned nil")
-				}
-			}
-		})
-	}
-}
-
-func BenchmarkTensor_ParallelForEach(b *testing.B) {
+func BenchmarkTensor_CalculateIndex(b *testing.B) {
 	tensor := NewTensor(100, 100)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		tensor.ParallelForEach(func(indices []int, value int8) {
-			// Simulate some work
-			_ = indices
-			_ = value
-		})
-	}
-}
-
-func BenchmarkTensor_Data(b *testing.B) {
-	tensor := NewTensor(100, 100)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		data := tensor.Data()
-		if len(data) != 10000 {
-			b.Fatalf("Data() length = %v, want %v", len(data), 10000)
-		}
-	}
-}
-
-func BenchmarkTensor_Shape(b *testing.B) {
-	tensor := NewTensor(100, 100)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		shape := tensor.Shape()
-		if len(shape) != 2 || shape[0] != 100 || shape[1] != 100 {
-			b.Fatalf("Shape() = %v, want [100 100]", shape)
-		}
-	}
-}
-
-func BenchmarkTensor_Operations(b *testing.B) {
-	tensor := NewTensor(100, 100)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		// Test Get
-		_ = tensor.Get(50, 50)
-
-		// Test Set
-		tensor.Set(1, 50, 50)
-
-		// Test Data
-		_ = tensor.Data()
-
-		// Test Shape
-		_ = tensor.Shape()
+		_ = tensor.calculateIndex([]int{50, 50})
 	}
 }

@@ -186,13 +186,21 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 	if m.weights == nil {
 		return nil, ErrWeightsNotLoaded
 	}
+	if len(tokens) == 0 {
+		return nil, nil
+	}
+	if m.config != nil && len(tokens) > m.config.MaxSeqLength {
+		return nil, ErrSequenceTooLong
+	}
+	for _, token := range tokens {
+		if token < 0 || (m.config != nil && token >= m.config.VocabSize) {
+			return nil, ErrInvalidToken
+		}
+	}
 
 	// Convert tokens to hidden states using embedding layer
 	hiddenStates := make([]int8, len(tokens)*m.config.HiddenSize)
 	for i, token := range tokens {
-		if token < 0 || token >= m.config.VocabSize {
-			return nil, ErrInvalidToken
-		}
 		embeddingStart := token * m.config.HiddenSize
 		copy(hiddenStates[i*m.config.HiddenSize:], m.weights.TokenEmbedding[embeddingStart:embeddingStart+m.config.HiddenSize])
 	}
@@ -209,11 +217,15 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 		attn := bitnetmath.NewAttentionSublayer(m.config.HiddenSize, m.config.NumHeads, m.config.NumKVHeads)
 
 		// Convert weights to tensors
-		qkvTensor := tensor.NewTensorFromData(block.QKVProj)
-		outTensor := tensor.NewTensorFromData(block.OutProj)
+		qkvProj := block.QKVProj
+		h := m.config.HiddenSize
+		qTensor := tensor.NewTensorFromData(qkvProj[:h*h]).Reshape(h, h)
+		kTensor := tensor.NewTensorFromData(qkvProj[h*h:2*h*h]).Reshape(h, h)
+		vTensor := tensor.NewTensorFromData(qkvProj[2*h*h:3*h*h]).Reshape(h, h)
+		outTensor := tensor.NewTensorFromData(block.OutProj).Reshape(h, h)
 		attnNormTensor := tensor.NewTensorFromData(block.AttnNorm)
 
-		attn.SetWeights(qkvTensor, qkvTensor, qkvTensor, outTensor)
+		attn.SetWeights(qTensor, kTensor, vTensor, outTensor)
 		attn.SetGamma(convertInt8ToFloat32(attnNormTensor.Data()))
 
 		// Apply attention
