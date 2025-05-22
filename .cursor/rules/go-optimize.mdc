@@ -1,102 +1,81 @@
 ---
-description: "Instrument line-level benchmarks in Go to collect and analyze per-line CPU and memory statistics."
+description: "Instrument and automatically optimize Go code by detecting and fixing allocation hotspots via line-level benchmarks."
 globs: *.go, pkg/**/*.go
-alwaysApply: true
+alwaysApply: false
 ---
 
-# Line-Level Performance Benchmarking Rule
+# Automatic Line-Level Performance Optimization
 
-**Purpose:** Enable precise identification of hot lines in performance-critical Go code via inline profiling and statistical benchmarks.
+**Purpose:** Identify memory allocation hotspots in Go code at the source-line 
+level, automatically refactor to minimize allocations, and validate 
+improvements via benchmarks.
 
-## Benchmark Structure
+## 1. Benchmark Instrumentation
 
-1. **CPU Profiling**
+* **CPU Profile:** In each `BenchmarkXxx`, start and stop a CPU profile to capture line-level CPU usage.
+* **Heap Profile:** After benchmarking, trigger GC and write a heap profile to capture allocations.
+* Use standardized file names: `cpu_<Benchmark>.prof`, `mem_<Benchmark>.prof`.
 
-   * In each `BenchmarkXxx`, start a CPU profile before the timing loop and stop it after.
-   * Write the profile to a unique file (e.g., `cpu_<benchmark>.prof`).
+## 2. Profiling & Analysis
 
-   ```go
-   import (
-     "os"
-     "runtime/pprof"
-     "testing"
-   )
+After `go test -bench=.<Benchmark> -cpuprofile=cpu_<Benchmark>.prof \
+  -benchmem -memprofile=mem_<Benchmark>.prof`, run:
 
-   func BenchmarkMyFunc(b *testing.B) {
-     f, err := os.Create("cpu_MyFunc.prof")
-     if err != nil {
-       b.Fatal(err)
-     }
-     defer f.Close()
-     pprof.StartCPUProfile(f)
-     defer pprof.StopCPUProfile()
+```bash
+# Line-level CPU hotspots
+go tool pprof -lines cpu_<Benchmark>.prof
 
-     b.ResetTimer()
-     for i := 0; i < b.N; i++ {
-       MyFunc()
-     }
-   }
-   ```
+# Line-level allocation hotspots
+go tool pprof -lines mem_<Benchmark>.prof
+```
 
-2. **Memory Profiling**
+Use the output to pinpoint lines with highest allocation counts and CPU sample 
+percentages.
 
-   * At the end of the benchmark, trigger garbage collection, then write a heap profile.
-   * Use `b.ReportAllocs()` to track allocation counts.
+## 3. Automated Refactoring
 
-   ```go
-   import (
-     "os"
-     "runtime"
-     "runtime/pprof"
-     "testing"
-   )
+1. **Detect Hot Lines:** Parse pprof `-lines` output for the top allocation sites.
+2. **Minimize Allocations:** For each hot line, apply patterns such as:
 
-   func BenchmarkMyFuncAlloc(b *testing.B) {
-     b.ReportAllocs()
-     b.ResetTimer()
-     for i := 0; i < b.N; i++ {
-       MyFunc()
-     }
-
-     runtime.GC()
-     f, err := os.Create("mem_MyFunc.prof")
-     if err != nil {
-       b.Fatal(err)
-     }
-     defer f.Close()
-     pprof.WriteHeapProfile(f)
-   }
-   ```
-
-3. **Line-Level Analysis**
-
-   * After running benchmarks, invoke:
-
-     ```bash
-     go tool pprof -lines cpu_MyFunc.prof
-     go tool pprof -lines mem_MyFunc.prof
-     ```
-   * Inspect the fraction of samples per source line to pinpoint hotspots and heavy allocators.
-
-4. **Statistical Comparison**
-
-   * Store baseline profiles in a versioned directory (e.g., `profiles/baseline/`).
+   * Replace `fmt.Sprintf` with `strings.Builder` or `bytes.Buffer`.
+   * Pre-allocate slices or reuse buffers.
+   * Use value receivers or inline computations to avoid temporary allocations.
+3. **Commit Each Fix:** For each refactoring:
 
    ```bash
-   go test -bench=MyFunc -cpuprofile=profiles/baseline/cpu_MyFunc.prof \
-     -benchmem -memprofile=profiles/baseline/mem_MyFunc.prof
+   git add <file>
+   git commit -m "perf: reduce allocations in <Benchmark> (line <N>)"
    ```
 
-   * Compare against current runs:
+## 4. Validation
 
-   ```bash
-   benchstat profiles/baseline/cpu_MyFunc.pprof current/cpu_MyFunc.prof
-   benchstat profiles/baseline/mem_MyFunc.pprof current/mem_MyFunc.prof
-   ```
+* Re-run benchmarks and profiles to confirm allocation reduction and stable CPU 
+  performance.
 
-## Best Practices
+  ```bash
+  go test -bench=.<Benchmark> -benchmem
+  ```
+* Ensure allocations/op decrease (via `b.ReportAllocs()` output) and no 
+  regressions in CPU time.
 
-* **Isolate benchmarks**: Keep setup/teardown outside the timed loop.
-* **Benchmark realistic scenarios**: Reflect real input sizes and patterns.
-* **Automate profile collection** in CI\*\*: Archive `.prof` files for trend analysis.
-* **Review line-level flame graphs** (`go tool pprof -http`) for visual insights.
+## 5. Continuous Baseline Tracking
+
+* Store baseline profiles in `profiles/baseline/`.
+* After optimizations, save updated profiles in `profiles/current/`.
+* Compare with `benchstat`:
+
+  ```bash
+  benchstat profiles/baseline/mem_<Benchmark>.prof profiles/current/mem_<Benchmark>.prof
+  ```
+
+* Commit profile updates and benchstat results:
+
+  ```bash
+  git add profiles/
+  git commit -m "perf: update profiles after allocation optimizations for <Benchmark>"
+  ```
+
+**Always** aim to minimize memory allocations as they often yield the greatest 
+CPU performance gains. This rule applies to all Go packages marked 
+performance-critical.
+

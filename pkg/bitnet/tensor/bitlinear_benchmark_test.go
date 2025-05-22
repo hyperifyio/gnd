@@ -2,6 +2,10 @@ package tensor
 
 import (
 	"math/rand"
+	"os"
+	"runtime"
+	"runtime/pprof"
+	"sync"
 	"testing"
 )
 
@@ -135,4 +139,179 @@ func BenchmarkTernaryWeightsReading(b *testing.B) {
 			}
 		})
 	}
+}
+
+// BenchmarkBitLinearCPU performs CPU profiling of BitLinear operations
+func BenchmarkBitLinearCPU(b *testing.B) {
+	// Create CPU profile
+	f, err := os.Create("profiles/cpu_bitlinear.prof")
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer f.Close()
+	pprof.StartCPUProfile(f)
+	defer pprof.StopCPUProfile()
+
+	// Test different sizes
+	sizes := []struct {
+		name        string
+		batchSize   int
+		inFeatures  int
+		outFeatures int
+	}{
+		{"small", 1, 1024, 1024},   // Small batch
+		{"medium", 32, 1024, 1024}, // Medium batch
+		{"large", 64, 1024, 1024},  // Large batch
+	}
+
+	for _, size := range sizes {
+		b.Run(size.name, func(b *testing.B) {
+			// Create input tensor with random 8-bit activations
+			input := NewTensor(size.batchSize, size.inFeatures)
+			fillRandom(input, -128, 127)
+
+			// Create weight tensor with random ternary values
+			weights := NewTensor(size.outFeatures, size.inFeatures)
+			fillTernary(weights)
+
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				output := BitLinear(input, weights)
+				if output == nil {
+					b.Fatal("BitLinear returned nil")
+				}
+			}
+		})
+	}
+}
+
+// BenchmarkBitLinearMem performs memory profiling of BitLinear operations
+func BenchmarkBitLinearMem(b *testing.B) {
+	b.ReportAllocs()
+
+	// Test different sizes
+	sizes := []struct {
+		name        string
+		batchSize   int
+		inFeatures  int
+		outFeatures int
+	}{
+		{"small", 1, 1024, 1024},   // Small batch
+		{"medium", 32, 1024, 1024}, // Medium batch
+		{"large", 64, 1024, 1024},  // Large batch
+	}
+
+	for _, size := range sizes {
+		b.Run(size.name, func(b *testing.B) {
+			// Create input tensor with random 8-bit activations
+			input := NewTensor(size.batchSize, size.inFeatures)
+			fillRandom(input, -128, 127)
+
+			// Create weight tensor with random ternary values
+			weights := NewTensor(size.outFeatures, size.inFeatures)
+			fillTernary(weights)
+
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				output := BitLinear(input, weights)
+				if output == nil {
+					b.Fatal("BitLinear returned nil")
+				}
+			}
+		})
+	}
+
+	// Force GC and write heap profile
+	runtime.GC()
+	f, err := os.Create("profiles/mem_bitlinear.prof")
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer f.Close()
+	pprof.WriteHeapProfile(f)
+}
+
+// BenchmarkBitLinearDetailed performs detailed profiling of specific operations
+func BenchmarkBitLinearDetailed(b *testing.B) {
+	// Create input tensor with random 8-bit activations
+	input := NewTensor(32, 1024)
+	fillRandom(input, -128, 127)
+
+	// Create weight tensor with random ternary values
+	weights := NewTensor(1024, 1024)
+	fillTernary(weights)
+
+	// Profile buffer pool operations
+	b.Run("BufferPool", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			buf := bufferPool.Get().(*workBuffer)
+			bufferPool.Put(buf)
+		}
+	})
+
+	// Profile aligned allocation
+	b.Run("AlignedAlloc", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			_ = alignedAlloc[int32](1024)
+		}
+	})
+
+	// Profile dot product computation with different sizes
+	sizes := []struct {
+		name string
+		size int
+	}{
+		{"tiny", 64},
+		{"small", 256},
+		{"medium", 1024},
+		{"large", 4096},
+	}
+
+	for _, size := range sizes {
+		b.Run("DotProduct_"+size.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				var sum int32
+				for f := 0; f < size.size; f++ {
+					act := input.Get(0, f%1024)
+					w := weights.Get(0, f%1024)
+					sum += int32(act) * int32(w)
+				}
+			}
+		})
+	}
+
+	// Profile clamping operation with different patterns
+	b.Run("Clamping", func(b *testing.B) {
+		b.ReportAllocs()
+		patterns := []int32{-200, -129, -128, -1, 0, 1, 127, 128, 200}
+		for i := 0; i < b.N; i++ {
+			sum := patterns[i%len(patterns)]
+			if sum > 127 {
+				sum = 127
+			} else if sum < -128 {
+				sum = -128
+			}
+		}
+	})
+
+	// Profile parallel processing overhead
+	b.Run("ParallelOverhead", func(b *testing.B) {
+		b.ReportAllocs()
+		numCPU := runtime.NumCPU()
+		var wg sync.WaitGroup
+		for i := 0; i < b.N; i++ {
+			wg.Add(numCPU)
+			for cpu := 0; cpu < numCPU; cpu++ {
+				go func() {
+					defer wg.Done()
+					// Simulate minimal work
+					_ = alignedAlloc[int32](64)
+				}()
+			}
+			wg.Wait()
+		}
+	})
 }
