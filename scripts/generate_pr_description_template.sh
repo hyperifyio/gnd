@@ -162,7 +162,6 @@ cat << EOF >> pr_description.md
 ## Areas for Improvement
 ### High Priority
 - [ ] Optimize memory allocations in model operations (TODO #191)
-- [ ] Implement proper feed-forward network (TODO #187)
 
 ### Medium Priority
 - [ ] Improve error handling in model operations (TODO #192)
