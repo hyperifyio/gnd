@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"os"
 
 	bitnetmath "github.com/hyperifyio/gnd/pkg/bitnet/internal/math"
 	"github.com/hyperifyio/gnd/pkg/bitnet/internal/model"
@@ -248,8 +247,8 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "[DEBUG] Initial hiddenStatesTensor shape: %v\n", hiddenStatesTensor.Shape())
-	fmt.Fprintf(os.Stderr, "[DEBUG] Initial hiddenStatesTensor data: %v\n", hiddenStatesTensor.Data())
+	loggers.Printf(loggers.Debug, "Initial hiddenStatesTensor shape: %v", hiddenStatesTensor.Shape())
+	loggers.Printf(loggers.Debug, "Initial hiddenStatesTensor data: %v", hiddenStatesTensor.Data())
 
 	// Create attention and feed-forward sublayers once
 	attn, err := bitnetmath.NewAttentionSublayer(m.config.HiddenSize, m.config.NumHeads, m.config.NumKVHeads)
@@ -295,10 +294,10 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 		}
 
 		// Debug output for tensor shapes
-		fmt.Fprintf(os.Stderr, "[DEBUG] Q tensor shape: %v\n", qTensor.Shape())
-		fmt.Fprintf(os.Stderr, "[DEBUG] K tensor shape: %v\n", kTensor.Shape())
-		fmt.Fprintf(os.Stderr, "[DEBUG] V tensor shape: %v\n", vTensor.Shape())
-		fmt.Fprintf(os.Stderr, "[DEBUG] Out tensor shape: %v\n", outTensor.Shape())
+		loggers.Printf(loggers.Debug, "Q tensor shape: %v", qTensor.Shape())
+		loggers.Printf(loggers.Debug, "K tensor shape: %v", kTensor.Shape())
+		loggers.Printf(loggers.Debug, "V tensor shape: %v", vTensor.Shape())
+		loggers.Printf(loggers.Debug, "Out tensor shape: %v", outTensor.Shape())
 
 		// Set attention weights
 		if err := attn.SetWeights(qTensor, kTensor, vTensor, outTensor); err != nil {
@@ -311,8 +310,8 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 		if err != nil {
 			return nil, fmt.Errorf("attention forward pass failed: %w", err)
 		}
-		fmt.Fprintf(os.Stderr, "[DEBUG] After attn.Forward, hiddenStatesTensor shape: %v\n", hiddenStatesTensor.Shape())
-		fmt.Fprintf(os.Stderr, "[DEBUG] After attn.Forward, hiddenStatesTensor data: %v\n", hiddenStatesTensor.Data())
+		loggers.Printf(loggers.Debug, "After attn.Forward, hiddenStatesTensor shape: %v", hiddenStatesTensor.Shape())
+		loggers.Printf(loggers.Debug, "After attn.Forward, hiddenStatesTensor data: %v", hiddenStatesTensor.Data())
 
 		// Convert weights to tensors
 		ffnUpTensor := tensor.NewTensor(m.config.IntermediateSize, h)
@@ -340,8 +339,8 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 
 		// Apply feed-forward
 		hiddenStatesTensor = ffn.Forward(hiddenStatesTensor)
-		fmt.Fprintf(os.Stderr, "[DEBUG] After ffn.Forward, hiddenStatesTensor shape: %v\n", hiddenStatesTensor.Shape())
-		fmt.Fprintf(os.Stderr, "[DEBUG] After ffn.Forward, hiddenStatesTensor data: %v\n", hiddenStatesTensor.Data())
+		loggers.Printf(loggers.Debug, "After ffn.Forward, hiddenStatesTensor shape: %v", hiddenStatesTensor.Shape())
+		loggers.Printf(loggers.Debug, "After ffn.Forward, hiddenStatesTensor data: %v", hiddenStatesTensor.Data())
 	}
 
 	// Apply final normalization

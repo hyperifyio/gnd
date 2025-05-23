@@ -3,12 +3,13 @@ package bitnet
 import (
 	"errors"
 	"io"
-	"log"
+
+	"github.com/hyperifyio/gnd/pkg/loggers"
 )
 
 // DebugLog logs debug information with formatting
 func DebugLog(format string, args ...interface{}) {
-	log.Printf("[DEBUG] "+format, args...)
+	loggers.Printf(loggers.Debug, format, args...)
 }
 
 var (
