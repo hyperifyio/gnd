@@ -17,3 +17,4 @@ tensor.test
 pkg/bitnet/internal/assets/models/
 
 math.test
+coverage.html
