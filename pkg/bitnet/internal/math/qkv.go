@@ -71,7 +71,8 @@ func (p *QKVProjection) Project(input *tensor.Tensor) (*tensor.Tensor, *tensor.T
 
 	// Check hidden dimension
 	if hiddenDim != p.hiddenDim {
-		panic(fmt.Sprintf("input hidden dimension %d does not match projection hidden dimension %d", hiddenDim, p.hiddenDim))
+		loggers.Printf(loggers.Debug, "input hidden dimension %d does not match projection hidden dimension %d", hiddenDim, p.hiddenDim)
+		panic("input hidden dimension does not match projection hidden dimension")
 	}
 
 	// Create 2D view of input tensor for matrix multiplication

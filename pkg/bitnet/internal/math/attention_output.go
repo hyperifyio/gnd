@@ -2,10 +2,8 @@
 package math
 
 import (
-	"fmt"
-	"os"
-
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
+	"github.com/hyperifyio/gnd/pkg/loggers"
 )
 
 // AttentionOutputProjection represents the output projection layer for multi-head attention.
@@ -63,7 +61,7 @@ func (out *AttentionOutputProjection) Project(input *tensor.Tensor) *tensor.Tens
 	hiddenIn := input.Shape()[2]
 	headDim := hiddenIn / out.numHeads
 
-	fmt.Fprintf(os.Stderr, "[DEBUG] AttentionOutputProjection input shape: %v\n", input.Shape())
+	loggers.Printf(loggers.Debug, "AttentionOutputProjection input shape: %v", input.Shape())
 
 	flatSize := batchSize * seqLen
 	if flatSize*out.numHeads*headDim != len(input.Data()) {
@@ -82,7 +80,7 @@ func (out *AttentionOutputProjection) Project(input *tensor.Tensor) *tensor.Tens
 		flatInput = input.Reshape(flatSize, out.numHeads*headDim)
 	}
 
-	fmt.Fprintf(os.Stderr, "[DEBUG] AttentionOutputProjection flat input shape: %v\n", flatInput.Shape())
+	loggers.Printf(loggers.Debug, "AttentionOutputProjection flat input shape: %v", flatInput.Shape())
 
 	output := tensor.BitLinear(flatInput, out.outProj)
 
@@ -93,12 +91,12 @@ func (out *AttentionOutputProjection) Project(input *tensor.Tensor) *tensor.Tens
 		for i := 0; i < out.hiddenDim; i++ {
 			reshaped.Set(outData[i], 0, 0, i)
 		}
-		fmt.Fprintf(os.Stderr, "[DEBUG] AttentionOutputProjection output shape: %v\n", reshaped.Shape())
+		loggers.Printf(loggers.Debug, "AttentionOutputProjection output shape: %v", reshaped.Shape())
 		return reshaped
 	}
 
 	output = output.Reshape(batchSize, seqLen, out.hiddenDim)
-	fmt.Fprintf(os.Stderr, "[DEBUG] AttentionOutputProjection output shape: %v\n", output.Shape())
+	loggers.Printf(loggers.Debug, "AttentionOutputProjection output shape: %v", output.Shape())
 	return output
 }
 
