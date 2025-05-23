@@ -824,8 +824,8 @@ func TestInfer(t *testing.T) {
 		},
 		{
 			name:        "memory leak check",
-			input:       "hello world",
-			want:        "hello world",
+			input:       "hello", // Shorter input
+			want:        "hello", // Shorter expected output
 			checkMemory: true,
 			setupModel: func(m *Model) {
 				m.fs = testDataFS
@@ -834,7 +834,49 @@ func TestInfer(t *testing.T) {
 					t.Fatalf("Failed to create tokenizer: %v", err)
 				}
 				m.tokenizer = tokenizer
-				// Initialize weights
+				// Initialize weights with absolute minimal dimensions
+				m.config.HiddenSize = 16
+				m.config.NumLayers = 1
+				m.config.VocabSize = 10
+				m.config.IntermediateSize = 32
+				m.weights = &ModelWeights{
+					TokenEmbedding: make([]int8, m.config.VocabSize*m.config.HiddenSize),
+					Blocks:         make([]*TransformerBlock, m.config.NumLayers),
+					FinalNorm:      make([]int8, m.config.HiddenSize),
+				}
+				for i := range m.weights.Blocks {
+					m.weights.Blocks[i] = &TransformerBlock{
+						QKVProj:  make([]int8, 3*m.config.HiddenSize*m.config.HiddenSize),
+						OutProj:  make([]int8, m.config.HiddenSize*m.config.HiddenSize),
+						FFNUp:    make([]int8, m.config.IntermediateSize*m.config.HiddenSize),
+						FFNDown:  make([]int8, m.config.HiddenSize*m.config.IntermediateSize),
+						AttnNorm: make([]int8, m.config.HiddenSize),
+						FFNNorm:  make([]int8, m.config.HiddenSize),
+					}
+				}
+			},
+		},
+		{
+			name:        "memory_leak_check",
+			input:       "hello",
+			want:        "hello",
+			checkMemory: true,
+			setupModel: func(m *Model) {
+				m.config = &Config{
+					HiddenSize:       32, // Must be divisible by NumHeads and NumKVHeads
+					NumLayers:        1,
+					VocabSize:        10,
+					IntermediateSize: 32,
+					NumHeads:         4,
+					NumKVHeads:       4,
+					MaxSeqLength:     8,
+				}
+				m.fs = testDataFS
+				tokenizer, err := internalmodel.NewTokenizer(m.fs, "tokenizer")
+				if err != nil {
+					t.Fatalf("Failed to create tokenizer: %v", err)
+				}
+				m.tokenizer = tokenizer
 				m.weights = &ModelWeights{
 					TokenEmbedding: make([]int8, m.config.VocabSize*m.config.HiddenSize),
 					Blocks:         make([]*TransformerBlock, m.config.NumLayers),
@@ -865,14 +907,39 @@ func TestInfer(t *testing.T) {
 			// Track memory usage if requested
 			var m runtime.MemStats
 			if tt.checkMemory {
+				// Force GC before starting
+				runtime.GC()
 				runtime.ReadMemStats(&m)
 				beforeAlloc := m.TotalAlloc
-				defer func() {
-					runtime.ReadMemStats(&m)
-					if m.TotalAlloc-beforeAlloc > 1024*1024 { // 1MB threshold
-						t.Errorf("Potential memory leak: allocated %d bytes", m.TotalAlloc-beforeAlloc)
+				beforeHeap := m.HeapAlloc
+
+				// Run inference just twice to stress test memory
+				for i := 0; i < 2; i++ { // Reduced to 2 iterations
+					got, err := model.infer(tt.input)
+					if err != nil {
+						t.Errorf("infer() error = %v", err)
+						return
 					}
-				}()
+					if got != tt.want {
+						t.Errorf("infer() = %v, want %v", got, tt.want)
+						return
+					}
+				}
+
+				// Force GC before final measurement
+				runtime.GC()
+
+				runtime.ReadMemStats(&m)
+				afterAlloc := m.TotalAlloc
+				afterHeap := m.HeapAlloc
+
+				// Check both total allocations and heap usage with tighter thresholds
+				if afterAlloc-beforeAlloc > 256*1024 { // 256KB threshold
+					t.Errorf("Potential memory leak: total allocations increased by %d bytes", afterAlloc-beforeAlloc)
+				}
+				if afterHeap-beforeHeap > 128*1024 { // 128KB threshold for heap
+					t.Errorf("Potential memory leak: heap usage increased by %d bytes", afterHeap-beforeHeap)
+				}
 			}
 
 			// Run inference
