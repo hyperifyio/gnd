@@ -34,6 +34,16 @@ func NewSubLN(hiddenSize int, epsilon float32) *SubLN {
 // input: [batch_size, hidden_size] float32 matrix
 // Returns: normalized and scaled hidden states
 func (s *SubLN) Normalize(input [][]float32) [][]float32 {
+	if s == nil || s.gamma == nil {
+		// If the SubLN has been closed or is nil, return a copy of the input
+		output := make([][]float32, len(input))
+		for i := range output {
+			output[i] = make([]float32, len(input[i]))
+			copy(output[i], input[i])
+		}
+		return output
+	}
+
 	if len(input) == 0 {
 		return input
 	}
@@ -114,6 +124,11 @@ func (s *SubLN) GetGamma() []float32 {
 
 // Close releases all resources associated with the SubLN.
 // This includes cleaning up memory and setting fields to nil.
+// After Close is called, the SubLN instance should not be used.
 func (s *SubLN) Close() {
+	if s == nil {
+		return
+	}
 	s.gamma = nil
+	s.epsilon = 0
 }

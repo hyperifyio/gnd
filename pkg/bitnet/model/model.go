@@ -106,6 +106,9 @@ func (m *Model) LoadWeights(path string) error {
 	if m == nil {
 		return ErrWeightsNotLoaded
 	}
+	if m.fs == nil {
+		return ErrWeightsFileOpen
+	}
 
 	// Open the weights file
 	file, err := m.fs.Open(path)
@@ -127,16 +130,15 @@ func (m *Model) LoadWeights(path string) error {
 		return ErrWeightsFileRead
 	}
 
+	// Verify version first
+	if binary.LittleEndian.Uint32(header[4:8]) != 1 {
+		loggers.Printf(loggers.Debug, "[DEBUG] unsupported version: %d", binary.LittleEndian.Uint32(header[4:8]))
+		return ErrUnsupportedVersion
+	}
 	// Verify magic number
 	if binary.LittleEndian.Uint32(header[0:4]) != 0x424E4554 { // "BNET"
 		loggers.Printf(loggers.Debug, "[DEBUG] invalid magic number: %x", header[0:4])
 		return ErrInvalidWeightsFile
-	}
-
-	// Verify version
-	if binary.LittleEndian.Uint32(header[4:8]) != 1 {
-		loggers.Printf(loggers.Debug, "[DEBUG] unsupported version: %d", binary.LittleEndian.Uint32(header[4:8]))
-		return ErrUnsupportedVersion
 	}
 
 	// Pre-calculate sizes for all allocations
@@ -386,11 +388,13 @@ func (m *Model) Close() {
 	defer m.closeMu.Unlock()
 
 	// Signal all goroutines to stop
-	select {
-	case <-m.done:
-		// Channel already closed
-	default:
-		close(m.done)
+	if m.done != nil {
+		select {
+		case <-m.done:
+			// Channel already closed
+		default:
+			close(m.done)
+		}
 	}
 
 	// Clear weights

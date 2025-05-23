@@ -124,6 +124,9 @@ func (out *AttentionOutputProjection) Project(input *tensor.Tensor) (*tensor.Ten
 // Returns an error if the weights tensor has incorrect dimensions.
 // The weights must match the layer's hidden dimension for both input and output.
 func (out *AttentionOutputProjection) SetWeights(weights *tensor.Tensor) error {
+	if out.outProj == nil {
+		panic("projection is closed")
+	}
 	if weights == nil {
 		panic("weights cannot be nil")
 	}

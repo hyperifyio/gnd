@@ -32,6 +32,8 @@ type FFN struct {
 	upProj *tensor.Tensor
 	// Second layer weights (down-projection) [hidden_dim, intermediate_dim]
 	downProj *tensor.Tensor
+	// Whether the FFN has been closed
+	closed bool
 }
 
 // NewFFN creates a new feed-forward network instance.
@@ -71,6 +73,9 @@ func NewFFN(hiddenDim, intermediateDim int) *FFN {
 // The implementation uses BitLinear for efficient computation with
 // ternary weights and includes parallel processing for the activation.
 func (f *FFN) Forward(input *tensor.Tensor) (*tensor.Tensor, error) {
+	if f.closed {
+		panic("FFN has been closed")
+	}
 	if len(input.Shape()) != 3 {
 		return nil, ErrInvalidInputShape
 	}
@@ -194,9 +199,12 @@ func (f *FFN) applyReLU2(input *tensor.Tensor) (*tensor.Tensor, error) {
 //   - upWeights: Up-projection weights [intermediate_dim, hidden_dim]
 //   - downWeights: Down-projection weights [hidden_dim, intermediate_dim]
 //
-// Panics if either weight matrix has incorrect dimensions.
+// Panics if either weight matrix has incorrect dimensions or if the FFN has been closed.
 // The weights must match the network's hidden and intermediate dimensions.
 func (f *FFN) SetWeights(upWeights, downWeights *tensor.Tensor) {
+	if f.closed {
+		panic("FFN has been closed")
+	}
 	if upWeights.Shape()[0] != f.intermediateDim || upWeights.Shape()[1] != f.hiddenDim {
 		panic("invalid up-projection weights shape")
 	}
@@ -204,17 +212,32 @@ func (f *FFN) SetWeights(upWeights, downWeights *tensor.Tensor) {
 		panic("invalid down-projection weights shape")
 	}
 
-	f.upProj = upWeights
-	f.downProj = downWeights
-}
-
-// Close releases all resources associated with the feed-forward network.
-// This includes closing all tensors and cleaning up memory.
-func (f *FFN) Close() {
+	// Close existing weights if they exist
 	if f.upProj != nil {
 		f.upProj.Close()
 	}
 	if f.downProj != nil {
 		f.downProj.Close()
 	}
+
+	// Set new weights
+	f.upProj = upWeights
+	f.downProj = downWeights
+}
+
+// Close releases all resources associated with the FFN.
+// After Close is called, the FFN instance should not be used.
+func (f *FFN) Close() {
+	if f.closed {
+		return
+	}
+	if f.upProj != nil {
+		f.upProj.Close()
+		f.upProj = nil
+	}
+	if f.downProj != nil {
+		f.downProj.Close()
+		f.downProj = nil
+	}
+	f.closed = true
 }
