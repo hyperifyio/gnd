@@ -79,7 +79,7 @@ resolved.** No exceptions.
 
 To run tests, use the following command:
 
-    go test -v ./pkg/bitnet/...|cat
+    go test -timeout 30s -v ./pkg/bitnet/...|cat
 
 Review the output and fix any failing tests before proceeding.
 

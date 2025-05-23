@@ -48,7 +48,7 @@ ISSUE_NUMBER=$(./scripts/get-current-task-number.sh)
 
 # Generate test coverage report
 echo "Generating test coverage report..."
-go test ./pkg/bitnet/... -coverprofile=coverage.out
+go test -timeout 30s ./pkg/bitnet/... -coverprofile=coverage.out
 COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}')
 PREVIOUS_COVERAGE=$(get_previous_coverage)
 
