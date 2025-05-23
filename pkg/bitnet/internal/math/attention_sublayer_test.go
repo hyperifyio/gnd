@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
+	"github.com/stretchr/testify/require"
 )
 
 func TestAttentionSublayer(t *testing.T) {
@@ -627,6 +628,71 @@ func TestEqualShape(t *testing.T) {
 			if got != tt.want {
 				t.Errorf("equalShape() = %v, want %v", got, tt.want)
 			}
+		})
+	}
+}
+
+func TestAttentionSublayer_Close(t *testing.T) {
+	// Create a new attention sublayer
+	sublayer, err := NewAttentionSublayer(512, 8, 8) // 512 hidden dim, 8 heads, 8 kv heads
+	require.NoError(t, err)
+	require.NotNil(t, sublayer)
+
+	// Set some weights
+	qWeights := tensor.NewTensor(512, 512)
+	kWeights := tensor.NewTensor(512, 512)
+	vWeights := tensor.NewTensor(512, 512)
+	outWeights := tensor.NewTensor(512, 512)
+	err = sublayer.SetWeights(qWeights, kWeights, vWeights, outWeights)
+	require.NoError(t, err)
+
+	// Set gamma
+	gamma := tensor.NewTensor(512)
+	err = sublayer.SetGamma(gamma)
+	require.NoError(t, err)
+
+	// Close the sublayer
+	sublayer.Close()
+
+	// Verify that operations panic after close
+	operations := []struct {
+		name string
+		fn   func()
+	}{
+		{
+			name: "Forward",
+			fn: func() {
+				input := tensor.NewTensor(32, 16, 512)
+				sublayer.Forward(input)
+			},
+		},
+		{
+			name: "SetWeights",
+			fn: func() {
+				qWeights := tensor.NewTensor(512, 512)
+				kWeights := tensor.NewTensor(512, 512)
+				vWeights := tensor.NewTensor(512, 512)
+				outWeights := tensor.NewTensor(512, 512)
+				sublayer.SetWeights(qWeights, kWeights, vWeights, outWeights)
+			},
+		},
+		{
+			name: "SetGamma",
+			fn: func() {
+				gamma := tensor.NewTensor(512)
+				sublayer.SetGamma(gamma)
+			},
+		},
+	}
+
+	for _, op := range operations {
+		t.Run(op.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r == nil {
+					t.Errorf("%s did not panic after Close", op.name)
+				}
+			}()
+			op.fn()
 		})
 	}
 }

@@ -2196,3 +2196,197 @@ func TestInferInternal_DetokenizationAndInferenceError(t *testing.T) {
 		t.Error("infer() expected error from Infer, got nil")
 	}
 }
+
+func TestInfer_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		setup   func(*Model)
+		wantErr error
+	}{
+		{
+			name:  "nil weights",
+			input: "test",
+			setup: func(m *Model) {
+				m.weights = nil
+				tokenizer, err := internalmodel.NewTokenizer(testDataFS, "tokenizer")
+				if err != nil {
+					t.Fatalf("Failed to create tokenizer: %v", err)
+				}
+				m.tokenizer = tokenizer
+			},
+			wantErr: ErrTokenization, // matches actual implementation
+		},
+		{
+			name:  "nil tokenizer",
+			input: "test",
+			setup: func(m *Model) {
+				m.tokenizer = nil
+				m.weights = &ModelWeights{}
+			},
+			wantErr: ErrTokenizerNotLoaded,
+		},
+		{
+			name:  "empty input",
+			input: "",
+			setup: func(m *Model) {
+				m.weights = &ModelWeights{}
+				tokenizer, err := internalmodel.NewTokenizer(testDataFS, "tokenizer")
+				if err != nil {
+					t.Fatalf("Failed to create tokenizer: %v", err)
+				}
+				m.tokenizer = tokenizer
+			},
+			wantErr: ErrInvalidToken, // matches actual implementation
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			model := NewModel(nil, testDataFS)
+			if tt.setup != nil {
+				tt.setup(model)
+			}
+			_, err := model.infer(tt.input)
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("infer() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestLoadWeights_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name    string
+		path    string
+		setup   func(*Model)
+		wantErr error
+	}{
+		{
+			name: "nil fs",
+			path: "test.weights",
+			setup: func(m *Model) {
+				m.fs = nil
+			},
+			wantErr: ErrWeightsFileOpen,
+		},
+		{
+			name: "file not found",
+			path: "nonexistent.weights",
+			setup: func(m *Model) {
+				m.fs = testDataFS
+			},
+			wantErr: ErrWeightsFileOpen,
+		},
+		{
+			name: "invalid magic number",
+			path: "invalid_magic.weights",
+			setup: func(m *Model) {
+				m.fs = &testFS{
+					files: map[string][]byte{
+						"invalid_magic.weights": []byte{0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00},
+					},
+				}
+			},
+			wantErr: ErrInvalidWeightsFile,
+		},
+		{
+			name: "unsupported version",
+			path: "invalid_version.weights",
+			setup: func(m *Model) {
+				m.fs = &testFS{
+					files: map[string][]byte{
+						"invalid_version.weights": []byte{0x42, 0x4E, 0x45, 0x54, 0x02, 0x00, 0x00, 0x00},
+					},
+				}
+			},
+			wantErr: ErrUnsupportedVersion,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			model := NewModel(nil, testDataFS)
+			if tt.setup != nil {
+				tt.setup(model)
+			}
+			if model == nil {
+				return
+			}
+			err := model.LoadWeights(tt.path)
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("LoadWeights() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestClose_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(*Model)
+	}{
+		{
+			name: "nil model",
+			setup: func(m *Model) {
+				*m = Model{} // Zero out the model
+			},
+		},
+		{
+			name: "nil done channel",
+			setup: func(m *Model) {
+				m.done = nil
+			},
+		},
+		{
+			name: "already closed",
+			setup: func(m *Model) {
+				close(m.done)
+			},
+		},
+		{
+			name: "concurrent close",
+			setup: func(m *Model) {
+				// No special setup needed
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			model := NewModel(nil, testDataFS)
+			if tt.setup != nil {
+				tt.setup(model)
+			}
+			if model == nil {
+				// Skip the test if model is nil
+				return
+			}
+
+			if tt.name == "concurrent close" {
+				// Test concurrent close
+				var wg sync.WaitGroup
+				for i := 0; i < 10; i++ {
+					wg.Add(1)
+					go func() {
+						defer wg.Done()
+						model.Close()
+					}()
+				}
+				wg.Wait()
+			} else {
+				model.Close()
+			}
+
+			// Verify the model is in a closed state
+			if model.done != nil {
+				select {
+				case <-model.done:
+					// Channel is closed, which is expected
+				default:
+					t.Error("Close() did not close the done channel")
+				}
+			}
+		})
+	}
+}

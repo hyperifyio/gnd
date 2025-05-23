@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
+	"github.com/stretchr/testify/require"
 )
 
 func TestFFN(t *testing.T) {
@@ -347,6 +348,53 @@ func TestFFNPanics(t *testing.T) {
 				}
 			}()
 			ffn.Forward(input)
+		})
+	}
+}
+
+func TestFFN_Close(t *testing.T) {
+	// Create a new FFN
+	ffn := NewFFN(512, 2048) // 512 hidden dim, 2048 intermediate dim
+	require.NotNil(t, ffn)
+
+	// Set some weights
+	upWeights := tensor.NewTensor(2048, 512)
+	downWeights := tensor.NewTensor(512, 2048)
+	ffn.SetWeights(upWeights, downWeights)
+
+	// Close the FFN
+	ffn.Close()
+
+	// Verify that operations panic after close
+	operations := []struct {
+		name string
+		fn   func()
+	}{
+		{
+			name: "Forward",
+			fn: func() {
+				input := tensor.NewTensor(32, 16, 512)
+				ffn.Forward(input)
+			},
+		},
+		{
+			name: "SetWeights",
+			fn: func() {
+				upWeights := tensor.NewTensor(2048, 512)
+				downWeights := tensor.NewTensor(512, 2048)
+				ffn.SetWeights(upWeights, downWeights)
+			},
+		},
+	}
+
+	for _, op := range operations {
+		t.Run(op.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r == nil {
+					t.Errorf("%s did not panic after Close", op.name)
+				}
+			}()
+			op.fn()
 		})
 	}
 }

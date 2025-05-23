@@ -39,13 +39,13 @@ alwaysApply: false
    * Aggregates function-level data into file-level averages.
    * Sorts results for easy review.
 
-4. **Optional: HTML Report**
+4. **Inspect Line-Level Coverage**  
 
-   ```bash
-   go tool cover -html=coverage.out
-   ```
-
-   Launches a browser-based view with line-by-line coverage highlighting.
+- To list all lines without coverage, use:
+  ```bash
+  go tool cover -func=coverage.out | \
+    grep ': 0.0%' | cut -d: -f1,2 | sort
+  ```
 
 ## Best Practices
 

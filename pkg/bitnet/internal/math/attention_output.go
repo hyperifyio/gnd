@@ -139,5 +139,6 @@ func (out *AttentionOutputProjection) SetWeights(weights *tensor.Tensor) error {
 func (out *AttentionOutputProjection) Close() {
 	if out.outProj != nil {
 		out.outProj.Close()
+		out.outProj = nil
 	}
 }

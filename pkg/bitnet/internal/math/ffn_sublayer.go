@@ -212,5 +212,10 @@ func (f *FFNSublayer) SetGamma(gamma []float32) {
 func (f *FFNSublayer) Close() {
 	if f.ffn != nil {
 		f.ffn.Close()
+		f.ffn = nil
+	}
+	if f.subln != nil {
+		f.subln.Close()
+		f.subln = nil
 	}
 }

@@ -145,3 +145,215 @@ func TestBitLinearPanics(t *testing.T) {
 		})
 	}
 }
+
+func TestMax(t *testing.T) {
+	tests := []struct {
+		name     string
+		a        int32
+		b        int32
+		expected int32
+	}{
+		{
+			name:     "a greater than b",
+			a:        10,
+			b:        5,
+			expected: 10,
+		},
+		{
+			name:     "b greater than a",
+			a:        5,
+			b:        10,
+			expected: 10,
+		},
+		{
+			name:     "equal values",
+			a:        10,
+			b:        10,
+			expected: 10,
+		},
+		{
+			name:     "negative values",
+			a:        -10,
+			b:        -5,
+			expected: -5,
+		},
+		{
+			name:     "zero values",
+			a:        0,
+			b:        0,
+			expected: 0,
+		},
+		{
+			name:     "large values",
+			a:        1000000,
+			b:        999999,
+			expected: 1000000,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := max(tt.a, tt.b)
+			if got != tt.expected {
+				t.Errorf("max(%d, %d) = %d, want %d", tt.a, tt.b, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestBitLinear_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name        string
+		batchSize   int
+		inFeatures  int
+		outFeatures int
+		setup       func(*Tensor, *Tensor)
+		wantErr     bool
+	}{
+		{
+			name:        "zero batch size",
+			batchSize:   0,
+			inFeatures:  10,
+			outFeatures: 10,
+			wantErr:     true,
+		},
+		{
+			name:        "zero input features",
+			batchSize:   10,
+			inFeatures:  0,
+			outFeatures: 10,
+			wantErr:     true,
+		},
+		{
+			name:        "zero output features",
+			batchSize:   10,
+			inFeatures:  10,
+			outFeatures: 0,
+			wantErr:     true,
+		},
+		{
+			name:        "all ones input",
+			batchSize:   2,
+			inFeatures:  3,
+			outFeatures: 2,
+			setup: func(input, weights *Tensor) {
+				// Set all input values to 1
+				for i := 0; i < input.shape[0]; i++ {
+					for j := 0; j < input.shape[1]; j++ {
+						input.Set(1, i, j)
+					}
+				}
+				// Set all weights to 1
+				for i := 0; i < weights.shape[0]; i++ {
+					for j := 0; j < weights.shape[1]; j++ {
+						weights.Set(1, i, j)
+					}
+				}
+			},
+			wantErr: false,
+		},
+		{
+			name:        "all negative input",
+			batchSize:   2,
+			inFeatures:  3,
+			outFeatures: 2,
+			setup: func(input, weights *Tensor) {
+				// Set all input values to -1
+				for i := 0; i < input.shape[0]; i++ {
+					for j := 0; j < input.shape[1]; j++ {
+						input.Set(-1, i, j)
+					}
+				}
+				// Set all weights to -1
+				for i := 0; i < weights.shape[0]; i++ {
+					for j := 0; j < weights.shape[1]; j++ {
+						weights.Set(-1, i, j)
+					}
+				}
+			},
+			wantErr: false,
+		},
+		{
+			name:        "mixed values",
+			batchSize:   2,
+			inFeatures:  3,
+			outFeatures: 2,
+			setup: func(input, weights *Tensor) {
+				// Set alternating values
+				for i := 0; i < input.shape[0]; i++ {
+					for j := 0; j < input.shape[1]; j++ {
+						input.Set(int8((i+j)%3-1), i, j)
+					}
+				}
+				// Set alternating weights
+				for i := 0; i < weights.shape[0]; i++ {
+					for j := 0; j < weights.shape[1]; j++ {
+						weights.Set(int8((i+j)%3-1), i, j)
+					}
+				}
+			},
+			wantErr: false,
+		},
+		{
+			name:        "large dimensions",
+			batchSize:   100,
+			inFeatures:  100,
+			outFeatures: 100,
+			setup: func(input, weights *Tensor) {
+				// Set pattern of values
+				for i := 0; i < input.shape[0]; i++ {
+					for j := 0; j < input.shape[1]; j++ {
+						input.Set(int8((i+j)%3-1), i, j)
+					}
+				}
+				// Set pattern of weights
+				for i := 0; i < weights.shape[0]; i++ {
+					for j := 0; j < weights.shape[1]; j++ {
+						weights.Set(int8((i+j)%3-1), i, j)
+					}
+				}
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.wantErr {
+				defer func() {
+					if r := recover(); r == nil {
+						t.Error("BitLinear did not panic as expected")
+					}
+				}()
+			}
+
+			input := NewTensor(tt.batchSize, tt.inFeatures)
+			weights := NewTensor(tt.outFeatures, tt.inFeatures)
+
+			if tt.setup != nil {
+				tt.setup(input, weights)
+			}
+
+			output := BitLinear(input, weights)
+			if !tt.wantErr {
+				if output == nil {
+					t.Fatal("BitLinear returned nil")
+				}
+
+				// Verify output shape
+				shape := output.Shape()
+				if len(shape) != 2 || shape[0] != tt.batchSize || shape[1] != tt.outFeatures {
+					t.Errorf("Output shape = %v, want [%d %d]", shape, tt.batchSize, tt.outFeatures)
+				}
+
+				// Verify output values are within int8 range
+				data := output.Data()
+				for i, v := range data {
+					if v < -128 || v > 127 {
+						t.Errorf("Output[%d] = %d, out of int8 range", i, v)
+					}
+				}
+			}
+		})
+	}
+}

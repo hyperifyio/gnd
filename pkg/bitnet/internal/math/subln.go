@@ -111,3 +111,9 @@ func (s *SubLN) GetGamma() []float32 {
 	copy(gamma, s.gamma)
 	return gamma
 }
+
+// Close releases all resources associated with the SubLN.
+// This includes cleaning up memory and setting fields to nil.
+func (s *SubLN) Close() {
+	s.gamma = nil
+}

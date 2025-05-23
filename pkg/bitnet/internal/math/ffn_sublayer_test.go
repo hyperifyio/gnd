@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
+	"github.com/stretchr/testify/require"
 )
 
 func TestFFNSublayer(t *testing.T) {
@@ -307,4 +308,69 @@ func TestFFNSublayer_SingleTokenShape(t *testing.T) {
 	if len(output.Shape()) != 3 || output.Shape()[0] != batchSize || output.Shape()[1] != seqLen || output.Shape()[2] != hiddenDim {
 		t.Errorf("Output shape = %v, want [%d %d %d]", output.Shape(), batchSize, seqLen, hiddenDim)
 	}
+}
+
+func TestFFNSublayer_Close(t *testing.T) {
+	// Create a new FFN sublayer
+	sublayer := NewFFNSublayer(512, 2048) // 512 hidden dim, 2048 intermediate dim
+	require.NotNil(t, sublayer)
+
+	// Set some weights
+	upWeights := tensor.NewTensor(2048, 512)
+	downWeights := tensor.NewTensor(512, 2048)
+	sublayer.SetWeights(upWeights, downWeights)
+
+	// Set gamma
+	gamma := make([]float32, 512)
+	for i := 0; i < 512; i++ {
+		gamma[i] = 1.0
+	}
+	sublayer.SetGamma(gamma)
+
+	// Close the sublayer
+	sublayer.Close()
+
+	// Verify that operations panic after close
+	operations := []struct {
+		name string
+		fn   func()
+	}{
+		{
+			name: "Forward",
+			fn: func() {
+				input := tensor.NewTensor(32, 16, 512)
+				sublayer.Forward(input)
+			},
+		},
+		{
+			name: "SetWeights",
+			fn: func() {
+				upWeights := tensor.NewTensor(2048, 512)
+				downWeights := tensor.NewTensor(512, 2048)
+				sublayer.SetWeights(upWeights, downWeights)
+			},
+		},
+		{
+			name: "SetGamma",
+			fn: func() {
+				gamma := make([]float32, 512)
+				sublayer.SetGamma(gamma)
+			},
+		},
+	}
+
+	for _, op := range operations {
+		t.Run(op.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r == nil {
+					t.Errorf("%s did not panic after Close", op.name)
+				}
+			}()
+			op.fn()
+		})
+	}
+
+	// Verify that the weights and gamma are closed
+	require.Nil(t, sublayer.ffn, "ffn should be nil after Close")
+	require.Nil(t, sublayer.subln, "subln should be nil after Close")
 }

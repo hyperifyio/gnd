@@ -605,3 +605,66 @@ func TestBitNetTokenization(t *testing.T) {
 		})
 	}
 }
+
+func TestTokenizer_GetVocab(t *testing.T) {
+	// Create a test filesystem with a tokenizer file
+	testFS := &testFS{
+		files: map[string][]byte{
+			"tokenizer/vocab.json": []byte(`{
+				"hello": 1,
+				"world": 2
+			}`),
+			"tokenizer/merges.txt": []byte(""),
+			"tokenizer/special_tokens.json": []byte(`{
+				"<unk>": 0
+			}`),
+		},
+	}
+
+	// Create a new tokenizer
+	tokenizer, err := NewTokenizer(testFS, "tokenizer")
+	if err != nil {
+		t.Fatalf("Failed to create tokenizer: %v", err)
+	}
+
+	// Test GetVocab
+	vocab := tokenizer.GetVocab()
+	if vocab == nil {
+		t.Error("GetVocab returned nil")
+	}
+
+	// Verify vocabulary contents
+	expectedVocab := map[string]int{
+		"hello": 1,
+		"world": 2,
+	}
+	for k, v := range expectedVocab {
+		if vocab[k] != v {
+			t.Errorf("GetVocab: expected %s to map to %d, got %d", k, v, vocab[k])
+		}
+	}
+}
+
+func TestTokenizer_GetModelPath(t *testing.T) {
+	// Create a test filesystem with a tokenizer file
+	testFS := &testFS{
+		files: map[string][]byte{
+			"test_tokenizer/vocab.json":          []byte(`{}`),
+			"test_tokenizer/merges.txt":          []byte(""),
+			"test_tokenizer/special_tokens.json": []byte(`{}`),
+		},
+	}
+
+	// Create a new tokenizer with a specific path
+	expectedPath := "test_tokenizer"
+	tokenizer, err := NewTokenizer(testFS, expectedPath)
+	if err != nil {
+		t.Fatalf("Failed to create tokenizer: %v", err)
+	}
+
+	// Test GetModelPath
+	path := tokenizer.GetModelPath()
+	if path != expectedPath {
+		t.Errorf("GetModelPath: expected %s, got %s", expectedPath, path)
+	}
+}

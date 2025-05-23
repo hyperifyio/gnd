@@ -1104,3 +1104,290 @@ func TestNewTensorFromData(t *testing.T) {
 		})
 	}
 }
+
+func TestDebugLog(t *testing.T) {
+	// Test that DebugLog doesn't panic
+	DebugLog("Test debug message")
+	DebugLog("Test debug message with args: %d, %s", 42, "test")
+}
+
+func TestTensor_setRaw(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   int8
+		indices []int
+		want    int8
+		wantErr bool
+	}{
+		{
+			name:    "set raw value within range",
+			value:   42,
+			indices: []int{0, 0},
+			want:    42,
+			wantErr: false,
+		},
+		{
+			name:    "set raw value at max int8",
+			value:   127,
+			indices: []int{0, 1},
+			want:    127,
+			wantErr: false,
+		},
+		{
+			name:    "set raw value at min int8",
+			value:   -128,
+			indices: []int{1, 0},
+			want:    -128,
+			wantErr: false,
+		},
+		{
+			name:    "invalid indices",
+			value:   1,
+			indices: []int{1},
+			want:    0,
+			wantErr: true,
+		},
+		{
+			name:    "out of bounds",
+			value:   1,
+			indices: []int{2, 0},
+			want:    0,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tensor := NewTensor(2, 2)
+			defer func() {
+				if r := recover(); r != nil && !tt.wantErr {
+					t.Errorf("setRaw() panic = %v, wantErr %v", r, tt.wantErr)
+				}
+			}()
+
+			tensor.setRaw(tt.value, tt.indices...)
+			if !tt.wantErr {
+				got := tensor.Get(tt.indices...)
+				if got != tt.want {
+					t.Errorf("setRaw() value = %v, want %v", got, tt.want)
+				}
+			}
+		})
+	}
+
+	// Test setRaw after Close
+	t.Run("setRaw after Close", func(t *testing.T) {
+		tensor := NewTensor(2, 2)
+		tensor.Close()
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("setRaw did not panic after Close")
+			}
+		}()
+		tensor.setRaw(1, 0, 0)
+	})
+}
+
+func TestTensor_Reshape_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name         string
+		initialShape []int
+		newShape     []int
+		setup        func(*Tensor)
+		wantErr      bool
+	}{
+		{
+			name:         "reshape with non-contiguous data",
+			initialShape: []int{2, 3},
+			newShape:     []int{3, 2},
+			setup: func(t *Tensor) {
+				// Set values in non-sequential order
+				t.Set(1, 0, 0)
+				t.Set(2, 1, 2)
+				t.Set(3, 0, 1)
+			},
+			wantErr: false,
+		},
+		{
+			name:         "reshape with zero values",
+			initialShape: []int{2, 2},
+			newShape:     []int{4, 1},
+			setup: func(t *Tensor) {
+				// Set all values to zero
+				for i := 0; i < 2; i++ {
+					for j := 0; j < 2; j++ {
+						t.Set(0, i, j)
+					}
+				}
+			},
+			wantErr: false,
+		},
+		{
+			name:         "reshape with negative values",
+			initialShape: []int{2, 2},
+			newShape:     []int{4, 1},
+			setup: func(t *Tensor) {
+				// Set negative values
+				t.Set(-1, 0, 0)
+				t.Set(-2, 0, 1)
+				t.Set(-3, 1, 0)
+				t.Set(-4, 1, 1)
+			},
+			wantErr: false,
+		},
+		{
+			name:         "reshape with large dimensions",
+			initialShape: []int{100, 100},
+			newShape:     []int{1000, 10},
+			setup: func(t *Tensor) {
+				// Set pattern of values
+				for i := 0; i < 100; i++ {
+					for j := 0; j < 100; j++ {
+						t.Set(int8((i+j)%3-1), i, j)
+					}
+				}
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tensor := NewTensor(tt.initialShape...)
+			if tensor == nil {
+				t.Fatal("NewTensor returned nil")
+			}
+
+			tt.setup(tensor)
+
+			if tt.wantErr {
+				defer func() {
+					if r := recover(); r == nil {
+						t.Error("Reshape did not panic as expected")
+					}
+				}()
+			}
+
+			reshaped := tensor.Reshape(tt.newShape...)
+			if !tt.wantErr {
+				if reshaped == nil {
+					t.Fatal("Reshape returned nil")
+				}
+
+				// Verify shape
+				gotShape := reshaped.Shape()
+				if len(gotShape) != len(tt.newShape) {
+					t.Errorf("Shape length = %v, want %v", len(gotShape), len(tt.newShape))
+				}
+				for i := range gotShape {
+					if gotShape[i] != tt.newShape[i] {
+						t.Errorf("Shape[%d] = %v, want %v", i, gotShape[i], tt.newShape[i])
+					}
+				}
+
+				// Verify data integrity
+				originalData := tensor.Data()
+				reshapedData := reshaped.Data()
+				if len(originalData) != len(reshapedData) {
+					t.Errorf("Data length = %v, want %v", len(reshapedData), len(originalData))
+				}
+				for i := range originalData {
+					if originalData[i] != reshapedData[i] {
+						t.Errorf("Data[%d] = %v, want %v", i, reshapedData[i], originalData[i])
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestTensor_SetTernary_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   int8
+		indices []int
+		want    int8
+		wantErr bool
+	}{
+		{
+			name:    "set ternary value at boundary",
+			value:   1,
+			indices: []int{0, 0},
+			want:    1,
+			wantErr: false,
+		},
+		{
+			name:    "set ternary value above boundary",
+			value:   2,
+			indices: []int{0, 0},
+			want:    1,
+			wantErr: false,
+		},
+		{
+			name:    "set ternary value below boundary",
+			value:   -2,
+			indices: []int{0, 0},
+			want:    -1,
+			wantErr: false,
+		},
+		{
+			name:    "set ternary value at max int8",
+			value:   127,
+			indices: []int{0, 0},
+			want:    1,
+			wantErr: false,
+		},
+		{
+			name:    "set ternary value at min int8",
+			value:   -128,
+			indices: []int{0, 0},
+			want:    -1,
+			wantErr: false,
+		},
+		{
+			name:    "set ternary value with invalid indices",
+			value:   1,
+			indices: []int{1},
+			want:    0,
+			wantErr: true,
+		},
+		{
+			name:    "set ternary value out of bounds",
+			value:   1,
+			indices: []int{2, 0},
+			want:    0,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tensor := NewTensor(2, 2)
+			defer func() {
+				if r := recover(); r != nil && !tt.wantErr {
+					t.Errorf("SetTernary() panic = %v, wantErr %v", r, tt.wantErr)
+				}
+			}()
+
+			tensor.SetTernary(tt.value, tt.indices...)
+			if !tt.wantErr {
+				got := tensor.Get(tt.indices...)
+				if got != tt.want {
+					t.Errorf("SetTernary() value = %v, want %v", got, tt.want)
+				}
+			}
+		})
+	}
+
+	// Test SetTernary after Close
+	t.Run("SetTernary after Close", func(t *testing.T) {
+		tensor := NewTensor(2, 2)
+		tensor.Close()
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("SetTernary did not panic after Close")
+			}
+		}()
+		tensor.SetTernary(1, 0, 0)
+	})
+}

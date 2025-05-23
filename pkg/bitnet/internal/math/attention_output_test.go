@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
+	"github.com/stretchr/testify/require"
 )
 
 func TestAttentionOutputProjection(t *testing.T) {
@@ -190,4 +191,52 @@ func TestAttentionOutputProjectionPanics(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAttentionOutputProjection_Close(t *testing.T) {
+	// Create a new attention output projection
+	proj := NewAttentionOutputProjection(512, 8)
+	require.NotNil(t, proj)
+
+	// Set some weights
+	weights := tensor.NewTensor(512, 512)
+	require.NoError(t, proj.SetWeights(weights))
+
+	// Close the projection
+	proj.Close()
+
+	// Verify that operations panic after close
+	operations := []struct {
+		name string
+		fn   func()
+	}{
+		{
+			name: "Project",
+			fn: func() {
+				input := tensor.NewTensor(32, 16, 512)
+				proj.Project(input)
+			},
+		},
+		{
+			name: "SetWeights",
+			fn: func() {
+				weights := tensor.NewTensor(512, 512)
+				proj.SetWeights(weights)
+			},
+		},
+	}
+
+	for _, op := range operations {
+		t.Run(op.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r == nil {
+					t.Errorf("%s did not panic after Close", op.name)
+				}
+			}()
+			op.fn()
+		})
+	}
+
+	// Verify that the weights are closed
+	require.Nil(t, proj.outProj, "outProj should be nil after Close")
 }

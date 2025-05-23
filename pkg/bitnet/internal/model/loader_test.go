@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 type testFS struct {
@@ -271,4 +273,66 @@ func TestLoadModelChunkErrors(t *testing.T) {
 	if err != ErrReaderNil {
 		t.Errorf("expected ErrReaderNil, got %v", err)
 	}
+}
+
+func TestModelLoader_GetModelPath(t *testing.T) {
+	// Create a test GGUF file
+	header := &GGUFHeader{
+		Magic:       0x46554747, // GGUF magic number
+		Version:     1,
+		TensorCount: 10,
+		KVCount:     5,
+	}
+
+	var buf bytes.Buffer
+	if err := binary.Write(&buf, binary.LittleEndian, header); err != nil {
+		t.Fatal(err)
+	}
+
+	testFS := &testFS{
+		files: map[string][]byte{
+			"test_model.bin": buf.Bytes(),
+		},
+	}
+
+	loader, err := NewModelLoader(testFS, "test_model.bin")
+	require.NoError(t, err)
+	require.NotNil(t, loader)
+
+	// Test getting model path
+	path := loader.GetModelPath()
+	require.Equal(t, "test_model.bin", path, "GetModelPath should return the loaded model path")
+}
+
+func TestModelLoader_GetHeader(t *testing.T) {
+	// Create a test GGUF file
+	header := &GGUFHeader{
+		Magic:       0x46554747, // GGUF magic number
+		Version:     1,
+		TensorCount: 10,
+		KVCount:     5,
+	}
+
+	var buf bytes.Buffer
+	if err := binary.Write(&buf, binary.LittleEndian, header); err != nil {
+		t.Fatal(err)
+	}
+
+	testFS := &testFS{
+		files: map[string][]byte{
+			"test_model.bin": buf.Bytes(),
+		},
+	}
+
+	loader, err := NewModelLoader(testFS, "test_model.bin")
+	require.NoError(t, err)
+	require.NotNil(t, loader)
+
+	// Test getting header
+	loadedHeader := loader.GetHeader()
+	require.NotNil(t, loadedHeader, "GetHeader should return non-nil header after loading")
+	require.Equal(t, uint32(0x46554747), loadedHeader.Magic, "Header magic number should match")
+	require.Equal(t, uint32(1), loadedHeader.Version, "Header version should match")
+	require.Equal(t, uint64(10), loadedHeader.TensorCount, "Header tensor count should match")
+	require.Equal(t, uint64(5), loadedHeader.KVCount, "Header KV count should match")
 }
