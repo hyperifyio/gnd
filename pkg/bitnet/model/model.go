@@ -7,11 +7,13 @@ package model
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"runtime"
 	"sync"
 
+	"github.com/hyperifyio/gnd/pkg/bitnet/internal/math"
 	"github.com/hyperifyio/gnd/pkg/bitnet/internal/model"
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
 	"github.com/hyperifyio/gnd/pkg/loggers"
@@ -276,23 +278,123 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 	}
 
 	// Process through transformer blocks (stacking logic)
-	for range m.weights.Blocks {
-		// For test speed, we can skip real math and just pass through the tensor
-		// In production, this would call attention/ffn, but for test, just copy
-		// (If you want to test real math, remove the next 2 lines)
-		continue
-		// ---
-		// Real implementation (uncomment for production):
-		// attn, err := bitnetmath.NewAttentionSublayer(m.config.HiddenSize, m.config.NumHeads, m.config.NumKVHeads)
-		// ... (set weights, run forward, etc.)
-		// ffn := bitnetmath.NewFFNSublayer(m.config.HiddenSize, m.config.IntermediateSize)
-		// ... (set weights, run forward, etc.)
+	for _, block := range m.weights.Blocks {
+		// Create attention sublayer
+		attn, err := math.NewAttentionSublayer(m.config.HiddenSize, m.config.NumHeads, m.config.NumKVHeads)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create attention sublayer: %w", err)
+		}
+		defer attn.Close()
+
+		// Convert weights to tensors
+		h := m.config.HiddenSize
+		qTensor := tensor.NewTensor(h, h)
+		kTensor := tensor.NewTensor(h, h)
+		vTensor := tensor.NewTensor(h, h)
+		outTensor := tensor.NewTensor(h, h)
+
+		// Copy weights into projection matrices
+		for i := 0; i < h; i++ {
+			for j := 0; j < h; j++ {
+				// Q projection
+				qTensor.Set(block.QKVProj[i*h+j], i, j)
+				// K projection
+				kTensor.Set(block.QKVProj[h*h+i*h+j], i, j)
+				// V projection
+				vTensor.Set(block.QKVProj[2*h*h+i*h+j], i, j)
+				// Output projection
+				outTensor.Set(block.OutProj[i*h+j], i, j)
+			}
+		}
+
+		// Set attention weights
+		if err := attn.SetWeights(qTensor, kTensor, vTensor, outTensor); err != nil {
+			return nil, fmt.Errorf("failed to set attention weights: %w", err)
+		}
+
+		// Convert attention norm to float32 and create tensor
+		attnGammaTensor := tensor.NewTensor(h)
+		for i := 0; i < h; i++ {
+			attnGammaTensor.Set(int8(block.AttnNorm[i]), i)
+		}
+		if err := attn.SetGamma(attnGammaTensor); err != nil {
+			return nil, fmt.Errorf("failed to set attention gamma: %w", err)
+		}
+
+		// Create FFN sublayer
+		ffn := math.NewFFNSublayer(m.config.HiddenSize, m.config.IntermediateSize)
+		defer ffn.Close()
+
+		// Convert FFN weights to tensors
+		ffnUpTensor := tensor.NewTensor(m.config.IntermediateSize, m.config.HiddenSize)
+		ffnDownTensor := tensor.NewTensor(m.config.HiddenSize, m.config.IntermediateSize)
+
+		// Copy FFN weights
+		for i := 0; i < m.config.IntermediateSize; i++ {
+			for j := 0; j < m.config.HiddenSize; j++ {
+				ffnUpTensor.Set(block.FFNUp[i*m.config.HiddenSize+j], i, j)
+			}
+		}
+		for i := 0; i < m.config.HiddenSize; i++ {
+			for j := 0; j < m.config.IntermediateSize; j++ {
+				ffnDownTensor.Set(block.FFNDown[i*m.config.IntermediateSize+j], i, j)
+			}
+		}
+
+		// Set FFN weights
+		ffn.SetWeights(ffnUpTensor, ffnDownTensor)
+
+		// Convert FFN norm to float32
+		ffnGamma := make([]float32, m.config.HiddenSize)
+		for i := 0; i < m.config.HiddenSize; i++ {
+			ffnGamma[i] = float32(block.FFNNorm[i])
+		}
+		ffn.SetGamma(ffnGamma)
+
+		// Apply attention
+		hiddenStatesTensor, err = attn.Forward(hiddenStatesTensor)
+		if err != nil {
+			return nil, fmt.Errorf("attention forward pass failed: %w", err)
+		}
+
+		// Apply FFN
+		hiddenStatesTensor, err = ffn.Forward(hiddenStatesTensor)
+		if err != nil {
+			return nil, fmt.Errorf("FFN forward pass failed: %w", err)
+		}
 	}
 
-	// Output: shape should be [1, seq_len, hidden_size]
+	// Apply final normalization
+	finalNorm := math.NewLayerNorm(m.config.HiddenSize)
+	defer finalNorm.Close()
+
+	// Convert final norm weights to tensor
+	finalNormTensor := tensor.NewTensor(m.config.HiddenSize)
+	for i := 0; i < m.config.HiddenSize; i++ {
+		finalNormTensor.Set(m.weights.FinalNorm[i], i)
+	}
+
+	// Set final norm gamma
+	finalNormGammaTensor := tensor.NewTensor(m.config.HiddenSize)
+	finalNormGammaData := convertInt8ToFloat32(finalNormTensor.Data())
+	for i := 0; i < m.config.HiddenSize; i++ {
+		finalNormGammaTensor.Set(int8(finalNormGammaData[i]), i)
+	}
+	if err := finalNorm.SetGamma(finalNormGammaTensor); err != nil {
+		return nil, fmt.Errorf("failed to set final norm gamma: %w", err)
+	}
+
+	// Apply final normalization
+	hiddenStatesTensor, err = finalNorm.Forward(hiddenStatesTensor)
+	if err != nil {
+		return nil, fmt.Errorf("final norm forward pass failed: %w", err)
+	}
+
+	// For now, just return input tokens as output
+	// TODO: Implement proper output projection and token prediction
 	outputTokens := make([]int, len(tokens))
 	for i := 0; i < len(tokens); i++ {
-		outputTokens[i] = tokens[i] // For test, just echo input
+		outputTokens[i] = tokens[i]
 	}
 	return outputTokens, nil
 }

@@ -240,10 +240,11 @@ func TestNewModel(t *testing.T) {
 func TestModelEmbedTokens(t *testing.T) {
 	config := model.NewConfig()
 	config.VocabSize = 10
-	config.HiddenSize = 4
-	config.NumLayers = 2 // keep small for test
+	config.HiddenSize = 16 // must be >= numHeads * 8 for valid head dim
+	config.NumLayers = 2   // keep small for test
 	config.IntermediateSize = 8
-	m := model.NewModel(config, nil)
+	config.NumHeads = 2   // Add number of attention heads
+	config.NumKVHeads = 2 // Add number of KV heads
 
 	// Calculate sizes
 	embeddingSize := config.VocabSize * config.HiddenSize
@@ -309,13 +310,6 @@ func TestModelEmbedTokens(t *testing.T) {
 			}(),
 		},
 	}
-	m = model.NewModel(config, mockFS)
-
-	// Load weights
-	err := m.LoadWeights("test_weights.bin")
-	if err != nil {
-		t.Fatalf("LoadWeights() error = %v", err)
-	}
 
 	tests := []struct {
 		name    string
@@ -338,6 +332,16 @@ func TestModelEmbedTokens(t *testing.T) {
 		tt := tt // capture range variable
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel() // Run subtests in parallel
+
+			// Create a new model instance for each subtest
+			m := model.NewModel(config, mockFS)
+
+			// Load weights
+			err := m.LoadWeights("test_weights.bin")
+			if err != nil {
+				t.Fatalf("LoadWeights() error = %v", err)
+			}
+
 			got, err := m.Infer(tt.tokens)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Infer() error = %v, wantErr %v", err, tt.wantErr)
@@ -346,6 +350,9 @@ func TestModelEmbedTokens(t *testing.T) {
 			if !tt.wantErr && len(got) != len(tt.tokens) {
 				t.Errorf("Infer() returned %d tokens, want %d", len(got), len(tt.tokens))
 			}
+
+			// Clean up
+			m.Close()
 		})
 	}
 }
