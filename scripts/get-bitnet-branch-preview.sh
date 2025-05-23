@@ -40,6 +40,7 @@ exit 0
 Your sole objective is to:
 
 1. **Preview all changes** in the issue branch relative to `bitnet`: `git diff bitnet`, and `git diff --cached` and `git diff`
+   - You should also preview only the implementation changes: `./scripts/bitnet-get-current-implementation-changes.sh`
 2. **Review the goal** of issue #TASK# (use `./scripts/get-current-task.sh|cat` and/or `gh` to view info).
 3. **Verify** that every change shown by `git diff bitnet` is fully aligned with the stated goal of issue #TASK#.
 4. **Ensure** no unrelated files or off-task modifications are included.
