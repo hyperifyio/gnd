@@ -5,7 +5,7 @@
 package math
 
 import (
-	"fmt"
+	"errors"
 	"math"
 	"runtime"
 	"sync"
@@ -15,11 +15,11 @@ import (
 
 var (
 	// ErrInvalidHiddenDim is returned when the hidden dimension is invalid
-	ErrInvalidHiddenDim = fmt.Errorf("invalid hidden dimension")
+	ErrInvalidHiddenDim = errors.New("invalid hidden dimension")
 	// ErrNilTensor is returned when a nil tensor is provided
-	ErrNilTensor = fmt.Errorf("nil tensor provided")
+	ErrNilTensor = errors.New("nil tensor provided")
 	// ErrInvalidShape is returned when a tensor has an invalid shape
-	ErrInvalidShape = fmt.Errorf("invalid tensor shape")
+	ErrInvalidShape = errors.New("invalid tensor shape")
 )
 
 // LayerNorm implements layer normalization for BitNet.
