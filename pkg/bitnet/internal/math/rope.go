@@ -18,6 +18,14 @@ type RoPE struct {
 
 // NewRoPE creates a new RoPE instance with the given parameters
 func NewRoPE(base float64, maxSeqLen, dim int) *RoPE {
+	// Validate input parameters
+	if maxSeqLen <= 0 {
+		panic("maxSeqLen must be positive")
+	}
+	if dim <= 0 {
+		panic("dim must be positive")
+	}
+
 	rope := &RoPE{
 		base:      base,
 		maxSeqLen: maxSeqLen,
@@ -72,8 +80,15 @@ func (r *RoPE) ApplyRoPE(vector []float32, position int) []float32 {
 
 // ApplyRoPEBatch applies rotary positional encoding to a batch of vectors
 func (r *RoPE) ApplyRoPEBatch(vectors [][]float32, startPos int) [][]float32 {
+	if startPos < 0 || startPos+len(vectors) > r.maxSeqLen {
+		panic("startPos or batch size exceeds maximum sequence length")
+	}
+
 	result := make([][]float32, len(vectors))
 	for i, vector := range vectors {
+		if len(vector) != r.dim {
+			panic("vector dimension does not match RoPE dimension")
+		}
 		result[i] = r.ApplyRoPE(vector, startPos+i)
 	}
 	return result

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
+	"github.com/stretchr/testify/require"
 )
 
 func TestAttentionOutputProjection(t *testing.T) {
@@ -106,7 +107,11 @@ func TestAttentionOutputProjection(t *testing.T) {
 			out.SetWeights(weights)
 
 			// Project input
-			output := out.Project(input)
+			output, err := out.Project(input)
+			if err != nil {
+				t.Errorf("Project failed: %v", err)
+				return
+			}
 
 			// Verify output shape
 			if len(output.Shape()) != 3 {
@@ -140,43 +145,98 @@ func TestAttentionOutputProjection(t *testing.T) {
 
 func TestAttentionOutputProjectionPanics(t *testing.T) {
 	tests := []struct {
-		name      string
-		hiddenDim int
-		numHeads  int
-		input     *tensor.Tensor
-		weights   *tensor.Tensor
+		name        string
+		hiddenDim   int
+		numHeads    int
+		input       *tensor.Tensor
+		weights     *tensor.Tensor
+		shouldPanic bool
 	}{
 		{
-			name:      "invalid input shape",
-			hiddenDim: 8,
-			numHeads:  2,
-			input:     tensor.NewTensor(2, 2),
-			weights:   tensor.NewTensor(8, 8),
+			name:        "invalid input shape",
+			hiddenDim:   8,
+			numHeads:    2,
+			input:       tensor.NewTensor(2, 2),
+			weights:     tensor.NewTensor(8, 8),
+			shouldPanic: false,
 		},
 		{
-			name:      "invalid weights shape",
-			hiddenDim: 8,
-			numHeads:  2,
-			input:     tensor.NewTensor(1, 2, 8),
-			weights:   tensor.NewTensor(4, 4),
+			name:        "invalid weights shape",
+			hiddenDim:   8,
+			numHeads:    2,
+			input:       tensor.NewTensor(1, 2, 8),
+			weights:     tensor.NewTensor(8, 4),
+			shouldPanic: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			defer func() {
-				if r := recover(); r == nil {
-					t.Error("expected panic")
-				}
-			}()
-
 			out := NewAttentionOutputProjection(tt.hiddenDim, tt.numHeads)
 			if tt.weights != nil {
+				if tt.shouldPanic {
+					defer func() {
+						if r := recover(); r == nil {
+							t.Error("expected panic for invalid weights shape")
+						}
+					}()
+				}
 				out.SetWeights(tt.weights)
 			}
 			if tt.input != nil {
-				out.Project(tt.input)
+				_, err := out.Project(tt.input)
+				if err == nil && !tt.shouldPanic {
+					t.Error("expected error for invalid input shape")
+				}
 			}
 		})
 	}
+}
+
+func TestAttentionOutputProjection_Close(t *testing.T) {
+	// Create a new attention output projection
+	proj := NewAttentionOutputProjection(512, 8)
+	require.NotNil(t, proj)
+
+	// Set some weights
+	weights := tensor.NewTensor(512, 512)
+	require.NoError(t, proj.SetWeights(weights))
+
+	// Close the projection
+	proj.Close()
+
+	// Verify that operations panic after close
+	operations := []struct {
+		name string
+		fn   func()
+	}{
+		{
+			name: "Project",
+			fn: func() {
+				input := tensor.NewTensor(32, 16, 512)
+				proj.Project(input)
+			},
+		},
+		{
+			name: "SetWeights",
+			fn: func() {
+				weights := tensor.NewTensor(512, 512)
+				proj.SetWeights(weights)
+			},
+		},
+	}
+
+	for _, op := range operations {
+		t.Run(op.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r == nil {
+					t.Errorf("%s did not panic after Close", op.name)
+				}
+			}()
+			op.fn()
+		})
+	}
+
+	// Verify that the weights are closed
+	require.Nil(t, proj.outProj, "outProj should be nil after Close")
 }

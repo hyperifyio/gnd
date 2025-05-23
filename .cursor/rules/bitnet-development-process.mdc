@@ -57,22 +57,22 @@ This rule describes the overall development process for the BitNet project, incl
 1. **Test Automation**
    ```bash
    # Run all tests
-   go test ./pkg/bitnet/... -v
+   go test -timeout 30s ./pkg/bitnet/... -v
    
    # Run benchmarks
    ./scripts/run_benchmarks.sh
    
    # Check coverage
-   go test ./pkg/bitnet/... -coverprofile=coverage.out
+   go test -timeout 30s ./pkg/bitnet/... -coverprofile=coverage.out
    ```
 
 2. **Performance Checks**
    ```bash
    # Run memory profiling
-   go test -bench=. -benchmem -memprofile=mem.prof ./pkg/bitnet/...
+   go test -timeout 30s -bench=. -benchmem -memprofile=mem.prof ./pkg/bitnet/...
    
    # Run CPU profiling
-   go test -bench=. -cpuprofile=cpu.prof ./pkg/bitnet/...
+   go test -timeout 30s -bench=. -cpuprofile=cpu.prof ./pkg/bitnet/...
    ```
 
 ## Related Files

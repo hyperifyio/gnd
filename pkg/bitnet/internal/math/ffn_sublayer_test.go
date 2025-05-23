@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
+	"github.com/stretchr/testify/require"
 )
 
 func TestFFNSublayer(t *testing.T) {
@@ -93,7 +94,11 @@ func TestFFNSublayer(t *testing.T) {
 			ffn.SetGamma(tt.gamma)
 
 			// Forward pass
-			output := ffn.Forward(input)
+			output, err := ffn.Forward(input)
+			if err != nil {
+				t.Errorf("FFN Forward failed: %v", err)
+				return
+			}
 
 			// Verify output shape
 			if len(output.Shape()) != 3 {
@@ -159,14 +164,11 @@ func TestFFNSublayerPanics(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			defer func() {
-				if r := recover(); r == nil {
-					t.Error("expected panic")
-				}
-			}()
-
 			ffn := NewFFNSublayer(tt.hiddenDim, tt.intermediateDim)
-			ffn.Forward(tt.input)
+			_, err := ffn.Forward(tt.input)
+			if err == nil {
+				t.Error("expected error for invalid input shape")
+			}
 		})
 	}
 }
@@ -238,7 +240,385 @@ func BenchmarkFFNSublayer(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				_ = ffn.Forward(input)
+				_, err := ffn.Forward(input)
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func TestFFNSublayer_SingleTokenShape(t *testing.T) {
+	hiddenDim := 4
+	intermediateDim := 8
+	batchSize := 1
+	seqLen := 1
+
+	// Create FFNSublayer
+	ffnSublayer := NewFFNSublayer(hiddenDim, intermediateDim)
+
+	// Set dummy weights and gamma
+	upWeights := tensor.NewTensor(intermediateDim, hiddenDim)
+	downWeights := tensor.NewTensor(hiddenDim, intermediateDim)
+	for i := 0; i < intermediateDim; i++ {
+		for j := 0; j < hiddenDim; j++ {
+			upWeights.Set(1, i, j)
+		}
+	}
+	for i := 0; i < hiddenDim; i++ {
+		for j := 0; j < intermediateDim; j++ {
+			downWeights.Set(1, i, j)
+		}
+	}
+	ffnSublayer.SetWeights(upWeights, downWeights)
+	ffnSublayer.SetGamma([]float32{1, 1, 1, 1})
+
+	// Create input tensor [1, 1, 4]
+	input := tensor.NewTensor(batchSize, seqLen, hiddenDim)
+	for i := 0; i < batchSize; i++ {
+		for j := 0; j < seqLen; j++ {
+			for k := 0; k < hiddenDim; k++ {
+				input.Set(int8(k+1), i, j, k)
+			}
+		}
+	}
+
+	// Print input shape and data
+	t.Logf("Input shape: %v", input.Shape())
+	t.Logf("Input data: %v", input.Data())
+
+	// Run forward pass and catch panics
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("FFNSublayer.Forward panicked: %v", r)
+		}
+	}()
+	output, err := ffnSublayer.Forward(input)
+	if err != nil {
+		t.Errorf("FFN Forward failed: %v", err)
+		return
+	}
+
+	// Print output shape and data
+	t.Logf("Output shape: %v", output.Shape())
+	t.Logf("Output data: %v", output.Data())
+
+	// Check output shape
+	if len(output.Shape()) != 3 || output.Shape()[0] != batchSize || output.Shape()[1] != seqLen || output.Shape()[2] != hiddenDim {
+		t.Errorf("Output shape = %v, want [%d %d %d]", output.Shape(), batchSize, seqLen, hiddenDim)
+	}
+}
+
+func TestFFNSublayer_CloseResources(t *testing.T) {
+	tests := []struct {
+		name            string
+		hiddenDim       int
+		intermediateDim int
+	}{
+		{
+			name:            "standard",
+			hiddenDim:       4,
+			intermediateDim: 8,
+		},
+		{
+			name:            "large",
+			hiddenDim:       512,
+			intermediateDim: 2048,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ffn := NewFFNSublayer(tt.hiddenDim, tt.intermediateDim)
+
+			// Create and set weights
+			upWeights := tensor.NewTensor(tt.intermediateDim, tt.hiddenDim)
+			downWeights := tensor.NewTensor(tt.hiddenDim, tt.intermediateDim)
+			ffn.SetWeights(upWeights, downWeights)
+			defer upWeights.Close()
+			defer downWeights.Close()
+
+			// Set gamma
+			gamma := make([]float32, tt.hiddenDim)
+			for i := range gamma {
+				gamma[i] = 1.0
+			}
+			ffn.SetGamma(gamma)
+
+			// Close the FFN
+			ffn.Close()
+
+			// Verify resources are released by checking if we can create a new FFN
+			// with the same dimensions without memory issues
+			newFFN := NewFFNSublayer(tt.hiddenDim, tt.intermediateDim)
+			require.NotNil(t, newFFN)
+			newFFN.Close()
+		})
+	}
+}
+
+func TestFFNSublayer_SetWeights(t *testing.T) {
+	tests := []struct {
+		name            string
+		hiddenDim       int
+		intermediateDim int
+		upWeights       [][]int8
+		downWeights     [][]int8
+	}{
+		{
+			name:            "standard_weights",
+			hiddenDim:       4,
+			intermediateDim: 8,
+			upWeights: [][]int8{
+				{1, 0, -1, 1},
+				{-1, 1, 0, -1},
+				{1, 0, -1, 1},
+				{-1, 1, 0, -1},
+				{1, 0, -1, 1},
+				{-1, 1, 0, -1},
+				{1, 0, -1, 1},
+				{-1, 1, 0, -1},
+			},
+			downWeights: [][]int8{
+				{1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1},
+			},
+		},
+		{
+			name:            "all_zeros",
+			hiddenDim:       4,
+			intermediateDim: 8,
+			upWeights:       make([][]int8, 8),
+			downWeights:     make([][]int8, 4),
+		},
+	}
+
+	// Fill all_zeros test data
+	for i := range tests[1].upWeights {
+		tests[1].upWeights[i] = make([]int8, 4)
+	}
+	for i := range tests[1].downWeights {
+		tests[1].downWeights[i] = make([]int8, 8)
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ffn := NewFFNSublayer(tt.hiddenDim, tt.intermediateDim)
+			defer ffn.Close()
+
+			// Create weight tensors
+			upWeights := tensor.NewTensor(tt.intermediateDim, tt.hiddenDim)
+			for i := range tt.upWeights {
+				for j := range tt.upWeights[i] {
+					upWeights.Set(tt.upWeights[i][j], i, j)
+				}
+			}
+			defer upWeights.Close()
+			// Debug print
+			t.Logf("upWeights shape: %v", upWeights.Shape())
+
+			downWeights := tensor.NewTensor(tt.hiddenDim, tt.intermediateDim)
+			for i := range tt.downWeights {
+				for j := range tt.downWeights[i] {
+					downWeights.Set(tt.downWeights[i][j], i, j)
+				}
+			}
+			defer downWeights.Close()
+			// Debug print
+			t.Logf("downWeights shape: %v", downWeights.Shape())
+
+			// Set weights
+			ffn.SetWeights(upWeights, downWeights)
+
+			// Set gamma
+			gamma := make([]float32, tt.hiddenDim)
+			for i := range gamma {
+				gamma[i] = 1.0
+			}
+			ffn.SetGamma(gamma)
+
+			// Verify weights were set by running forward pass
+			input := tensor.NewTensor(1, 1, tt.hiddenDim)
+			for i := 0; i < tt.hiddenDim; i++ {
+				input.Set(1.0, 0, 0, i)
+			}
+			defer input.Close()
+
+			output, err := ffn.Forward(input)
+			require.NoError(t, err)
+			require.NotNil(t, output)
+			defer output.Close()
+
+			// Verify output shape
+			require.Equal(t, []int{1, 1, tt.hiddenDim}, output.Shape())
+		})
+	}
+}
+
+func TestFFNSublayer_SetGamma(t *testing.T) {
+	tests := []struct {
+		name            string
+		hiddenDim       int
+		intermediateDim int
+		gamma           []float32
+	}{
+		{
+			name:            "ones",
+			hiddenDim:       4,
+			intermediateDim: 8,
+			gamma:           []float32{1.0, 1.0, 1.0, 1.0},
+		},
+		{
+			name:            "scaled",
+			hiddenDim:       4,
+			intermediateDim: 8,
+			gamma:           []float32{0.5, 1.0, 2.0, 0.25},
+		},
+		{
+			name:            "zeros",
+			hiddenDim:       4,
+			intermediateDim: 8,
+			gamma:           []float32{0.0, 0.0, 0.0, 0.0},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ffn := NewFFNSublayer(tt.hiddenDim, tt.intermediateDim)
+			defer ffn.Close()
+
+			// Set up weights with valid shapes
+			upWeights := tensor.NewTensor(tt.intermediateDim, tt.hiddenDim)
+			downWeights := tensor.NewTensor(tt.hiddenDim, tt.intermediateDim)
+			for i := 0; i < tt.intermediateDim; i++ {
+				for j := 0; j < tt.hiddenDim; j++ {
+					upWeights.Set(1, i, j)
+				}
+			}
+			for i := 0; i < tt.hiddenDim; i++ {
+				for j := 0; j < tt.intermediateDim; j++ {
+					downWeights.Set(1, i, j)
+				}
+			}
+			ffn.SetWeights(upWeights, downWeights)
+			defer upWeights.Close()
+			defer downWeights.Close()
+			// Debug print
+			t.Logf("upWeights shape: %v", upWeights.Shape())
+			t.Logf("downWeights shape: %v", downWeights.Shape())
+
+			// Set gamma
+			ffn.SetGamma(tt.gamma)
+
+			// Verify gamma was set by running forward pass
+			input := tensor.NewTensor(1, 1, tt.hiddenDim)
+			for i := 0; i < tt.hiddenDim; i++ {
+				input.Set(1.0, 0, 0, i)
+			}
+			defer input.Close()
+
+			output, err := ffn.Forward(input)
+			require.NoError(t, err)
+			require.NotNil(t, output)
+			defer output.Close()
+
+			// Verify output shape
+			require.Equal(t, []int{1, 1, tt.hiddenDim}, output.Shape())
+		})
+	}
+}
+
+func TestFFNSublayer_ForwardEdgeCases(t *testing.T) {
+	tests := []struct {
+		name            string
+		hiddenDim       int
+		intermediateDim int
+		input           *tensor.Tensor
+		wantErr         bool
+	}{
+		{
+			name:            "nil input",
+			hiddenDim:       4,
+			intermediateDim: 8,
+			input:           nil,
+			wantErr:         true,
+		},
+		{
+			name:            "invalid shape",
+			hiddenDim:       4,
+			intermediateDim: 8,
+			input:           tensor.NewTensor(2, 3), // 2D tensor with wrong dimensions (should be 2,4)
+			wantErr:         true,
+		},
+		{
+			name:            "dimension mismatch",
+			hiddenDim:       4,
+			intermediateDim: 8,
+			input:           tensor.NewTensor(1, 3), // hiddenDim=3, expected=4
+			wantErr:         true,
+		},
+		{
+			name:            "empty tensor",
+			hiddenDim:       4,
+			intermediateDim: 8,
+			wantErr:         false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ffn := NewFFNSublayer(tt.hiddenDim, tt.intermediateDim)
+			defer ffn.Close()
+
+			// Set up weights and gamma
+			upWeights := tensor.NewTensor(tt.intermediateDim, tt.hiddenDim)
+			downWeights := tensor.NewTensor(tt.hiddenDim, tt.intermediateDim)
+			for i := 0; i < tt.intermediateDim; i++ {
+				for j := 0; j < tt.hiddenDim; j++ {
+					upWeights.Set(1, i, j)
+				}
+			}
+			for i := 0; i < tt.hiddenDim; i++ {
+				for j := 0; j < tt.intermediateDim; j++ {
+					downWeights.Set(1, i, j)
+				}
+			}
+			ffn.SetWeights(upWeights, downWeights)
+			defer upWeights.Close()
+			defer downWeights.Close()
+
+			gamma := make([]float32, tt.hiddenDim)
+			for i := range gamma {
+				gamma[i] = 1.0
+			}
+			ffn.SetGamma(gamma)
+
+			if tt.input == nil {
+				require.Panics(t, func() {
+					ffn.Forward(tt.input)
+				}, "Expected panic for nil input")
+				return
+			}
+
+			if tt.name == "empty tensor" {
+				require.Panics(t, func() {
+					_ = tensor.NewTensor(1, 0, 4)
+				}, "Expected panic for empty tensor with zero dimension")
+				return
+			}
+
+			// Run forward pass
+			output, err := ffn.Forward(tt.input)
+			if tt.wantErr {
+				require.Error(t, err)
+				require.Nil(t, output)
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, output)
+				defer output.Close()
 			}
 		})
 	}

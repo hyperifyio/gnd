@@ -1,0 +1,67 @@
+---
+description: "Enforce comprehensive, idiomatic Go documentation following best practices."
+globs: "**/*.go"
+alwaysApply: false
+---
+
+# Code Documentation Rule
+
+**Purpose:** Ensure all Go code is well-documented using GoDoc conventions, improving readability and maintainability.
+
+## Package-Level Docs
+
+* Include a `// Package <name> ...` comment at the top of every `*.go` file in the package when appropriate.
+* Describe the package's purpose and key types or functions.
+
+```go
+// Package tensor provides tensor data structures and operations
+// for high-performance numerical computing in BitNet.
+package tensor
+```
+
+## Exported Identifiers
+
+* Every exported **function**, **type**, **method**, and **constant** must have a preceding comment.
+* Format: `// <Identifier> ...` beginning with the identifier name.
+* Summarize behavior succinctly; mention side effects, error conditions, and usage.
+
+```go
+// NewTensor allocates a tensor of the given dimensions and initializes all elements to zero.
+func NewTensor(dim int) *Tensor { ... }
+```
+
+## Examples
+
+* Provide examples in `example_test.go` or as `ExampleXxx` functions in the package.
+* Ensure examples compile and run correctly.
+
+```go
+func ExampleNewTensor() {
+    t := NewTensor(3)
+    fmt.Println(len(t.Data()))
+    // Output: 3
+}
+```
+
+## Comment Style
+
+* Use full sentences with proper punctuation.
+* Write in present tense (e.g., "Returns the sum...").
+* Avoid redundant statements (e.g., "GetName gets the name").
+
+## Cross-References & Links
+
+* When referring to related types or functions, use qualified names: `tensor.NewTensor`.
+* Link external specs or issues when relevant:
+
+  ```go
+  // ComputeAttention applies the scaled dot-product attention as defined in
+  // https://arxiv.org/abs/1706.03762.
+  func ComputeAttention(...) { ... }
+  ```
+
+## Maintenance
+
+* Update comments whenever code changes behavior or API.
+* Remove stale or misleading documentation promptly.
+* Review documentation as part of code reviews.

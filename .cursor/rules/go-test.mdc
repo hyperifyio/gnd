@@ -8,13 +8,18 @@ alwaysApply: false
 
 **Purpose:** Ensure all code changes maintain passing test status by running Go tests and fixing any issues before proceeding.
 
+## Identify untested files
+
+`./scripts/list-untested-bitnet.sh|cat`
+
 ## Test Execution
 
 * Execute full test suite on demand or when files change:
 
   ```bash
-  go test ./... -race -cover
+  go test -timeout 30s ./pkg/bitnet/... -race
   ```
+
 * Highlight any failures, panics, or unexpected behavior.
 
 ## Failure Handling

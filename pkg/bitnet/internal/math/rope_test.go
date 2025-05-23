@@ -6,139 +6,319 @@ import (
 )
 
 func TestNewRoPE(t *testing.T) {
-	base := 10000.0
-	maxSeqLen := 4096
-	dim := 256
-
-	rope := NewRoPE(base, maxSeqLen, dim)
-	if rope == nil {
-		t.Fatal("NewRoPE returned nil")
+	tests := []struct {
+		name        string
+		base        float64
+		maxSeqLen   int
+		dim         int
+		shouldPanic bool
+	}{
+		{
+			name:        "valid parameters",
+			base:        10000.0,
+			maxSeqLen:   4096,
+			dim:         256,
+			shouldPanic: false,
+		},
+		{
+			name:        "odd dimension",
+			base:        10000.0,
+			maxSeqLen:   4,
+			dim:         5,
+			shouldPanic: false,
+		},
+		{
+			name:        "zero maxSeqLen",
+			base:        10000.0,
+			maxSeqLen:   0,
+			dim:         256,
+			shouldPanic: true,
+		},
+		{
+			name:        "zero dimension",
+			base:        10000.0,
+			maxSeqLen:   4,
+			dim:         0,
+			shouldPanic: true,
+		},
+		{
+			name:        "negative maxSeqLen",
+			base:        10000.0,
+			maxSeqLen:   -1,
+			dim:         256,
+			shouldPanic: true,
+		},
+		{
+			name:        "negative dimension",
+			base:        10000.0,
+			maxSeqLen:   4,
+			dim:         -1,
+			shouldPanic: true,
+		},
 	}
 
-	// Check initialization
-	if rope.base != base {
-		t.Errorf("expected base %f, got %f", base, rope.base)
-	}
-	if rope.maxSeqLen != maxSeqLen {
-		t.Errorf("expected maxSeqLen %d, got %d", maxSeqLen, rope.maxSeqLen)
-	}
-	if rope.dim != dim {
-		t.Errorf("expected dim %d, got %d", dim, rope.dim)
-	}
-	if len(rope.rotations) != maxSeqLen {
-		t.Errorf("expected %d rotation matrices, got %d", maxSeqLen, len(rope.rotations))
-	}
-
-	// Check rotation matrix values
-	for pos := 0; pos < maxSeqLen; pos++ {
-		if len(rope.rotations[pos]) != dim/2 {
-			t.Errorf("position %d: expected %d dimensions, got %d", pos, dim/2, len(rope.rotations[pos]))
-		}
-		for i := 0; i < dim/2; i++ {
-			expected := float64(pos) * math.Pow(base, -float64(2*i)/float64(dim))
-			if math.Abs(rope.rotations[pos][i]-expected) > 1e-10 {
-				t.Errorf("position %d, dim %d: expected angle %f, got %f", pos, i, expected, rope.rotations[pos][i])
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.shouldPanic {
+				defer func() {
+					if r := recover(); r == nil {
+						t.Error("expected panic")
+					}
+				}()
 			}
-		}
+
+			rope := NewRoPE(tt.base, tt.maxSeqLen, tt.dim)
+			if tt.shouldPanic {
+				return
+			}
+
+			if rope == nil {
+				t.Fatal("NewRoPE returned nil")
+			}
+
+			// Check initialization
+			if rope.base != tt.base {
+				t.Errorf("expected base %f, got %f", tt.base, rope.base)
+			}
+			if rope.maxSeqLen != tt.maxSeqLen {
+				t.Errorf("expected maxSeqLen %d, got %d", tt.maxSeqLen, rope.maxSeqLen)
+			}
+			if rope.dim != tt.dim {
+				t.Errorf("expected dim %d, got %d", tt.dim, rope.dim)
+			}
+			if len(rope.rotations) != tt.maxSeqLen {
+				t.Errorf("expected %d rotation matrices, got %d", tt.maxSeqLen, len(rope.rotations))
+			}
+
+			// Check rotation matrix values
+			for pos := 0; pos < tt.maxSeqLen; pos++ {
+				if len(rope.rotations[pos]) != tt.dim/2 {
+					t.Errorf("position %d: expected %d dimensions, got %d", pos, tt.dim/2, len(rope.rotations[pos]))
+				}
+				for i := 0; i < tt.dim/2; i++ {
+					expected := float64(pos) * math.Pow(tt.base, -float64(2*i)/float64(tt.dim))
+					if math.Abs(rope.rotations[pos][i]-expected) > 1e-10 {
+						t.Errorf("position %d, dim %d: expected angle %f, got %f", pos, i, expected, rope.rotations[pos][i])
+					}
+				}
+			}
+		})
 	}
 }
 
 func TestApplyRoPE(t *testing.T) {
-	base := 10000.0
-	maxSeqLen := 4
-	dim := 4
-
-	rope := NewRoPE(base, maxSeqLen, dim)
-
-	// Test vector with known values
-	vector := []float32{1.0, 0.0, 0.0, 1.0}
-	position := 1
-
-	result := rope.ApplyRoPE(vector, position)
-
-	// Check dimensions
-	if len(result) != dim {
-		t.Errorf("expected result length %d, got %d", dim, len(result))
+	tests := []struct {
+		name        string
+		base        float64
+		maxSeqLen   int
+		dim         int
+		vector      []float32
+		position    int
+		expected    []float32
+		shouldPanic bool
+	}{
+		{
+			name:      "basic rotation",
+			base:      10000.0,
+			maxSeqLen: 4,
+			dim:       4,
+			vector:    []float32{1.0, 0.0, 0.0, 1.0},
+			position:  1,
+			expected: []float32{
+				float32(math.Cos(1.0)),
+				float32(math.Sin(1.0)),
+				-float32(math.Sin(0.01)),
+				float32(math.Cos(0.01)),
+			},
+			shouldPanic: false,
+		},
+		{
+			name:        "zero vector",
+			base:        10000.0,
+			maxSeqLen:   4,
+			dim:         4,
+			vector:      []float32{0.0, 0.0, 0.0, 0.0},
+			position:    0,
+			expected:    []float32{0.0, 0.0, 0.0, 0.0},
+			shouldPanic: false,
+		},
+		{
+			name:      "odd dimension",
+			base:      10000.0,
+			maxSeqLen: 4,
+			dim:       5,
+			vector:    []float32{1.0, 0.0, 0.0, 1.0, 0.5},
+			position:  1,
+			expected: func() []float32 {
+				// Create a temporary RoPE to get the correct angles
+				rope := NewRoPE(10000.0, 4, 5)
+				// Get the actual angles used in the implementation
+				angle0 := rope.rotations[1][0] // angle for first pair
+				angle1 := rope.rotations[1][1] // angle for second pair
+				cos0 := float32(math.Cos(angle0))
+				sin0 := float32(math.Sin(angle0))
+				cos1 := float32(math.Cos(angle1))
+				sin1 := float32(math.Sin(angle1))
+				v := []float32{1.0, 0.0, 0.0, 1.0, 0.5}
+				result := make([]float32, 5)
+				// First pair
+				result[0] = v[0]*cos0 - v[1]*sin0
+				result[1] = v[0]*sin0 + v[1]*cos0
+				// Second pair
+				result[2] = v[2]*cos1 - v[3]*sin1
+				result[3] = v[2]*sin1 + v[3]*cos1
+				// Odd last element
+				result[4] = v[4]
+				return result
+			}(),
+			shouldPanic: false,
+		},
+		{
+			name:        "invalid position",
+			base:        10000.0,
+			maxSeqLen:   4,
+			dim:         4,
+			vector:      []float32{1.0, 0.0, 0.0, 1.0},
+			position:    5,
+			shouldPanic: true,
+		},
+		{
+			name:        "invalid vector dimension",
+			base:        10000.0,
+			maxSeqLen:   4,
+			dim:         4,
+			vector:      []float32{1.0, 0.0},
+			position:    0,
+			shouldPanic: true,
+		},
 	}
 
-	// Check rotation properties
-	// For position 1, the rotation should be approximately:
-	// [cos(θ₀), sin(θ₀), -sin(θ₁), cos(θ₁)]
-	// where θ₀ = 1.0, θ₁ = 0.01 (per implementation)
-	theta0 := 1.0
-	theta1 := 0.01
-	expected := []float32{
-		float32(math.Cos(theta0)),  // cos(θ₀)
-		float32(math.Sin(theta0)),  // sin(θ₀)
-		-float32(math.Sin(theta1)), // -sin(θ₁)
-		float32(math.Cos(theta1)),  // cos(θ₁)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rope := NewRoPE(tt.base, tt.maxSeqLen, tt.dim)
 
-	for i := 0; i < dim; i++ {
-		actual := result[i]
-		exp := expected[i]
-		if math.Abs(float64(actual-exp)) > 1e-2 {
-			t.Errorf("dimension %d: expected %f, got %f", i, exp, actual)
-		}
+			if tt.shouldPanic {
+				defer func() {
+					if r := recover(); r == nil {
+						t.Error("expected panic")
+					}
+				}()
+			}
+
+			result := rope.ApplyRoPE(tt.vector, tt.position)
+
+			if tt.shouldPanic {
+				return
+			}
+
+			// Check dimensions
+			if len(result) != tt.dim {
+				t.Errorf("expected result length %d, got %d", tt.dim, len(result))
+			}
+
+			// Check values
+			for i := 0; i < tt.dim; i++ {
+				actual := result[i]
+				exp := tt.expected[i]
+				if math.Abs(float64(actual-exp)) > 1e-2 {
+					t.Errorf("dimension %d: expected %f, got %f", i, exp, actual)
+				}
+			}
+		})
 	}
 }
 
 func TestApplyRoPEBatch(t *testing.T) {
-	base := 10000.0
-	maxSeqLen := 4
-	dim := 4
-
-	rope := NewRoPE(base, maxSeqLen, dim)
-
-	// Test batch of vectors
-	vectors := [][]float32{
-		{1.0, 0.0, 0.0, 1.0},
-		{0.0, 1.0, 1.0, 0.0},
+	tests := []struct {
+		name        string
+		base        float64
+		maxSeqLen   int
+		dim         int
+		vectors     [][]float32
+		startPos    int
+		shouldPanic bool
+	}{
+		{
+			name:      "valid batch",
+			base:      10000.0,
+			maxSeqLen: 4,
+			dim:       4,
+			vectors: [][]float32{
+				{1.0, 0.0, 0.0, 1.0},
+				{0.0, 1.0, 1.0, 0.0},
+			},
+			startPos:    0,
+			shouldPanic: false,
+		},
+		{
+			name:        "empty batch",
+			base:        10000.0,
+			maxSeqLen:   4,
+			dim:         4,
+			vectors:     [][]float32{},
+			startPos:    0,
+			shouldPanic: false,
+		},
+		{
+			name:      "invalid start position",
+			base:      10000.0,
+			maxSeqLen: 4,
+			dim:       4,
+			vectors: [][]float32{
+				{1.0, 0.0, 0.0, 1.0},
+				{0.0, 1.0, 1.0, 0.0},
+			},
+			startPos:    5,
+			shouldPanic: true,
+		},
+		{
+			name:      "invalid vector dimension",
+			base:      10000.0,
+			maxSeqLen: 4,
+			dim:       4,
+			vectors: [][]float32{
+				{1.0, 0.0},
+				{0.0, 1.0},
+			},
+			startPos:    0,
+			shouldPanic: true,
+		},
 	}
-	startPos := 0
 
-	result := rope.ApplyRoPEBatch(vectors, startPos)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rope := NewRoPE(tt.base, tt.maxSeqLen, tt.dim)
 
-	// Check batch size
-	if len(result) != len(vectors) {
-		t.Errorf("expected %d results, got %d", len(vectors), len(result))
-	}
-
-	// Check each vector in the batch
-	for i, vector := range vectors {
-		expected := rope.ApplyRoPE(vector, startPos+i)
-		for j := 0; j < dim; j++ {
-			if math.Abs(float64(result[i][j]-expected[j])) > 1e-5 {
-				t.Errorf("vector %d, dimension %d: expected %f, got %f", i, j, expected[j], result[i][j])
+			if tt.shouldPanic {
+				defer func() {
+					if r := recover(); r == nil {
+						t.Error("expected panic")
+					}
+				}()
 			}
-		}
+
+			result := rope.ApplyRoPEBatch(tt.vectors, tt.startPos)
+
+			if tt.shouldPanic {
+				return
+			}
+
+			// Check batch size
+			if len(result) != len(tt.vectors) {
+				t.Errorf("expected %d results, got %d", len(tt.vectors), len(result))
+			}
+
+			// Check each vector in the batch
+			for i, vector := range tt.vectors {
+				expected := rope.ApplyRoPE(vector, tt.startPos+i)
+				for j := 0; j < tt.dim; j++ {
+					if math.Abs(float64(result[i][j]-expected[j])) > 1e-5 {
+						t.Errorf("vector %d, dimension %d: expected %f, got %f", i, j, expected[j], result[i][j])
+					}
+				}
+			}
+		})
 	}
-}
-
-func TestApplyRoPEInvalidInput(t *testing.T) {
-	base := 10000.0
-	maxSeqLen := 4
-	dim := 4
-
-	rope := NewRoPE(base, maxSeqLen, dim)
-
-	// Test invalid position
-	vector := []float32{1.0, 0.0, 0.0, 1.0}
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("expected panic for invalid position")
-		}
-	}()
-	rope.ApplyRoPE(vector, maxSeqLen)
-
-	// Test invalid vector dimension
-	invalidVector := []float32{1.0, 0.0}
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("expected panic for invalid vector dimension")
-		}
-	}()
-	rope.ApplyRoPE(invalidVector, 0)
 }
 
 func BenchmarkApplyRoPE(b *testing.B) {

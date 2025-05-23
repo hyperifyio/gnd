@@ -79,7 +79,7 @@ resolved.** No exceptions.
 
 To run tests, use the following command:
 
-    go test -v ./pkg/bitnet/...|cat
+    go test -timeout 30s -v ./pkg/bitnet/...|cat
 
 Review the output and fix any failing tests before proceeding.
 
@@ -89,6 +89,8 @@ focused.
 To double-check your work, run:
 
     git diff bitnet|cat
+    git diff --cached|cat
+    git diff|cat
 
 This will show exactly what you've changed. Use it to verify that all required 
 work is done -- and that nothing unrelated slipped in.

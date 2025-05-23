@@ -25,7 +25,7 @@ alwaysApply: false
    * Number of memory allocations per operation.
    * Lower is better; indicates allocation churn.
 
-## Reading `go test -bench` Output
+## Reading `go test -timeout 30s ./pkg/bitnet/... -bench` Output
 
 Example:
 

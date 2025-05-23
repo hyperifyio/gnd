@@ -18,7 +18,7 @@ improvements via benchmarks.
 
 ## 2. Profiling & Analysis
 
-After `go test -bench=.<Benchmark> -cpuprofile=cpu_<Benchmark>.prof \
+After `go test -timeout 30s ./pkg/bitnet/... -bench=.<Benchmark> -cpuprofile=cpu_<Benchmark>.prof \
   -benchmem -memprofile=mem_<Benchmark>.prof`, run:
 
 ```bash
@@ -53,7 +53,7 @@ percentages.
   performance.
 
   ```bash
-  go test -bench=.<Benchmark> -benchmem
+  go test -timeout 30s ./pkg/bitnet/... -bench=.<Benchmark> -benchmem
   ```
 * Ensure allocations/op decrease (via `b.ReportAllocs()` output) and no 
   regressions in CPU time.

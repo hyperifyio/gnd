@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
+	"github.com/stretchr/testify/require"
 )
 
 func TestFFN(t *testing.T) {
@@ -153,7 +154,11 @@ func TestFFN(t *testing.T) {
 			ffn.SetWeights(upWeights, downWeights)
 
 			// Forward pass
-			output := ffn.Forward(input)
+			output, err := ffn.Forward(input)
+			if err != nil {
+				t.Errorf("FFN Forward failed: %v", err)
+				return
+			}
 
 			// Verify output shape
 			if len(output.Shape()) != 3 {
@@ -343,6 +348,199 @@ func TestFFNPanics(t *testing.T) {
 				}
 			}()
 			ffn.Forward(input)
+		})
+	}
+}
+
+func TestFFN_Close(t *testing.T) {
+	// Create a new FFN
+	ffn := NewFFN(512, 2048) // 512 hidden dim, 2048 intermediate dim
+	require.NotNil(t, ffn)
+
+	// Set some weights
+	upWeights := tensor.NewTensor(2048, 512)
+	downWeights := tensor.NewTensor(512, 2048)
+	ffn.SetWeights(upWeights, downWeights)
+
+	// Close the FFN
+	ffn.Close()
+
+	// Verify that operations panic after close
+	operations := []struct {
+		name string
+		fn   func()
+	}{
+		{
+			name: "Forward",
+			fn: func() {
+				input := tensor.NewTensor(32, 16, 512)
+				ffn.Forward(input)
+			},
+		},
+		{
+			name: "SetWeights",
+			fn: func() {
+				upWeights := tensor.NewTensor(2048, 512)
+				downWeights := tensor.NewTensor(512, 2048)
+				ffn.SetWeights(upWeights, downWeights)
+			},
+		},
+	}
+
+	for _, op := range operations {
+		t.Run(op.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r == nil {
+					t.Errorf("%s did not panic after Close", op.name)
+				}
+			}()
+			op.fn()
+		})
+	}
+}
+
+func TestFFN_applyReLU2(t *testing.T) {
+	tests := []struct {
+		name        string
+		inputShape  []int
+		inputValues [][]int8
+		wantErr     bool
+		wantValues  [][]int8
+	}{
+		{
+			name:       "valid 2D input with positive values",
+			inputShape: []int{2, 3},
+			inputValues: [][]int8{
+				{1, 2, 3},
+				{4, 5, 6},
+			},
+			wantErr: false,
+			wantValues: [][]int8{
+				{0, 0, 0}, // Values divided by 16 and clamped
+				{1, 1, 2},
+			},
+		},
+		{
+			name:       "valid 2D input with negative values",
+			inputShape: []int{2, 3},
+			inputValues: [][]int8{
+				{-1, -2, -3},
+				{-4, -5, -6},
+			},
+			wantErr: false,
+			wantValues: [][]int8{
+				{0, 0, 0}, // ReLU² of negative values is 0
+				{0, 0, 0},
+			},
+		},
+		{
+			name:       "valid 2D input with mixed values",
+			inputShape: []int{2, 3},
+			inputValues: [][]int8{
+				{-1, 0, 1},
+				{-2, 2, -3},
+			},
+			wantErr: false,
+			wantValues: [][]int8{
+				{0, 0, 0},
+				{0, 0, 0},
+			},
+		},
+		{
+			name:       "invalid 1D input",
+			inputShape: []int{3},
+			inputValues: [][]int8{
+				{1, 2, 3},
+			},
+			wantErr: true,
+		},
+		{
+			name:       "invalid 3D input",
+			inputShape: []int{2, 2, 2},
+			inputValues: [][]int8{
+				{1, 2, 3, 4}, // Flattened 2x2 matrix
+				{5, 6, 7, 8}, // Flattened 2x2 matrix
+			},
+			wantErr: true,
+		},
+		{
+			name:        "empty input",
+			inputShape:  []int{0, 0},
+			inputValues: [][]int8{},
+			wantErr:     false,
+			wantValues:  [][]int8{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.name == "empty input" {
+				defer func() {
+					if r := recover(); r == nil {
+						t.Error("expected panic for empty input shape, but did not panic")
+					}
+				}()
+			}
+			input := tensor.NewTensor(tt.inputShape...)
+			if input != nil {
+				for i := range tt.inputValues {
+					for j := range tt.inputValues[i] {
+						if len(tt.inputShape) == 1 {
+							input.Set(tt.inputValues[i][j], j)
+						} else if len(tt.inputShape) == 2 {
+							input.Set(tt.inputValues[i][j], i, j)
+						}
+					}
+				}
+			}
+
+			// Create FFN with arbitrary dimensions
+			ffn := NewFFN(4, 8)
+			defer ffn.Close()
+
+			// Call applyReLU2
+			output, err := ffn.applyReLU2(input)
+
+			// Check error
+			if tt.wantErr {
+				if err == nil {
+					t.Error("applyReLU2() error = nil, want error")
+				}
+				if output != nil {
+					t.Error("applyReLU2() output = non-nil, want nil")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("applyReLU2() error = %v, want nil", err)
+				return
+			}
+
+			if output == nil {
+				t.Error("applyReLU2() output = nil, want non-nil")
+				return
+			}
+
+			// Verify output shape
+			if len(output.Shape()) != 2 {
+				t.Errorf("output shape = %v, want 2 dimensions", output.Shape())
+				return
+			}
+
+			// Verify output values
+			for i := range tt.wantValues {
+				for j := range tt.wantValues[i] {
+					got := output.Get(i, j)
+					want := tt.wantValues[i][j]
+					if got != want {
+						t.Errorf("output[%d][%d] = %d, want %d", i, j, got, want)
+					}
+				}
+			}
+
+			// Clean up
+			output.Close()
 		})
 	}
 }

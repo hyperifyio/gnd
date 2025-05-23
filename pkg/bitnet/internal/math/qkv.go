@@ -1,14 +1,24 @@
+// Package math implements mathematical operations for the BitNet model, including
+// attention mechanisms, feed-forward networks, and normalization layers.
+// The package provides optimized implementations of transformer architecture
+// components with support for ternary quantization.
 package math
 
 import (
-	"runtime"
-	"sync"
-
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
+	"github.com/hyperifyio/gnd/pkg/loggers"
 )
 
 // QKVProjection represents the Query, Key, and Value projection matrices
-// for multi-head self-attention
+// for multi-head self-attention.
+//
+// This structure manages the projection weights and provides methods to
+// project input hidden states into Q, K, and V tensors for use in the
+// attention mechanism. It supports grouped-query attention (GQA) by
+// allowing a different number of key/value heads than query heads.
+//
+// The implementation is optimized for efficient computation and supports
+// both single-token and multi-token input shapes.
 type QKVProjection struct {
 	// Number of attention heads
 	numHeads int
@@ -18,22 +28,34 @@ type QKVProjection struct {
 	headDim int
 	// Hidden dimension
 	hiddenDim int
-	// Query projection weights
+	// Query projection weights [hidden_dim, num_heads * head_dim]
 	qProj *tensor.Tensor
-	// Key projection weights
+	// Key projection weights [hidden_dim, num_kv_heads * head_dim]
 	kProj *tensor.Tensor
-	// Value projection weights
+	// Value projection weights [hidden_dim, num_kv_heads * head_dim]
 	vProj *tensor.Tensor
 }
 
-// NewQKVProjection creates a new QKV projection with the given parameters
+// NewQKVProjection creates a new QKV projection with the given parameters.
+//
+// Parameters:
+//   - hiddenDim: Size of the hidden dimension
+//   - numHeads: Number of query heads
+//   - numKVHeads: Number of key/value heads (for GQA)
+//
+// The projection matrices are initialized with the correct shapes for Q, K, and V.
+// The structure supports both standard and grouped-query attention.
 func NewQKVProjection(hiddenDim, numHeads, numKVHeads int) *QKVProjection {
 	headDim := hiddenDim / numHeads
+	kvHeadDim := hiddenDim / numKVHeads
 
-	// Create projection matrices
-	qProj := tensor.NewTensor(hiddenDim, hiddenDim)
-	kProj := tensor.NewTensor(hiddenDim, hiddenDim)
-	vProj := tensor.NewTensor(hiddenDim, hiddenDim)
+	// Create projection matrices with correct shapes
+	// Q projection: [hidden_dim, num_heads * head_dim]
+	// K projection: [hidden_dim, num_kv_heads * kv_head_dim]
+	// V projection: [hidden_dim, num_kv_heads * kv_head_dim]
+	qProj := tensor.NewTensor(hiddenDim, numHeads*headDim)
+	kProj := tensor.NewTensor(hiddenDim, numKVHeads*kvHeadDim)
+	vProj := tensor.NewTensor(hiddenDim, numKVHeads*kvHeadDim)
 
 	return &QKVProjection{
 		numHeads:   numHeads,
@@ -46,118 +68,171 @@ func NewQKVProjection(hiddenDim, numHeads, numKVHeads int) *QKVProjection {
 	}
 }
 
-// Project performs the QKV projection on the input hidden states
-// input: [batch_size, seq_len, hidden_dim]
-// Returns: Q, K, V tensors of shape [batch_size, num_heads, seq_len, head_dim]
-func (qkv *QKVProjection) Project(input *tensor.Tensor) (*tensor.Tensor, *tensor.Tensor, *tensor.Tensor) {
-	if len(input.Shape()) != 3 {
-		panic("input must be 3D tensor [batch_size, seq_len, hidden_dim]")
+// Project performs the QKV projection on the input hidden states.
+//
+// Input tensor must be either:
+//   - 2D [batch_size, hidden_dim] for single-token inputs
+//   - 3D [batch_size, seq_len, hidden_dim] for multi-token inputs
+//
+// The function:
+// 1. Validates input shape and dimensions
+// 2. Projects input into Q, K, and V using BitLinear
+// 3. Reshapes and splits projections into heads
+// 4. Expands key/value heads if using grouped-query attention
+//
+// Returns Q, K, V tensors of shape [batch_size, num_heads, seq_len, head_dim].
+// The implementation includes debug logging for tensor shapes and data lengths.
+func (p *QKVProjection) Project(input *tensor.Tensor) (*tensor.Tensor, *tensor.Tensor, *tensor.Tensor) {
+	// Debug output for input tensor
+	loggers.Printf(loggers.Debug, "Input tensor shape: %v", input.Shape())
+	loggers.Printf(loggers.Debug, "Input tensor data length: %d", len(input.Data()))
+
+	// Get input dimensions
+	var batchSize, seqLen, hiddenDim int
+	if len(input.Shape()) == 2 {
+		batchSize, hiddenDim = input.Shape()[0], input.Shape()[1]
+		seqLen = 1
+	} else if len(input.Shape()) == 3 {
+		batchSize, seqLen, hiddenDim = input.Shape()[0], input.Shape()[1], input.Shape()[2]
+	} else {
+		loggers.Printf(loggers.Debug, "invalid input shape: %v", input.Shape())
+		panic("invalid input shape")
 	}
 
-	batchSize := input.Shape()[0]
-	seqLen := input.Shape()[1]
-	hiddenDim := input.Shape()[2]
+	// Check hidden dimension
+	if hiddenDim != p.hiddenDim {
+		loggers.Printf(loggers.Debug, "input hidden dimension %d does not match projection hidden dimension %d", hiddenDim, p.hiddenDim)
+		panic("input hidden dimension does not match projection hidden dimension")
+	}
 
-	flatInput := input.Reshape(batchSize*seqLen, hiddenDim)
+	// Create 2D view of input tensor for matrix multiplication
+	input2d := tensor.NewTensor(batchSize*seqLen, hiddenDim)
+	for b := 0; b < batchSize; b++ {
+		for s := 0; s < seqLen; s++ {
+			for d := 0; d < hiddenDim; d++ {
+				var val int8
+				if len(input.Shape()) == 2 {
+					val = input.Get(b, d)
+				} else {
+					val = input.Get(b, s, d)
+				}
+				input2d.Set(val, b*seqLen+s, d)
+			}
+		}
+	}
 
-	qProj := qkv.qProj.Reshape(qkv.numHeads*qkv.headDim, hiddenDim)
-	kProj := qkv.kProj.Reshape(qkv.numKVHeads*qkv.headDim, hiddenDim)
-	vProj := qkv.vProj.Reshape(qkv.numKVHeads*qkv.headDim, hiddenDim)
+	// Debug output for 2D input tensor
+	loggers.Printf(loggers.Debug, "2D input tensor shape: %v", input2d.Shape())
+	loggers.Printf(loggers.Debug, "2D input tensor data length: %d", len(input2d.Data()))
 
-	q2d := tensor.BitLinear(flatInput, qProj)
-	k2d := tensor.BitLinear(flatInput, kProj)
-	v2d := tensor.BitLinear(flatInput, vProj)
+	// Apply projections
+	q2d := tensor.BitLinear(input2d, p.qProj)
+	k2d := tensor.BitLinear(input2d, p.kProj)
+	v2d := tensor.BitLinear(input2d, p.vProj)
 
-	var q, k, v *tensor.Tensor
+	// Debug output for 2D projections
+	loggers.Printf(loggers.Debug, "Q 2D shape: %v", q2d.Shape())
+	loggers.Printf(loggers.Debug, "K 2D shape: %v", k2d.Shape())
+	loggers.Printf(loggers.Debug, "V 2D shape: %v", v2d.Shape())
 
-	q = q2d.Reshape(batchSize, qkv.numHeads, seqLen, qkv.headDim)
-	k = k2d.Reshape(batchSize, qkv.numKVHeads, seqLen, qkv.headDim)
-	v = v2d.Reshape(batchSize, qkv.numKVHeads, seqLen, qkv.headDim)
+	// Create output tensors with correct shapes [batch, num_heads, seq_len, head_dim]
+	q := tensor.NewTensor(batchSize, p.numHeads, seqLen, p.headDim)
+	k := tensor.NewTensor(batchSize, p.numKVHeads, seqLen, p.headDim)
+	v := tensor.NewTensor(batchSize, p.numKVHeads, seqLen, p.headDim)
 
-	if qkv.numKVHeads < qkv.numHeads {
-		k = qkv.expandKVHeads(k)
-		v = qkv.expandKVHeads(v)
+	// Copy data from 2D projections to output tensors, properly splitting into heads
+	for b := 0; b < batchSize; b++ {
+		for s := 0; s < seqLen; s++ {
+			// For query heads
+			for h := 0; h < p.numHeads; h++ {
+				for d := 0; d < p.headDim; d++ {
+					// Calculate the correct index in the 2D projection
+					idx := b*seqLen + s
+					val := q2d.Get(idx, h*p.headDim+d)
+					q.Set(val, b, h, s, d)
+				}
+			}
+			// For key/value heads
+			for h := 0; h < p.numKVHeads; h++ {
+				for d := 0; d < p.headDim; d++ {
+					// Calculate the correct index in the 2D projection
+					idx := b*seqLen + s
+					val := k2d.Get(idx, h*p.headDim+d)
+					k.Set(val, b, h, s, d)
+					val = v2d.Get(idx, h*p.headDim+d)
+					v.Set(val, b, h, s, d)
+				}
+			}
+		}
+	}
+
+	// Debug output for output tensors
+	loggers.Printf(loggers.Debug, "Q output shape: %v", q.Shape())
+	loggers.Printf(loggers.Debug, "K output shape: %v", k.Shape())
+	loggers.Printf(loggers.Debug, "V output shape: %v", v.Shape())
+
+	// Expand key/value heads if necessary
+	if p.numKVHeads < p.numHeads {
+		// Create expanded tensors with correct head dimensions
+		expandedK := tensor.NewTensor(batchSize, p.numHeads, seqLen, p.headDim)
+		expandedV := tensor.NewTensor(batchSize, p.numHeads, seqLen, p.headDim)
+
+		// Copy and repeat heads
+		for b := 0; b < batchSize; b++ {
+			for h := 0; h < p.numHeads; h++ {
+				// Use modulo to repeat heads
+				srcHead := h % p.numKVHeads
+				for s := 0; s < seqLen; s++ {
+					for d := 0; d < p.headDim; d++ {
+						val := k.Get(b, srcHead, s, d)
+						expandedK.Set(val, b, h, s, d)
+						val = v.Get(b, srcHead, s, d)
+						expandedV.Set(val, b, h, s, d)
+					}
+				}
+			}
+		}
+
+		k = expandedK
+		v = expandedV
 	}
 
 	return q, k, v
 }
 
-// expandKVHeads expands the key/value heads to match the number of query heads
-// input: [batch_size, num_kv_heads, seq_len, head_dim]
-// Returns: [batch_size, num_heads, seq_len, head_dim]
-func (qkv *QKVProjection) expandKVHeads(input *tensor.Tensor) *tensor.Tensor {
-	if len(input.Shape()) != 4 {
-		panic("input must be 4D tensor [batch_size, num_kv_heads, seq_len, head_dim]")
-	}
+// SetWeights sets the QKV projection weights.
+//
+// Parameters:
+//   - qWeights: Query projection weights [hidden_dim, num_heads * head_dim]
+//   - kWeights: Key projection weights [hidden_dim, num_kv_heads * head_dim]
+//   - vWeights: Value projection weights [hidden_dim, num_kv_heads * head_dim]
+//
+// Panics if any weight matrix has incorrect dimensions.
+// The weights must match the projection's hidden and head dimensions.
+func (p *QKVProjection) SetWeights(qWeights, kWeights, vWeights *tensor.Tensor) {
+	// Debug output for weight shapes
+	loggers.Printf(loggers.Debug, "Q weights shape: %v", qWeights.Shape())
+	loggers.Printf(loggers.Debug, "K weights shape: %v", kWeights.Shape())
+	loggers.Printf(loggers.Debug, "V weights shape: %v", vWeights.Shape())
+	loggers.Printf(loggers.Debug, "Expected Q shape: [%d, %d]", p.hiddenDim, p.numHeads*p.headDim)
+	loggers.Printf(loggers.Debug, "Expected K shape: [%d, %d]", p.hiddenDim, p.numKVHeads*(p.hiddenDim/p.numKVHeads))
+	loggers.Printf(loggers.Debug, "Expected V shape: [%d, %d]", p.hiddenDim, p.numKVHeads*(p.hiddenDim/p.numKVHeads))
 
-	batchSize := input.Shape()[0]
-	seqLen := input.Shape()[2]
-	headDim := input.Shape()[3]
-
-	// Create output tensor
-	output := tensor.NewTensor(batchSize, qkv.numHeads, seqLen, headDim)
-
-	// Calculate number of heads per KV head
-	headsPerKV := qkv.numHeads / qkv.numKVHeads
-
-	// Process in parallel chunks
-	var wg sync.WaitGroup
-	chunkSize := batchSize / runtime.NumCPU()
-	if chunkSize < 1 {
-		chunkSize = 1
-	}
-
-	for i := 0; i < batchSize; i += chunkSize {
-		wg.Add(1)
-		go func(start int) {
-			defer wg.Done()
-			end := start + chunkSize
-			if end > batchSize {
-				end = batchSize
-			}
-
-			// For each batch element
-			for b := start; b < end; b++ {
-				// For each KV head
-				for kv := 0; kv < qkv.numKVHeads; kv++ {
-					// Expand to multiple query heads
-					for h := 0; h < headsPerKV; h++ {
-						headIdx := kv*headsPerKV + h
-						// Copy KV head to all corresponding query heads
-						for s := 0; s < seqLen; s++ {
-							for d := 0; d < headDim; d++ {
-								val := input.Get(b, kv, s, d)
-								output.Set(val, b, headIdx, s, d)
-							}
-						}
-					}
-				}
-			}
-		}(i)
-	}
-
-	wg.Wait()
-	return output
-}
-
-// SetWeights sets the projection weights
-func (qkv *QKVProjection) SetWeights(qWeights, kWeights, vWeights *tensor.Tensor) {
-	if qWeights.Shape()[0] != qkv.hiddenDim || qWeights.Shape()[1] != qkv.hiddenDim {
+	// Check tensor shapes
+	if qWeights.Shape()[0] != p.hiddenDim || qWeights.Shape()[1] != p.numHeads*p.headDim {
+		loggers.Printf(loggers.Debug, "invalid Q weights shape: got %v, want [%d, %d]", qWeights.Shape(), p.hiddenDim, p.numHeads*p.headDim)
 		panic("invalid Q weights shape")
 	}
-	// Allow K/V weights to be either [hiddenDim, hiddenDim] or [numKVHeads*headDim, hiddenDim]
-	validKVShape := (kWeights.Shape()[0] == qkv.hiddenDim && kWeights.Shape()[1] == qkv.hiddenDim) ||
-		(kWeights.Shape()[0] == qkv.numKVHeads*qkv.headDim && kWeights.Shape()[1] == qkv.hiddenDim)
-	if !validKVShape {
+	if kWeights.Shape()[0] != p.hiddenDim || kWeights.Shape()[1] != p.numKVHeads*(p.hiddenDim/p.numKVHeads) {
+		loggers.Printf(loggers.Debug, "invalid K weights shape: got %v, want [%d, %d]", kWeights.Shape(), p.hiddenDim, p.numKVHeads*(p.hiddenDim/p.numKVHeads))
 		panic("invalid K weights shape")
 	}
-	validVShape := (vWeights.Shape()[0] == qkv.hiddenDim && vWeights.Shape()[1] == qkv.hiddenDim) ||
-		(vWeights.Shape()[0] == qkv.numKVHeads*qkv.headDim && vWeights.Shape()[1] == qkv.hiddenDim)
-	if !validVShape {
+	if vWeights.Shape()[0] != p.hiddenDim || vWeights.Shape()[1] != p.numKVHeads*(p.hiddenDim/p.numKVHeads) {
+		loggers.Printf(loggers.Debug, "invalid V weights shape: got %v, want [%d, %d]", vWeights.Shape(), p.hiddenDim, p.numKVHeads*(p.hiddenDim/p.numKVHeads))
 		panic("invalid V weights shape")
 	}
 
-	qkv.qProj = qWeights
-	qkv.kProj = kWeights
-	qkv.vProj = vWeights
+	p.qProj = qWeights
+	p.kProj = kWeights
+	p.vProj = vWeights
 }
