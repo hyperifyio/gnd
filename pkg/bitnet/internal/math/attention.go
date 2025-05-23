@@ -13,7 +13,6 @@ import (
 
 var (
 	ErrInputTensorsMustBe4D = errors.New("attention: input tensors must be 4D")
-	ErrInvalidHeadDimension = errors.New("attention: invalid head dimensions")
 	ErrMismatchedSeqLengths = errors.New("attention: mismatched sequence lengths")
 )
 

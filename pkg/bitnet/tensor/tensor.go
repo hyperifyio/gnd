@@ -1,15 +1,15 @@
 package tensor
 
 import (
-	"fmt"
-	"os"
 	"runtime"
 	"sync"
+
+	"github.com/hyperifyio/gnd/pkg/loggers"
 )
 
 // DebugLog logs debug information to stderr
 func DebugLog(format string, args ...interface{}) {
-	fmt.Fprintf(os.Stderr, "[DEBUG] "+format+"\n", args...)
+	loggers.Printf(loggers.Debug, format, args...)
 }
 
 // TensorType defines the core tensor operations
@@ -259,7 +259,7 @@ func (t *Tensor) Reshape(shape ...int) *Tensor {
 	newSize := 1
 	for _, dim := range shape {
 		if dim <= 0 {
-			fmt.Fprintf(os.Stderr, "[DEBUG] Invalid shape dimension encountered: %v\n", shape)
+			loggers.Printf(loggers.Debug, "Invalid shape dimension encountered: %v", shape)
 			panic("tensor: invalid shape dimension")
 		}
 		newSize *= dim
@@ -271,8 +271,8 @@ func (t *Tensor) Reshape(shape ...int) *Tensor {
 	}
 
 	// Debug output for current shape, stride, and data length
-	fmt.Fprintf(os.Stderr, "[DEBUG] Current shape: %v, stride: %v, data length: %d\n", t.shape, t.stride, len(t.data))
-	fmt.Fprintf(os.Stderr, "[DEBUG] Target shape: %v, product: %d\n", shape, newSize)
+	loggers.Printf(loggers.Debug, "Current shape: %v, stride: %v, data length: %d", t.shape, t.stride, len(t.data))
+	loggers.Printf(loggers.Debug, "Target shape: %v, product: %d", shape, newSize)
 
 	// Check if the data is contiguous (C-order: stride[i] == product(shape[i+1:]))
 	isContiguous := true
