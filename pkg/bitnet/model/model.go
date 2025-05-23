@@ -1,3 +1,7 @@
+// Package model implements the BitNet neural network model architecture.
+// It provides functionality for loading model weights, performing inference,
+// and managing the model's lifecycle. The package supports ternary quantization
+// for efficient model storage and computation.
 package model
 
 import (
@@ -12,7 +16,7 @@ import (
 	"github.com/hyperifyio/gnd/pkg/loggers"
 )
 
-// Static errors
+// Common errors returned by model operations
 var (
 	ErrInvalidWeightsFile      = errors.New("bitnet: invalid weights file format")
 	ErrUnsupportedVersion      = errors.New("bitnet: unsupported weights file version")
@@ -34,7 +38,8 @@ var (
 	ErrUnexpectedTensorShape   = errors.New("bitnet: unexpected tensor shape")
 )
 
-// Model represents a BitNet model
+// Model represents a BitNet model instance. It manages the model's configuration,
+// weights, tokenizer, and provides methods for inference.
 type Model struct {
 	config    *Config
 	fs        fs.FS
@@ -44,25 +49,27 @@ type Model struct {
 	readBuf   []byte // Buffer for reading ternary weights
 }
 
-// Config represents the model configuration
+// Config represents the model configuration parameters.
+// These parameters define the architecture and capacity of the model.
 type Config struct {
-	// Vocabulary size
+	// Vocabulary size defines the number of unique tokens the model can process
 	VocabSize int
-	// Hidden dimension
+	// HiddenSize defines the dimension of the model's hidden states
 	HiddenSize int
-	// Number of attention heads
+	// NumHeads defines the number of attention heads in each layer
 	NumHeads int
-	// Number of key/value heads (for grouped-query attention)
+	// NumKVHeads defines the number of key/value heads for grouped-query attention
 	NumKVHeads int
-	// Number of transformer layers
+	// NumLayers defines the number of transformer layers in the model
 	NumLayers int
-	// Intermediate dimension for feed-forward network
+	// IntermediateSize defines the dimension of the feed-forward network's hidden layer
 	IntermediateSize int
-	// Maximum sequence length
+	// MaxSeqLength defines the maximum sequence length the model can process
 	MaxSeqLength int
 }
 
-// NewConfig creates a new default configuration for BitNet b1.58-2B-4T
+// NewConfig creates a new default configuration for BitNet b1.58-2B-4T.
+// The configuration is optimized for the 2B parameter model with 4-bit quantization.
 func NewConfig() *Config {
 	return &Config{
 		HiddenSize:       2048,
@@ -74,7 +81,8 @@ func NewConfig() *Config {
 	}
 }
 
-// NewModel creates a new Model instance
+// NewModel creates a new Model instance with the given configuration and filesystem.
+// If config is nil, a default configuration is used.
 func NewModel(config *Config, fs fs.FS) *Model {
 	if config == nil {
 		config = NewConfig()
@@ -86,7 +94,10 @@ func NewModel(config *Config, fs fs.FS) *Model {
 	}
 }
 
-// LoadWeights loads the model weights from a file
+// LoadWeights loads the model weights from a file.
+// The weights file must be in the correct format with a valid magic number and version.
+// The function reads and initializes all model parameters including embeddings,
+// transformer blocks, and normalization layers.
 func (m *Model) LoadWeights(path string) error {
 	// Open the weights file
 	file, err := m.fs.Open(path)
@@ -569,9 +580,8 @@ func (m *Model) readTernaryWeights(file io.Reader, weights []int8) error {
 	return nil
 }
 
-// Add new structures for model parameters:
-
-// TransformerBlock represents a single transformer block's parameters
+// TransformerBlock represents a single transformer layer in the model.
+// It contains all the parameters needed for attention and feed-forward operations.
 type TransformerBlock struct {
 	// Attention parameters
 	QKVProj []int8 // QKV projection weights (ternary)
@@ -586,7 +596,8 @@ type TransformerBlock struct {
 	FFNNorm  []int8 // FFN normalization weights (ternary)
 }
 
-// ModelWeights represents all model parameters
+// ModelWeights contains all the model's learnable parameters.
+// All weights are stored in ternary format (-1, 0, 1) for efficiency.
 type ModelWeights struct {
 	// Token embeddings (shared with output layer)
 	TokenEmbedding []int8 // Token embedding weights (ternary)
@@ -594,7 +605,9 @@ type ModelWeights struct {
 	FinalNorm      []int8 // Final normalization weights (ternary)
 }
 
-// convertInt8ToFloat32 converts a slice of int8 values to float32
+// convertInt8ToFloat32 converts a slice of int8 values to float32.
+// This is used internally for converting ternary weights to floating point
+// during computation.
 func convertInt8ToFloat32(values []int8) []float32 {
 	result := make([]float32, len(values))
 	for i, v := range values {

@@ -1,37 +1,41 @@
-// Package math implements mathematical operations for the BitNet model.
+// Package math implements mathematical operations for the BitNet model, including
+// attention mechanisms, feed-forward networks, and normalization layers.
+// The package provides optimized implementations of transformer architecture
+// components with support for ternary quantization.
 package math
 
 import (
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
 )
 
-// Common tensor shape dimensions
+// Common tensor shape dimension constants for attention and transformer layers.
 const (
-	// MinHeadDim is the minimum allowed head dimension
+	// MinHeadDim is the minimum allowed head dimension for attention heads.
 	MinHeadDim = 8
-	// MaxHeadDim is the maximum allowed head dimension
+	// MaxHeadDim is the maximum allowed head dimension for attention heads.
 	MaxHeadDim = 256
-	// MinNumHeads is the minimum allowed number of attention heads
+	// MinNumHeads is the minimum allowed number of attention heads.
 	MinNumHeads = 1
-	// MaxNumHeads is the maximum allowed number of attention heads
+	// MaxNumHeads is the maximum allowed number of attention heads.
 	MaxNumHeads = 32
 )
 
-// Shape represents a tensor's dimensions
+// Shape represents a tensor's dimensions as a slice of integers.
 type Shape []int
 
-// Common shape types
+// Common shape types for semantic clarity in function signatures.
 type (
-	// BatchSeqHidden represents [batch_size, seq_len, hidden_dim]
+	// BatchSeqHidden represents a shape of [batch_size, seq_len, hidden_dim].
 	BatchSeqHidden Shape
-	// BatchHeadsSeqHead represents [batch_size, num_heads, seq_len, head_dim]
+	// BatchHeadsSeqHead represents a shape of [batch_size, num_heads, seq_len, head_dim].
 	BatchHeadsSeqHead Shape
-	// HiddenHidden represents [hidden_dim, hidden_dim]
+	// HiddenHidden represents a shape of [hidden_dim, hidden_dim].
 	HiddenHidden Shape
 )
 
 // ValidateShape checks if a tensor's shape matches any of the expected dimensions.
 // If multiple dimensions are provided, the tensor's shape must match one of them.
+// Returns ErrInvalidDimensions if the shape does not match.
 func ValidateShape(t *tensor.Tensor, expectedDims ...int) error {
 	shape := t.Shape()
 	for _, dim := range expectedDims {
@@ -43,7 +47,8 @@ func ValidateShape(t *tensor.Tensor, expectedDims ...int) error {
 	return ErrInvalidDimensions
 }
 
-// ValidateBatchSeqHidden checks if a tensor has shape [batch_size, seq_len, hidden_dim]
+// ValidateBatchSeqHidden checks if a tensor has shape [batch_size, seq_len, hidden_dim].
+// Returns ErrInvalidInputShape if the shape does not match.
 func ValidateBatchSeqHidden(t *tensor.Tensor, name string) error {
 	if err := ValidateShape(t, 3); err != nil {
 		tensor.DebugLog("%s: %v", name, err)

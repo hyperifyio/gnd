@@ -1,4 +1,7 @@
-// Package math implements mathematical operations for the BitNet model.
+// Package math implements mathematical operations for the BitNet model, including
+// attention mechanisms, feed-forward networks, and normalization layers.
+// The package provides optimized implementations of transformer architecture
+// components with support for ternary quantization.
 package math
 
 import (
@@ -8,23 +11,35 @@ import (
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
 )
 
-// DebugLog logs debug information with formatting
+// DebugLog logs debug information with formatting.
+// Used for internal debugging and diagnostics in the math package.
 func DebugLog(format string, args ...interface{}) {
 	log.Printf("[DEBUG] "+format, args...)
 }
 
 var (
+	// ErrInvalidHeadDimensions is returned when the head dimensions are invalid for attention.
 	ErrInvalidHeadDimensions = errors.New("attention: invalid head dimensions")
-	ErrInvalidKVHeads        = errors.New("attention: numKVHeads must be <= numHeads")
-	ErrNonDivisibleHeads     = errors.New("attention: numHeads must be divisible by numKVHeads")
-	ErrPreNormForward        = errors.New("attention: pre-norm forward pass failed")
-	ErrQueryProjection       = errors.New("attention: query projection failed")
-	ErrKeyProjection         = errors.New("attention: key projection failed")
-	ErrValueProjection       = errors.New("attention: value projection failed")
-	ErrScaledDotProduct      = errors.New("attention: scaled dot-product attention failed")
-	ErrSetQueryWeights       = errors.New("attention: failed to set query weights")
-	ErrSetKeyWeights         = errors.New("attention: failed to set key weights")
-	ErrSetValueWeights       = errors.New("attention: failed to set value weights")
+	// ErrInvalidKVHeads is returned when numKVHeads > numHeads.
+	ErrInvalidKVHeads = errors.New("attention: numKVHeads must be <= numHeads")
+	// ErrNonDivisibleHeads is returned when numHeads is not divisible by numKVHeads.
+	ErrNonDivisibleHeads = errors.New("attention: numHeads must be divisible by numKVHeads")
+	// ErrPreNormForward is returned when the pre-norm layer normalization fails.
+	ErrPreNormForward = errors.New("attention: pre-norm forward pass failed")
+	// ErrQueryProjection is returned when the query projection fails.
+	ErrQueryProjection = errors.New("attention: query projection failed")
+	// ErrKeyProjection is returned when the key projection fails.
+	ErrKeyProjection = errors.New("attention: key projection failed")
+	// ErrValueProjection is returned when the value projection fails.
+	ErrValueProjection = errors.New("attention: value projection failed")
+	// ErrScaledDotProduct is returned when the scaled dot-product attention fails.
+	ErrScaledDotProduct = errors.New("attention: scaled dot-product attention failed")
+	// ErrSetQueryWeights is returned when setting query weights fails.
+	ErrSetQueryWeights = errors.New("attention: failed to set query weights")
+	// ErrSetKeyWeights is returned when setting key weights fails.
+	ErrSetKeyWeights = errors.New("attention: failed to set key weights")
+	// ErrSetValueWeights is returned when setting value weights fails.
+	ErrSetValueWeights = errors.New("attention: failed to set value weights")
 )
 
 // AttentionSublayer implements the attention sublayer with pre-norm and residual connection
@@ -40,17 +55,18 @@ var (
 // through the numKVHeads parameter. When numKVHeads < numHeads, it implements
 // grouped-query attention where multiple query heads share the same key and value heads.
 type AttentionSublayer struct {
-	hiddenDim  int
-	numHeads   int
-	numKVHeads int
-	preNorm    *LayerNorm
-	qProj      *Linear
-	kProj      *Linear
-	vProj      *Linear
-	outProj    *AttentionOutputProjection
+	hiddenDim  int                        // Hidden dimension of the model
+	numHeads   int                        // Number of attention heads
+	numKVHeads int                        // Number of key/value heads (for grouped-query attention)
+	preNorm    *LayerNorm                 // Pre-norm layer normalization
+	qProj      *Linear                    // Query projection layer
+	kProj      *Linear                    // Key projection layer
+	vProj      *Linear                    // Value projection layer
+	outProj    *AttentionOutputProjection // Output projection layer
 }
 
 // NewAttentionSublayer creates a new attention sublayer.
+//
 // Parameters:
 //   - hiddenDim: Dimension of the hidden state
 //   - numHeads: Number of attention heads
@@ -60,6 +76,8 @@ type AttentionSublayer struct {
 //   - Pre-norm layer normalization
 //   - QKV projection matrices
 //   - Output projection
+//
+// Returns a pointer to the AttentionSublayer and an error if validation fails.
 func NewAttentionSublayer(hiddenDim, numHeads, numKVHeads int) (*AttentionSublayer, error) {
 	if err := ValidateHeadDimensions(hiddenDim, numHeads, hiddenDim/numHeads); err != nil {
 		return nil, ErrInvalidHeadDimensions
@@ -91,6 +109,7 @@ func NewAttentionSublayer(hiddenDim, numHeads, numKVHeads int) (*AttentionSublay
 }
 
 // Forward performs the forward pass through the attention sublayer.
+//
 // Input tensor can be either:
 //   - 2D [batch_size, hidden_dim]
 //   - 3D [batch_size, seq_len, hidden_dim]
@@ -102,7 +121,7 @@ func NewAttentionSublayer(hiddenDim, numHeads, numKVHeads int) (*AttentionSublay
 //  4. Output projection
 //  5. Residual connection
 //
-// Returns a tensor with the same shape as the input.
+// Returns a tensor with the same shape as the input and an error if any step fails.
 func (a *AttentionSublayer) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 	// Validate input shape
 	if err := ValidateShape(x, 2, 3); err != nil {
@@ -219,11 +238,14 @@ func (a *AttentionSublayer) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 }
 
 // SetWeights sets the weights for the attention sublayer.
+//
 // Parameters:
 //   - qWeights: Query projection weights [hidden_dim, num_heads * head_dim]
 //   - kWeights: Key projection weights [hidden_dim, num_kv_heads * kv_head_dim]
 //   - vWeights: Value projection weights [hidden_dim, num_kv_heads * kv_head_dim]
 //   - outWeights: Output projection weights [num_heads * head_dim, hidden_dim]
+//
+// Returns an error if any weight assignment fails.
 func (a *AttentionSublayer) SetWeights(qWeights, kWeights, vWeights, outWeights *tensor.Tensor) error {
 	if err := a.qProj.SetWeights(qWeights); err != nil {
 		return ErrSetQueryWeights
@@ -239,6 +261,11 @@ func (a *AttentionSublayer) SetWeights(qWeights, kWeights, vWeights, outWeights 
 }
 
 // SetGamma sets the scale parameter for the sublayer normalization.
+//
+// Parameters:
+//   - gamma: Scale parameter tensor for layer normalization
+//
+// Returns an error if the gamma tensor is invalid.
 func (a *AttentionSublayer) SetGamma(gamma *tensor.Tensor) error {
 	return a.preNorm.SetGamma(gamma)
 }

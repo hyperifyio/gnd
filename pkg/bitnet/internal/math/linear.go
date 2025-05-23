@@ -1,4 +1,7 @@
-// Package math implements mathematical operations for the BitNet model.
+// Package math implements mathematical operations for the BitNet model, including
+// attention mechanisms, feed-forward networks, and normalization layers.
+// The package provides optimized implementations of transformer architecture
+// components with support for ternary quantization.
 package math
 
 import (
@@ -7,16 +10,27 @@ import (
 
 // Linear represents a linear transformation layer.
 // It performs the operation: output = input * weights
+//
+// The layer supports both 2D [batch_size, in_dim] and 3D [batch_size, seq_len, in_dim]
+// inputs, automatically handling the reshaping required for efficient matrix multiplication.
+// The implementation uses BitLinear for efficient computation with ternary weights.
 type Linear struct {
-	// Input dimension
+	// Input dimension of the layer
 	inDim int
-	// Output dimension
+	// Output dimension of the layer
 	outDim int
 	// Weight matrix [out_dim, in_dim]
 	weights *tensor.Tensor
 }
 
-// NewLinear creates a new linear layer.
+// NewLinear creates a new linear transformation layer.
+//
+// Parameters:
+//   - inDim: Size of the input dimension
+//   - outDim: Size of the output dimension
+//
+// The layer is initialized with a weight matrix of shape [out_dim, in_dim].
+// The weights are used for the linear transformation: output = input * weights.
 func NewLinear(inDim, outDim int) *Linear {
 	// Create weight matrix
 	weights := tensor.NewTensor(outDim, inDim)
@@ -28,12 +42,20 @@ func NewLinear(inDim, outDim int) *Linear {
 	}
 }
 
-// Forward performs the linear transformation.
+// Forward performs the linear transformation on the input tensor.
+//
 // Input tensor can be either:
-//   - 2D [batch_size, in_dim]
-//   - 3D [batch_size, seq_len, in_dim]
+//   - 2D [batch_size, in_dim] for single-token inputs
+//   - 3D [batch_size, seq_len, in_dim] for multi-token inputs
+//
+// The function:
+// 1. Validates input shape and dimensions
+// 2. Reshapes input to 2D for efficient matrix multiplication
+// 3. Performs linear transformation using BitLinear
+// 4. Reshapes output back to match input dimensions
 //
 // Returns a tensor with the same shape as input but with out_dim as the last dimension.
+// The implementation handles both single-token and multi-token cases efficiently.
 func (l *Linear) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 	// Validate input shape
 	if err := ValidateShape(x, 2, 3); err != nil {
@@ -93,7 +115,13 @@ func (l *Linear) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 	return output, nil
 }
 
-// SetWeights sets the weight matrix.
+// SetWeights sets the weight matrix for the linear transformation.
+//
+// Parameters:
+//   - weights: Weight matrix [out_dim, in_dim]
+//
+// Returns an error if the weights tensor has incorrect shape.
+// The weights must match the layer's input and output dimensions.
 func (l *Linear) SetWeights(weights *tensor.Tensor) error {
 	if len(weights.Shape()) != 2 || weights.Shape()[0] != l.outDim || weights.Shape()[1] != l.inDim {
 		tensor.DebugLog("weights must be 2D tensor with shape [%d, %d], got %v", l.outDim, l.inDim, weights.Shape())
@@ -104,6 +132,9 @@ func (l *Linear) SetWeights(weights *tensor.Tensor) error {
 }
 
 // GetWeights returns the current weight matrix.
+//
+// Returns the weight tensor with shape [out_dim, in_dim].
+// This is the matrix used for the linear transformation.
 func (l *Linear) GetWeights() *tensor.Tensor {
 	return l.weights
 }

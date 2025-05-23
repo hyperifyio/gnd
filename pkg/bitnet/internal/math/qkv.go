@@ -1,3 +1,7 @@
+// Package math implements mathematical operations for the BitNet model, including
+// attention mechanisms, feed-forward networks, and normalization layers.
+// The package provides optimized implementations of transformer architecture
+// components with support for ternary quantization.
 package math
 
 import (
@@ -6,7 +10,15 @@ import (
 )
 
 // QKVProjection represents the Query, Key, and Value projection matrices
-// for multi-head self-attention
+// for multi-head self-attention.
+//
+// This structure manages the projection weights and provides methods to
+// project input hidden states into Q, K, and V tensors for use in the
+// attention mechanism. It supports grouped-query attention (GQA) by
+// allowing a different number of key/value heads than query heads.
+//
+// The implementation is optimized for efficient computation and supports
+// both single-token and multi-token input shapes.
 type QKVProjection struct {
 	// Number of attention heads
 	numHeads int
@@ -16,15 +28,23 @@ type QKVProjection struct {
 	headDim int
 	// Hidden dimension
 	hiddenDim int
-	// Query projection weights
+	// Query projection weights [hidden_dim, num_heads * head_dim]
 	qProj *tensor.Tensor
-	// Key projection weights
+	// Key projection weights [hidden_dim, num_kv_heads * head_dim]
 	kProj *tensor.Tensor
-	// Value projection weights
+	// Value projection weights [hidden_dim, num_kv_heads * head_dim]
 	vProj *tensor.Tensor
 }
 
-// NewQKVProjection creates a new QKV projection with the given parameters
+// NewQKVProjection creates a new QKV projection with the given parameters.
+//
+// Parameters:
+//   - hiddenDim: Size of the hidden dimension
+//   - numHeads: Number of query heads
+//   - numKVHeads: Number of key/value heads (for GQA)
+//
+// The projection matrices are initialized with the correct shapes for Q, K, and V.
+// The structure supports both standard and grouped-query attention.
 func NewQKVProjection(hiddenDim, numHeads, numKVHeads int) *QKVProjection {
 	headDim := hiddenDim / numHeads
 	kvHeadDim := hiddenDim / numKVHeads
@@ -48,9 +68,20 @@ func NewQKVProjection(hiddenDim, numHeads, numKVHeads int) *QKVProjection {
 	}
 }
 
-// Project performs the QKV projection on the input hidden states
-// input: [batch_size, seq_len, hidden_dim] or [seq_len, hidden_dim]
-// Returns: Q, K, V tensors of shape [batch_size, num_heads, seq_len, head_dim]
+// Project performs the QKV projection on the input hidden states.
+//
+// Input tensor must be either:
+//   - 2D [batch_size, hidden_dim] for single-token inputs
+//   - 3D [batch_size, seq_len, hidden_dim] for multi-token inputs
+//
+// The function:
+// 1. Validates input shape and dimensions
+// 2. Projects input into Q, K, and V using BitLinear
+// 3. Reshapes and splits projections into heads
+// 4. Expands key/value heads if using grouped-query attention
+//
+// Returns Q, K, V tensors of shape [batch_size, num_heads, seq_len, head_dim].
+// The implementation includes debug logging for tensor shapes and data lengths.
 func (p *QKVProjection) Project(input *tensor.Tensor) (*tensor.Tensor, *tensor.Tensor, *tensor.Tensor) {
 	// Debug output for input tensor
 	loggers.Printf(loggers.Debug, "Input tensor shape: %v", input.Shape())
@@ -169,7 +200,15 @@ func (p *QKVProjection) Project(input *tensor.Tensor) (*tensor.Tensor, *tensor.T
 	return q, k, v
 }
 
-// SetWeights sets the QKV projection weights
+// SetWeights sets the QKV projection weights.
+//
+// Parameters:
+//   - qWeights: Query projection weights [hidden_dim, num_heads * head_dim]
+//   - kWeights: Key projection weights [hidden_dim, num_kv_heads * head_dim]
+//   - vWeights: Value projection weights [hidden_dim, num_kv_heads * head_dim]
+//
+// Panics if any weight matrix has incorrect dimensions.
+// The weights must match the projection's hidden and head dimensions.
 func (p *QKVProjection) SetWeights(qWeights, kWeights, vWeights *tensor.Tensor) {
 	// Debug output for weight shapes
 	loggers.Printf(loggers.Debug, "Q weights shape: %v", qWeights.Shape())

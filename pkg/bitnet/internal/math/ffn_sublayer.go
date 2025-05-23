@@ -1,22 +1,46 @@
+// Package math implements mathematical operations for the BitNet model, including
+// attention mechanisms, feed-forward networks, and normalization layers.
+// The package provides optimized implementations of transformer architecture
+// components with support for ternary quantization.
 package math
 
 import (
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
 )
 
-// FFNSublayer implements the feed-forward sublayer with pre-norm and residual connection
+// FFNSublayer implements the feed-forward sublayer with pre-norm and residual connection.
+// It is a key component of the transformer architecture that processes each position
+// independently through a feed-forward network after normalization.
+//
+// The sublayer consists of:
+// 1. Pre-norm layer normalization
+// 2. Two-layer feed-forward network with ReLU² activation
+// 3. Residual connection
+//
+// The implementation supports both 2D [seq_len, hidden_dim] and 3D [batch_size, seq_len, hidden_dim]
+// inputs, with automatic shape detection and appropriate processing.
 type FFNSublayer struct {
-	// Sub-layer normalization
+	// Sub-layer normalization for pre-norm
 	subln *SubLN
-	// Feed-forward network
+	// Feed-forward network for position-wise processing
 	ffn *FFN
-	// Hidden dimension
+	// Hidden dimension of the model
 	hiddenDim int
-	// Intermediate dimension
+	// Intermediate dimension (typically 4x hidden_dim)
 	intermediateDim int
 }
 
-// NewFFNSublayer creates a new feed-forward sublayer
+// NewFFNSublayer creates a new feed-forward sublayer instance.
+//
+// Parameters:
+//   - hiddenDim: Size of the hidden dimension
+//   - intermediateDim: Size of the intermediate dimension (typically 4x hidden_dim)
+//
+// The sublayer is initialized with:
+// - SubLN: Pre-norm layer with epsilon=1e-5
+// - FFN: Two-layer feed-forward network with ReLU² activation
+//
+// Returns a new FFNSublayer instance ready for use.
 func NewFFNSublayer(hiddenDim, intermediateDim int) *FFNSublayer {
 	return &FFNSublayer{
 		subln:           NewSubLN(hiddenDim, 1e-5),
@@ -26,7 +50,22 @@ func NewFFNSublayer(hiddenDim, intermediateDim int) *FFNSublayer {
 	}
 }
 
-// Forward performs the forward pass through the feed-forward sublayer
+// Forward performs the forward pass through the feed-forward sublayer.
+//
+// Input tensor can be either:
+//   - 2D [seq_len, hidden_dim] for single-batch inputs
+//   - 3D [batch_size, seq_len, hidden_dim] for multi-batch inputs
+//
+// The function performs the following steps:
+// 1. Validates input shape and dimensions
+// 2. Converts input to float32 for normalization
+// 3. Applies pre-norm layer normalization
+// 4. Applies feed-forward network
+// 5. Adds residual connection
+// 6. Clamps output to int8 range
+//
+// Returns a tensor with the same shape as the input.
+// Panics if the input shape is invalid.
 func (f *FFNSublayer) Forward(input *tensor.Tensor) *tensor.Tensor {
 	// Get input dimensions
 	var batchSize, seqLen, hiddenDim int
@@ -135,12 +174,26 @@ func (f *FFNSublayer) Forward(input *tensor.Tensor) *tensor.Tensor {
 	return result
 }
 
-// SetWeights sets the weights for the feed-forward network
+// SetWeights sets the weights for the feed-forward network.
+//
+// Parameters:
+//   - upWeights: Up-projection weights [intermediate_dim, hidden_dim]
+//   - downWeights: Down-projection weights [hidden_dim, intermediate_dim]
+//
+// The weights are used for the two-layer feed-forward network:
+// 1. Up-projection expands the hidden dimension
+// 2. Down-projection contracts back to the hidden dimension
 func (f *FFNSublayer) SetWeights(upWeights, downWeights *tensor.Tensor) {
 	f.ffn.SetWeights(upWeights, downWeights)
 }
 
-// SetGamma sets the scale parameter for sublayer normalization
+// SetGamma sets the scale parameter for sublayer normalization.
+//
+// Parameters:
+//   - gamma: Scale parameter vector [hidden_dim]
+//
+// The gamma parameter is used to scale the normalized values
+// after the pre-norm layer normalization step.
 func (f *FFNSublayer) SetGamma(gamma []float32) {
 	f.subln.SetGamma(gamma)
 }

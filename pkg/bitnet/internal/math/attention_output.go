@@ -1,4 +1,7 @@
-// Package math implements mathematical operations for the BitNet model.
+// Package math implements mathematical operations for the BitNet model, including
+// attention mechanisms, feed-forward networks, and normalization layers.
+// The package provides optimized implementations of transformer architecture
+// components with support for ternary quantization.
 package math
 
 import (
@@ -15,6 +18,10 @@ import (
 //	output = input * W
 //
 // where W is a [hidden_dim, hidden_dim] weight matrix.
+//
+// The layer handles both single-token and multi-token cases efficiently,
+// with special optimizations for the single-token case to avoid unnecessary
+// reshaping operations.
 type AttentionOutputProjection struct {
 	// Hidden dimension of the model
 	hiddenDim int
@@ -31,6 +38,8 @@ type AttentionOutputProjection struct {
 //   - numHeads: Number of attention heads
 //
 // The projection matrix is initialized as a [hidden_dim, hidden_dim] tensor.
+// The layer is optimized for efficient computation with both single-token
+// and multi-token inputs.
 func NewAttentionOutputProjection(hiddenDim, numHeads int) *AttentionOutputProjection {
 	// Create output projection matrix
 	outProj := tensor.NewTensor(hiddenDim, hiddenDim)
@@ -51,6 +60,10 @@ func NewAttentionOutputProjection(hiddenDim, numHeads int) *AttentionOutputProje
 //  3. Reshapes output to [batch_size, seq_len, hidden_dim]
 //
 // Returns a 3D tensor with shape [batch_size, seq_len, hidden_dim].
+//
+// The function includes special optimizations for single-token inputs
+// (batch_size=1, seq_len=1) to avoid unnecessary reshaping operations.
+// For multi-token inputs, it uses efficient reshaping and linear projection.
 func (out *AttentionOutputProjection) Project(input *tensor.Tensor) *tensor.Tensor {
 	if len(input.Shape()) != 3 {
 		panic("input must be 3D tensor [batch_size, seq_len, num_heads * head_dim]")
@@ -106,6 +119,7 @@ func (out *AttentionOutputProjection) Project(input *tensor.Tensor) *tensor.Tens
 //   - weights: Output projection weights [hidden_dim, hidden_dim]
 //
 // Panics if the weights tensor has incorrect dimensions.
+// The weights must match the layer's hidden dimension for both input and output.
 func (out *AttentionOutputProjection) SetWeights(weights *tensor.Tensor) {
 	if weights.Shape()[0] != out.hiddenDim || weights.Shape()[1] != out.hiddenDim {
 		panic("invalid output projection weights shape")

@@ -9,7 +9,10 @@ import (
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
 )
 
-// Package math implements mathematical operations for the BitNet model.
+// Package math implements mathematical operations for the BitNet model, including
+// attention mechanisms, feed-forward networks, and normalization layers.
+// The package provides optimized implementations of transformer architecture
+// components with support for ternary quantization.
 
 var (
 	ErrInputTensorsMustBe4D = errors.New("attention: input tensors must be 4D")
@@ -155,7 +158,8 @@ func ScaledDotProductAttention(q, k, v *tensor.Tensor) (*tensor.Tensor, error) {
 	return output, nil
 }
 
-// min returns the minimum of two int32 values
+// min returns the minimum of two int32 values.
+// This is a utility function used internally for bounds checking.
 func min(a, b int32) int32 {
 	if a < b {
 		return a
@@ -163,7 +167,8 @@ func min(a, b int32) int32 {
 	return b
 }
 
-// max returns the maximum of two int32 values
+// max returns the maximum of two int32 values.
+// This is a utility function used internally for bounds checking.
 func max(a, b int32) int32 {
 	if a > b {
 		return a
