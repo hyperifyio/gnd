@@ -36,4 +36,9 @@ var (
 	ErrLinearInputDimension = errors.New("linear: input dimension mismatch")
 	// ErrLinearWeightsShape is returned when the weights for a linear layer have an invalid shape.
 	ErrLinearWeightsShape = errors.New("linear: invalid weights shape")
+
+	// ErrWeightsNotSet is returned when weights have not been set for a layer.
+	ErrWeightsNotSet = errors.New("math: weights not set")
+	// ErrWeightsShape is returned when weights have an invalid shape.
+	ErrWeightsShape = errors.New("math: invalid weights shape")
 )
