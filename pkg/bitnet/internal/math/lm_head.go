@@ -8,14 +8,7 @@ import (
 	"errors"
 
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
-	"github.com/hyperifyio/gnd/pkg/loggers"
 )
-
-// DebugLog logs debug information with formatting.
-// Used for internal debugging and diagnostics in the math package.
-func DebugLog(format string, args ...interface{}) {
-	loggers.Printf(loggers.Debug, format, args...)
-}
 
 var (
 	// ErrLMHeadPanic is returned when a panic occurs in the LMHead.Forward method
@@ -94,7 +87,6 @@ func (l *LMHead) Forward(input *tensor.Tensor) (*tensor.Tensor, error) {
 	var err error
 	defer func() {
 		if r := recover(); r != nil {
-			DebugLog("panic in LMHead.Forward: %v", r)
 			err = ErrLMHeadPanic
 			reshaped = nil
 			output = nil
