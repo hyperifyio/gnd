@@ -3,7 +3,6 @@ package model
 import (
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"io/fs"
 
@@ -29,6 +28,10 @@ var (
 	ErrSequenceTooLong         = errors.New("bitnet: sequence length exceeds maximum")
 	ErrDetokenization          = errors.New("bitnet: detokenization error")
 	ErrInvalidInputShape       = errors.New("bitnet: invalid input shape")
+	ErrAttentionSublayer       = errors.New("bitnet: failed to create attention sublayer")
+	ErrAttentionWeights        = errors.New("bitnet: failed to set attention weights")
+	ErrAttentionForward        = errors.New("bitnet: attention forward pass failed")
+	ErrUnexpectedTensorShape   = errors.New("bitnet: unexpected tensor shape")
 )
 
 // Model represents a BitNet model
@@ -253,7 +256,8 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 	// Create attention and feed-forward sublayers once
 	attn, err := bitnetmath.NewAttentionSublayer(m.config.HiddenSize, m.config.NumHeads, m.config.NumKVHeads)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create attention sublayer: %w", err)
+		loggers.Printf(loggers.Debug, "failed to create attention sublayer: %v", err)
+		return nil, ErrAttentionSublayer
 	}
 	ffn := bitnetmath.NewFFNSublayer(m.config.HiddenSize, m.config.IntermediateSize)
 
@@ -301,14 +305,16 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 
 		// Set attention weights
 		if err := attn.SetWeights(qTensor, kTensor, vTensor, outTensor); err != nil {
-			return nil, fmt.Errorf("failed to set attention weights: %w", err)
+			loggers.Printf(loggers.Debug, "failed to set attention weights: %v", err)
+			return nil, ErrAttentionWeights
 		}
 
 		// Apply attention
 		var err error
 		hiddenStatesTensor, err = attn.Forward(hiddenStatesTensor)
 		if err != nil {
-			return nil, fmt.Errorf("attention forward pass failed: %w", err)
+			loggers.Printf(loggers.Debug, "attention forward pass failed: %v", err)
+			return nil, ErrAttentionForward
 		}
 		loggers.Printf(loggers.Debug, "After attn.Forward, hiddenStatesTensor shape: %v", hiddenStatesTensor.Shape())
 		loggers.Printf(loggers.Debug, "After attn.Forward, hiddenStatesTensor data: %v", hiddenStatesTensor.Data())
@@ -366,7 +372,8 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 				// [hidden] - single token case
 				value = hiddenStatesTensor.Get(j)
 			} else {
-				return nil, fmt.Errorf("unexpected hiddenStatesTensor shape: %v", shape)
+				loggers.Printf(loggers.Debug, "unexpected hiddenStatesTensor shape: %v", shape)
+				return nil, ErrUnexpectedTensorShape
 			}
 			hiddenStatesFloat[i][j] = float32(value)
 		}
