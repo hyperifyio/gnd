@@ -66,7 +66,8 @@ func (p *QKVProjection) Project(input *tensor.Tensor) (*tensor.Tensor, *tensor.T
 	} else if len(input.Shape()) == 3 {
 		batchSize, seqLen, hiddenDim = input.Shape()[0], input.Shape()[1], input.Shape()[2]
 	} else {
-		panic(fmt.Sprintf("invalid input shape: %v", input.Shape()))
+		loggers.Printf(loggers.Debug, "invalid input shape: %v", input.Shape())
+		panic("invalid input shape")
 	}
 
 	// Check hidden dimension
