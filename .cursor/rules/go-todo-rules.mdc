@@ -1,12 +1,12 @@
 ---
 description: "Enforce TODO comments in pkg/bitnet to include GitHub issue number; suggest using `gh` to find relevant tasks"
-globs: pkg/bitnet/**/*.go
+globs: pkg/bitnet/**/*.go, *.md
 alwaysApply: true
 ---
 
 # Rule
 
-All `TODO` comments in `pkg/bitnet/**/*.go` must include a **GitHub issue reference** that explains which ticket will cover the deferred work.
+All `TODO` comments in `pkg/bitnet/**/*.go` or markdown files must include a **GitHub issue reference** that explains which ticket will cover the deferred work.
 
 Use the format:
 

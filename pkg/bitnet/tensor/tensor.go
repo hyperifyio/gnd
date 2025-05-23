@@ -6,7 +6,6 @@
 package tensor
 
 import (
-	"fmt"
 	"runtime"
 	"sync"
 
@@ -67,7 +66,8 @@ func NewTensor(shape ...int) *Tensor {
 	}
 	for _, dim := range shape {
 		if dim <= 0 {
-			panic(fmt.Sprintf("tensor: all dimensions must be positive, got shape %v", shape))
+			loggers.Printf(loggers.Debug, "Invalid shape dimension encountered: %v", shape)
+			panic("tensor: invalid shape dimension")
 		}
 	}
 
