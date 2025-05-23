@@ -79,9 +79,6 @@ func ScaledDotProductAttention(q, k, v *tensor.Tensor) (*tensor.Tensor, error) {
 				end = batchSize
 			}
 
-			// Pre-compute scaling factor
-			scale := float32(1.0 / math.Sqrt(float64(headDim)))
-
 			// Process each batch element
 			for b := start; b < end; b++ {
 				for h := 0; h < numHeads; h++ {
@@ -95,7 +92,9 @@ func ScaledDotProductAttention(q, k, v *tensor.Tensor) (*tensor.Tensor, error) {
 								kVal := float32(k.Get(b, h, s2, d))
 								score += qVal * kVal
 							}
-							scores[s1*seqLen+s2] = score * scale
+							// Scale by 1/sqrt(head_dim)
+							score /= float32(math.Sqrt(float64(headDim)))
+							scores[s1*seqLen+s2] = score
 						}
 					}
 
@@ -129,14 +128,14 @@ func ScaledDotProductAttention(q, k, v *tensor.Tensor) (*tensor.Tensor, error) {
 							for s2 := 0; s2 < seqLen; s2++ {
 								val += scores[s1*seqLen+s2] * float32(v.Get(b, h, s2, d))
 							}
-
-							// Clamp to int8 range
-							if val > 127 {
+							// Remove the extra scaling by sqrt(headDim)
+							val = float32(math.Round(float64(val)))
+							// Clamp to int8 range, saturating for large values
+							if val >= 127 {
 								val = 127
-							} else if val < -128 {
+							} else if val <= -128 {
 								val = -128
 							}
-
 							output.Set(int8(val), b, h, s1, d)
 						}
 					}

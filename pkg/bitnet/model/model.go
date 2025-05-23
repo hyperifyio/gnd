@@ -96,10 +96,12 @@ func (m *Model) LoadWeights(path string) error {
 
 	// Read the header
 	header := make([]byte, 8)
-	if n, err := io.ReadFull(file, header); err != nil {
+	n, err := io.ReadFull(file, header)
+	if err != nil {
 		loggers.Printf(loggers.Debug, "[DEBUG] failed to read weights file header: %v", err)
 		return ErrWeightsFileRead
-	} else if n < 8 {
+	}
+	if n < 8 {
 		loggers.Printf(loggers.Debug, "[DEBUG] header too short: got %d bytes", n)
 		return ErrWeightsFileRead
 	}
@@ -115,14 +117,6 @@ func (m *Model) LoadWeights(path string) error {
 		loggers.Printf(loggers.Debug, "[DEBUG] unsupported version: %d", binary.LittleEndian.Uint32(header[4:8]))
 		return ErrUnsupportedVersion
 	}
-
-	// Initialize tokenizer
-	tokenizer, err := model.NewTokenizer(m.fs, "tokenizer")
-	if err != nil {
-		loggers.Printf(loggers.Debug, "failed to initialize tokenizer: %v", err)
-		return ErrTokenizerInit
-	}
-	m.tokenizer = tokenizer
 
 	// Pre-calculate sizes for all allocations
 	embeddingSize := m.config.VocabSize * m.config.HiddenSize
@@ -152,6 +146,9 @@ func (m *Model) LoadWeights(path string) error {
 
 	// Read token embeddings
 	if err := m.readTernaryWeights(file, m.weights.TokenEmbedding); err != nil {
+		if err == io.EOF || err == io.ErrUnexpectedEOF {
+			return ErrWeightsFileRead
+		}
 		return err
 	}
 
@@ -161,31 +158,60 @@ func (m *Model) LoadWeights(path string) error {
 
 		// Read all weights for this block
 		if err := m.readTernaryWeights(file, block.QKVProj); err != nil {
+			if err == io.EOF || err == io.ErrUnexpectedEOF {
+				return ErrWeightsFileRead
+			}
 			return err
 		}
 		if err := m.readTernaryWeights(file, block.OutProj); err != nil {
+			if err == io.EOF || err == io.ErrUnexpectedEOF {
+				return ErrWeightsFileRead
+			}
 			return err
 		}
 		if err := m.readTernaryWeights(file, block.FFNUp); err != nil {
+			if err == io.EOF || err == io.ErrUnexpectedEOF {
+				return ErrWeightsFileRead
+			}
 			return err
 		}
 		if err := m.readTernaryWeights(file, block.FFNDown); err != nil {
+			if err == io.EOF || err == io.ErrUnexpectedEOF {
+				return ErrWeightsFileRead
+			}
 			return err
 		}
 
 		// Read normalization weights
 		if err := m.readTernaryWeights(file, block.AttnNorm); err != nil {
+			if err == io.EOF || err == io.ErrUnexpectedEOF {
+				return ErrWeightsFileRead
+			}
 			return err
 		}
 		if err := m.readTernaryWeights(file, block.FFNNorm); err != nil {
+			if err == io.EOF || err == io.ErrUnexpectedEOF {
+				return ErrWeightsFileRead
+			}
 			return err
 		}
 	}
 
 	// Read final normalization
 	if err := m.readTernaryWeights(file, m.weights.FinalNorm); err != nil {
+		if err == io.EOF || err == io.ErrUnexpectedEOF {
+			return ErrWeightsFileRead
+		}
 		return err
 	}
+
+	// Initialize tokenizer (after all weights are loaded)
+	tokenizer, err := model.NewTokenizer(m.fs, "tokenizer")
+	if err != nil {
+		loggers.Printf(loggers.Debug, "failed to initialize tokenizer: %v", err)
+		return ErrTokenizerInit
+	}
+	m.tokenizer = tokenizer
 
 	return nil
 }
@@ -214,11 +240,11 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 		return nil, err
 	}
 
-	// Convert hidden states to tensor
-	hiddenStatesTensor := tensor.NewTensor(len(tokens), m.config.HiddenSize)
+	// Convert hidden states to tensor with shape [batch, seq, hidden]
+	hiddenStatesTensor := tensor.NewTensor(1, len(tokens), m.config.HiddenSize)
 	for i := 0; i < len(tokens); i++ {
 		for j := 0; j < m.config.HiddenSize; j++ {
-			hiddenStatesTensor.Set(int8(hiddenStates[i][j]), i, j)
+			hiddenStatesTensor.Set(int8(hiddenStates[i][j]), 0, i, j)
 		}
 	}
 
@@ -279,16 +305,6 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 			return nil, fmt.Errorf("failed to set attention weights: %w", err)
 		}
 
-		// Set gamma for attention normalization
-		gammaTensor := tensor.NewTensor(h)
-		gammaData := convertInt8ToFloat32(attnNormTensor.Data())
-		for i := 0; i < h; i++ {
-			gammaTensor.Set(int8(gammaData[i]), i)
-		}
-		if err := attn.SetGamma(gammaTensor); err != nil {
-			return nil, fmt.Errorf("failed to set attention gamma: %w", err)
-		}
-
 		// Apply attention
 		var err error
 		hiddenStatesTensor, err = attn.Forward(hiddenStatesTensor)
@@ -338,26 +354,33 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 	for i := 0; i < len(tokens); i++ {
 		hiddenStatesFloat[i] = make([]float32, m.config.HiddenSize)
 		for j := 0; j < m.config.HiddenSize; j++ {
-			if len(hiddenStatesTensor.Shape()) == 3 {
+			// Get the value from the tensor based on its shape
+			var value int8
+			shape := hiddenStatesTensor.Shape()
+			if len(shape) == 3 {
 				// [batch, seq, hidden] - use [0, i, j] for batch=1
-				hiddenStatesFloat[i][j] = float32(hiddenStatesTensor.Get(0, i, j))
-			} else if len(hiddenStatesTensor.Shape()) == 2 {
+				value = hiddenStatesTensor.Get(0, i, j)
+			} else if len(shape) == 2 {
 				// [seq, hidden]
-				hiddenStatesFloat[i][j] = float32(hiddenStatesTensor.Get(i, j))
+				value = hiddenStatesTensor.Get(i, j)
+			} else if len(shape) == 1 {
+				// [hidden] - single token case
+				value = hiddenStatesTensor.Get(j)
 			} else {
-				panic("unexpected hiddenStatesTensor shape")
+				return nil, fmt.Errorf("unexpected hiddenStatesTensor shape: %v", shape)
 			}
+			hiddenStatesFloat[i][j] = float32(value)
 		}
 	}
 
 	// Apply final normalization
 	normalizedStates := finalNorm.Normalize(hiddenStatesFloat)
 
-	// Convert back to tensor
-	finalStates := tensor.NewTensor(len(tokens), m.config.HiddenSize)
+	// Convert back to tensor with proper shape [batch, seq, hidden]
+	finalStates := tensor.NewTensor(1, len(tokens), m.config.HiddenSize)
 	for i := 0; i < len(tokens); i++ {
 		for j := 0; j < m.config.HiddenSize; j++ {
-			finalStates.Set(int8(normalizedStates[i][j]), i, j)
+			finalStates.Set(int8(normalizedStates[i][j]), 0, i, j)
 		}
 	}
 
@@ -367,7 +390,7 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 		// Get the hidden state for this token
 		hiddenState := make([]float32, m.config.HiddenSize)
 		for j := 0; j < m.config.HiddenSize; j++ {
-			hiddenState[j] = float32(finalStates.Get(i, j))
+			hiddenState[j] = float32(finalStates.Get(0, i, j))
 		}
 
 		// Find the token with the highest probability

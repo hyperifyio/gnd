@@ -142,65 +142,55 @@ func (p *QKVProjection) Project(input *tensor.Tensor) (*tensor.Tensor, *tensor.T
 
 	// Expand key/value heads if necessary
 	if p.numKVHeads < p.numHeads {
-		k = expandKVHeads(k, p.numHeads)
-		v = expandKVHeads(v, p.numHeads)
+		// Create expanded tensors with correct head dimensions
+		expandedK := tensor.NewTensor(batchSize, p.numHeads, seqLen, p.headDim)
+		expandedV := tensor.NewTensor(batchSize, p.numHeads, seqLen, p.headDim)
+
+		// Copy and repeat heads
+		for b := 0; b < batchSize; b++ {
+			for h := 0; h < p.numHeads; h++ {
+				// Use modulo to repeat heads
+				srcHead := h % p.numKVHeads
+				for s := 0; s < seqLen; s++ {
+					for d := 0; d < p.headDim; d++ {
+						val := k.Get(b, srcHead, s, d)
+						expandedK.Set(val, b, h, s, d)
+						val = v.Get(b, srcHead, s, d)
+						expandedV.Set(val, b, h, s, d)
+					}
+				}
+			}
+		}
+
+		k = expandedK
+		v = expandedV
 	}
 
 	return q, k, v
 }
 
-// expandKVHeads expands the number of key/value heads by repeating the existing heads
-func expandKVHeads(t *tensor.Tensor, numHeads int) *tensor.Tensor {
-	shape := t.Shape()
-	if len(shape) != 4 {
-		panic(fmt.Sprintf("invalid tensor shape for head expansion: %v", shape))
-	}
-
-	batchSize, seqLen, numKVHeads, headDim := shape[0], shape[1], shape[2], shape[3]
-	if numKVHeads >= numHeads {
-		return t
-	}
-
-	// Create expanded tensor
-	expanded := tensor.NewTensor(batchSize, seqLen, numHeads, headDim)
-
-	// Copy and repeat heads
-	for b := 0; b < batchSize; b++ {
-		for s := 0; s < seqLen; s++ {
-			for h := 0; h < numHeads; h++ {
-				// Use modulo to repeat heads
-				srcHead := h % numKVHeads
-				for d := 0; d < headDim; d++ {
-					val := t.Get(b, s, srcHead, d)
-					expanded.Set(val, b, s, h, d)
-				}
-			}
-		}
-	}
-
-	return expanded
-}
-
 // SetWeights sets the QKV projection weights
 func (p *QKVProjection) SetWeights(qWeights, kWeights, vWeights *tensor.Tensor) {
+	// Debug output for weight shapes
+	fmt.Fprintf(os.Stderr, "[DEBUG] Q weights shape: %v\n", qWeights.Shape())
+	fmt.Fprintf(os.Stderr, "[DEBUG] K weights shape: %v\n", kWeights.Shape())
+	fmt.Fprintf(os.Stderr, "[DEBUG] V weights shape: %v\n", vWeights.Shape())
+	fmt.Fprintf(os.Stderr, "[DEBUG] Expected Q shape: [%d, %d]\n", p.hiddenDim, p.numHeads*p.headDim)
+	fmt.Fprintf(os.Stderr, "[DEBUG] Expected K shape: [%d, %d]\n", p.hiddenDim, p.numKVHeads*(p.hiddenDim/p.numKVHeads))
+	fmt.Fprintf(os.Stderr, "[DEBUG] Expected V shape: [%d, %d]\n", p.hiddenDim, p.numKVHeads*(p.hiddenDim/p.numKVHeads))
+
 	// Check tensor shapes
 	if qWeights.Shape()[0] != p.hiddenDim || qWeights.Shape()[1] != p.numHeads*p.headDim {
 		panic(fmt.Sprintf("invalid Q weights shape: got %v, want [%d, %d]", qWeights.Shape(), p.hiddenDim, p.numHeads*p.headDim))
 	}
-	if kWeights.Shape()[0] != p.hiddenDim || kWeights.Shape()[1] != p.numKVHeads*p.headDim {
-		panic(fmt.Sprintf("invalid K weights shape: got %v, want [%d, %d]", kWeights.Shape(), p.hiddenDim, p.numKVHeads*p.headDim))
+	if kWeights.Shape()[0] != p.hiddenDim || kWeights.Shape()[1] != p.numKVHeads*(p.hiddenDim/p.numKVHeads) {
+		panic(fmt.Sprintf("invalid K weights shape: got %v, want [%d, %d]", kWeights.Shape(), p.hiddenDim, p.numKVHeads*(p.hiddenDim/p.numKVHeads)))
 	}
-	if vWeights.Shape()[0] != p.hiddenDim || vWeights.Shape()[1] != p.numKVHeads*p.headDim {
-		panic(fmt.Sprintf("invalid V weights shape: got %v, want [%d, %d]", vWeights.Shape(), p.hiddenDim, p.numKVHeads*p.headDim))
+	if vWeights.Shape()[0] != p.hiddenDim || vWeights.Shape()[1] != p.numKVHeads*(p.hiddenDim/p.numKVHeads) {
+		panic(fmt.Sprintf("invalid V weights shape: got %v, want [%d, %d]", vWeights.Shape(), p.hiddenDim, p.numKVHeads*(p.hiddenDim/p.numKVHeads)))
 	}
 
-	// Set projection matrices
 	p.qProj = qWeights
 	p.kProj = kWeights
 	p.vProj = vWeights
-
-	// Debug output for QKV projection matrices
-	fmt.Fprintf(os.Stderr, "[DEBUG] Q projection shape: %v\n", p.qProj.Shape())
-	fmt.Fprintf(os.Stderr, "[DEBUG] K projection shape: %v\n", p.kProj.Shape())
-	fmt.Fprintf(os.Stderr, "[DEBUG] V projection shape: %v\n", p.vProj.Shape())
 }

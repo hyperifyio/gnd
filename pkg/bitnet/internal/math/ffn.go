@@ -98,10 +98,17 @@ func (f *FFN) applyReLU2(input *tensor.Tensor) *tensor.Tensor {
 					// Apply ReLU²: max(0, x)²
 					if val > 0 {
 						val = val * val
+						// Scale down to prevent overflow
+						val = val / 16.0
 					} else {
 						val = 0
 					}
-					// Convert to int8 without clamping
+					// Convert to int8 with clamping
+					if val > 127 {
+						val = 127
+					} else if val < -128 {
+						val = -128
+					}
 					output.Set(int8(val), b, d)
 				}
 			}

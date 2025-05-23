@@ -48,9 +48,7 @@ Your *only* job is to process each outstanding PR comment, commit the fix immedi
 
 3. **Verify your changes**:
 
-   ```bash
-   git diff bitnet
-   ```
+   Use `git diff bitnet`, and `git diff --cached` and `git diff`.
 
    Do not print any "Would you like me to...?" prompts.
 

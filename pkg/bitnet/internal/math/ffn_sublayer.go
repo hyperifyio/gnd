@@ -29,9 +29,17 @@ func NewFFNSublayer(hiddenDim, intermediateDim int) *FFNSublayer {
 // Forward performs the forward pass through the feed-forward sublayer
 func (f *FFNSublayer) Forward(input *tensor.Tensor) *tensor.Tensor {
 	// Get input dimensions
-	batchSize := input.Shape()[0]
-	seqLen := input.Shape()[1]
-	hiddenDim := input.Shape()[2]
+	var batchSize, seqLen, hiddenDim int
+	if len(input.Shape()) == 2 {
+		// [seq_len, hidden_dim]
+		seqLen, hiddenDim = input.Shape()[0], input.Shape()[1]
+		batchSize = 1
+	} else if len(input.Shape()) == 3 {
+		// [batch_size, seq_len, hidden_dim]
+		batchSize, seqLen, hiddenDim = input.Shape()[0], input.Shape()[1], input.Shape()[2]
+	} else {
+		panic("invalid input shape: expected 2D [seq_len, hidden_dim] or 3D [batch_size, seq_len, hidden_dim]")
+	}
 
 	// Convert input to float32 for normalization
 	inputFloat := make([][]float32, batchSize*seqLen)
@@ -40,7 +48,13 @@ func (f *FFNSublayer) Forward(input *tensor.Tensor) *tensor.Tensor {
 			idx := i*seqLen + j
 			inputFloat[idx] = make([]float32, hiddenDim)
 			for k := 0; k < hiddenDim; k++ {
-				inputFloat[idx][k] = float32(input.Get(i, j, k))
+				var val int8
+				if len(input.Shape()) == 2 {
+					val = input.Get(j, k)
+				} else {
+					val = input.Get(i, j, k)
+				}
+				inputFloat[idx][k] = float32(val)
 			}
 		}
 	}
@@ -48,13 +62,23 @@ func (f *FFNSublayer) Forward(input *tensor.Tensor) *tensor.Tensor {
 	// Apply pre-norm
 	normalized := f.subln.Normalize(inputFloat)
 
-	// Reshape normalized output back to 3D tensor
-	normalizedTensor := tensor.NewTensor(batchSize, seqLen, hiddenDim)
-	for i := 0; i < batchSize; i++ {
+	// Reshape normalized output back to tensor
+	var normalizedTensor *tensor.Tensor
+	if len(input.Shape()) == 2 {
+		normalizedTensor = tensor.NewTensor(seqLen, hiddenDim)
 		for j := 0; j < seqLen; j++ {
-			idx := i*seqLen + j
 			for k := 0; k < hiddenDim; k++ {
-				normalizedTensor.Set(int8(normalized[idx][k]), i, j, k)
+				normalizedTensor.Set(int8(normalized[j][k]), j, k)
+			}
+		}
+	} else {
+		normalizedTensor = tensor.NewTensor(batchSize, seqLen, hiddenDim)
+		for i := 0; i < batchSize; i++ {
+			for j := 0; j < seqLen; j++ {
+				idx := i*seqLen + j
+				for k := 0; k < hiddenDim; k++ {
+					normalizedTensor.Set(int8(normalized[idx][k]), i, j, k)
+				}
 			}
 		}
 	}
@@ -63,14 +87,15 @@ func (f *FFNSublayer) Forward(input *tensor.Tensor) *tensor.Tensor {
 	ffnOutput := f.ffn.Forward(normalizedTensor)
 
 	// Add residual connection
-	result := tensor.NewTensor(batchSize, seqLen, hiddenDim)
-	for i := 0; i < batchSize; i++ {
+	var result *tensor.Tensor
+	if len(input.Shape()) == 2 {
+		result = tensor.NewTensor(seqLen, hiddenDim)
 		for j := 0; j < seqLen; j++ {
 			for k := 0; k < hiddenDim; k++ {
 				// Get input value
-				inputVal := input.Get(i, j, k)
+				inputVal := input.Get(j, k)
 				// Get FFN output value
-				ffnVal := ffnOutput.Get(i, j, k)
+				ffnVal := ffnOutput.Get(j, k)
 				// Add residual connection
 				sum := inputVal + ffnVal
 				// Clamp to int8 range
@@ -80,7 +105,29 @@ func (f *FFNSublayer) Forward(input *tensor.Tensor) *tensor.Tensor {
 					sum = -128
 				}
 				// Set final value
-				result.Set(int8(sum), i, j, k)
+				result.Set(int8(sum), j, k)
+			}
+		}
+	} else {
+		result = tensor.NewTensor(batchSize, seqLen, hiddenDim)
+		for i := 0; i < batchSize; i++ {
+			for j := 0; j < seqLen; j++ {
+				for k := 0; k < hiddenDim; k++ {
+					// Get input value
+					inputVal := input.Get(i, j, k)
+					// Get FFN output value
+					ffnVal := ffnOutput.Get(i, j, k)
+					// Add residual connection
+					sum := inputVal + ffnVal
+					// Clamp to int8 range
+					if sum > 127 {
+						sum = 127
+					} else if sum < -128 {
+						sum = -128
+					}
+					// Set final value
+					result.Set(int8(sum), i, j, k)
+				}
 			}
 		}
 	}

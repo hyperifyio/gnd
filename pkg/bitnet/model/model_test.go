@@ -370,28 +370,22 @@ func TestLoadWeights(t *testing.T) {
 }
 
 func TestLoadWeightsInvalidData(t *testing.T) {
-	// Create test filesystem with invalid weights
+	// Helper to build headers
+	makeHeader := func(magic uint32, version uint32) []byte {
+		h := make([]byte, 8)
+		binary.LittleEndian.PutUint32(h[0:4], magic)
+		binary.LittleEndian.PutUint32(h[4:8], version)
+		return h
+	}
+
 	fs := &testFS{
 		files: map[string][]byte{
-			"invalid_weights.bin": []byte{
-				// Invalid magic number
-				0x00, 0x00, 0x00, 0x00,
-				// Version 1
-				0x01, 0x00, 0x00, 0x00,
-			},
-			"invalid_version.bin": []byte{
-				// Valid magic number "BNET"
-				0x42, 0x4E, 0x45, 0x54,
-				// Invalid version 2
-				0x02, 0x00, 0x00, 0x00,
-			},
-			"truncated_weights.bin": []byte{
-				// Valid magic number "BNET"
-				0x42, 0x4E, 0x45, 0x54,
-				// Version 1
-				0x01, 0x00, 0x00, 0x00,
-				// Not enough data for weights, but at least 8 bytes header
-			},
+			// 8 bytes, wrong magic, valid version
+			"invalid_magic.bin": append(makeHeader(0x12345678, 1)),
+			// 8 bytes, correct magic, wrong version
+			"invalid_version.bin": append(makeHeader(0x424E4554, 2)),
+			// 8 bytes valid header, but not enough for first weights read (simulate truncation)
+			"truncated_weights.bin": append(makeHeader(0x424E4554, 1), 0x00),
 		},
 	}
 
@@ -402,7 +396,7 @@ func TestLoadWeightsInvalidData(t *testing.T) {
 	}{
 		{
 			name:    "invalid magic number",
-			path:    "invalid_weights.bin",
+			path:    "invalid_magic.bin",
 			wantErr: ErrInvalidWeightsFile,
 		},
 		{
@@ -419,7 +413,7 @@ func TestLoadWeightsInvalidData(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			model := NewModel(nil, fs)
+			model := NewModel(NewConfig(), fs)
 			err := model.LoadWeights(tt.path)
 			if !errors.Is(err, tt.wantErr) {
 				t.Errorf("LoadWeights() error = %v, wantErr %v", err, tt.wantErr)
@@ -915,7 +909,7 @@ func TestModel_TensorOperations(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tensor.Set(tt.value, tt.indices...)
+			tensor.SetTernary(tt.value, tt.indices...)
 			got := tensor.Get(tt.indices...)
 			if got != tt.want {
 				t.Errorf("Tensor.Get() = %v, want %v", got, tt.want)
@@ -941,15 +935,23 @@ func TestModel_TensorOperations(t *testing.T) {
 	}
 
 	// Test parallel operations
-	var wg sync.WaitGroup
-	wg.Add(6) // Add for each element in the 2x3 tensor
+	var mu sync.Mutex
+	visited := make(map[string]bool)
+
 	tensor.ParallelForEach(func(indices []int, value int8) {
-		defer wg.Done()
+		mu.Lock()
+		defer mu.Unlock()
+		key := fmt.Sprintf("%v", indices)
+		visited[key] = true
 		if len(indices) != 2 {
 			t.Errorf("ParallelForEach indices length = %v, want 2", len(indices))
 		}
 	})
-	wg.Wait()
+
+	// Verify all elements were visited
+	if len(visited) != 6 {
+		t.Errorf("ParallelForEach visited %d elements, want 6", len(visited))
+	}
 
 	// Test tensor cleanup
 	tensor.Close()

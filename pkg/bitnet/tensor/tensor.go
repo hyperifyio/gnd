@@ -170,24 +170,28 @@ func (t *Tensor) ParallelForEach(fn func(indices []int, value int8)) {
 		panic("tensor: ParallelForEach called on closed tensor")
 	}
 
+	// Create a copy of the data to avoid race conditions
+	data := make([]int8, len(t.data))
+	copy(data, t.data)
+
 	var wg sync.WaitGroup
-	chunkSize := len(t.data) / runtime.NumCPU()
+	chunkSize := len(data) / runtime.NumCPU()
 	if chunkSize < 1 {
 		chunkSize = 1
 	}
 
-	for i := 0; i < len(t.data); i += chunkSize {
+	for i := 0; i < len(data); i += chunkSize {
 		wg.Add(1)
 		go func(start int) {
 			defer wg.Done()
 			end := start + chunkSize
-			if end > len(t.data) {
-				end = len(t.data)
+			if end > len(data) {
+				end = len(data)
 			}
 
 			for j := start; j < end; j++ {
 				indices := t.calculateIndices(j)
-				fn(indices, t.data[j])
+				fn(indices, data[j])
 			}
 		}(i)
 	}
