@@ -2,10 +2,68 @@ package bitnet
 
 import (
 	"bytes"
+	"encoding/binary"
+	"encoding/json"
 	"io"
+	"io/fs"
 	"strings"
+	"sync"
 	"testing"
+
+	"github.com/hyperifyio/gnd/pkg/bitnet/model"
 )
+
+// mockFS implements fs.FS for testing
+type mockFS struct {
+	files map[string][]byte
+	mu    sync.RWMutex
+}
+
+func (m *mockFS) Open(name string) (fs.File, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	data, ok := m.files[name]
+	if !ok {
+		return nil, fs.ErrNotExist
+	}
+	return &mockFile{data: data}, nil
+}
+
+// Add this method to satisfy fs.ReadFileFS
+func (m *mockFS) ReadFile(name string) ([]byte, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	data, ok := m.files[name]
+	if !ok {
+		return nil, fs.ErrNotExist
+	}
+	return data, nil
+}
+
+type mockFile struct {
+	data []byte
+	pos  int64
+	mu   sync.Mutex
+}
+
+func (m *mockFile) Read(p []byte) (n int, err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.pos >= int64(len(m.data)) {
+		return 0, io.EOF
+	}
+	n = copy(p, m.data[m.pos:])
+	m.pos += int64(n)
+	return n, nil
+}
+
+func (m *mockFile) Close() error {
+	return nil
+}
+
+func (m *mockFile) Stat() (fs.FileInfo, error) {
+	return nil, nil
+}
 
 func TestLoadWeights(t *testing.T) {
 	tests := []struct {
@@ -144,4 +202,164 @@ func BenchmarkLoadWeightsParallel(b *testing.B) {
 			}
 		}
 	})
+}
+
+func TestNewModel(t *testing.T) {
+	tests := []struct {
+		name   string
+		config *model.Config
+	}{
+		{
+			name:   "default config",
+			config: nil,
+		},
+		{
+			name: "custom config",
+			config: &model.Config{
+				VocabSize:        1000,
+				HiddenSize:       512,
+				NumHeads:         8,
+				NumKVHeads:       8,
+				NumLayers:        6,
+				IntermediateSize: 2048,
+				MaxSeqLength:     1024,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := model.NewModel(tt.config, nil)
+			if got == nil {
+				t.Error("NewModel() returned nil")
+			}
+		})
+	}
+}
+
+func TestModelEmbedTokens(t *testing.T) {
+	config := model.NewConfig()
+	config.VocabSize = 10
+	config.HiddenSize = 4
+	config.NumLayers = 2 // keep small for test
+	config.IntermediateSize = 8
+	m := model.NewModel(config, nil)
+
+	// Calculate sizes
+	embeddingSize := config.VocabSize * config.HiddenSize
+	qkvSize := config.HiddenSize * 3 * config.HiddenSize
+	outSize := config.HiddenSize * config.HiddenSize
+	ffnUpSize := config.HiddenSize * config.IntermediateSize
+	ffnDownSize := config.IntermediateSize * config.HiddenSize
+	blockNormSize := config.HiddenSize
+	finalNormSize := config.HiddenSize
+
+	// Build weights file
+	buf := &bytes.Buffer{}
+	// Header
+	binary.Write(buf, binary.LittleEndian, uint32(0x424E4554)) // "BNET"
+	binary.Write(buf, binary.LittleEndian, uint32(1))          // Version 1
+	// Token embeddings
+	buf.Write(bytes.Repeat([]byte{1}, embeddingSize))
+	// Transformer blocks
+	for i := 0; i < config.NumLayers; i++ {
+		buf.Write(bytes.Repeat([]byte{1}, qkvSize))
+		buf.Write(bytes.Repeat([]byte{1}, outSize))
+		buf.Write(bytes.Repeat([]byte{1}, ffnUpSize))
+		buf.Write(bytes.Repeat([]byte{1}, ffnDownSize))
+		buf.Write(bytes.Repeat([]byte{1}, blockNormSize)) // AttnNorm
+		buf.Write(bytes.Repeat([]byte{1}, blockNormSize)) // FFNNorm
+	}
+	// FinalNorm
+	buf.Write(bytes.Repeat([]byte{1}, finalNormSize))
+
+	// Create test vocabulary
+	vocab := map[string]int{
+		"<unk>": 0,
+		"<s>":   1,
+		"</s>":  2,
+		"▁":     3, // Special space token
+		"a":     4,
+		"b":     5,
+		"c":     6,
+		"d":     7,
+		"e":     8,
+		"f":     9,
+	}
+
+	// Create test special tokens
+	specialTokens := map[string]int{
+		"<unk>": 0,
+		"<s>":   1,
+		"</s>":  2,
+	}
+
+	// Create mock filesystem with both weights and tokenizer files
+	mockFS := &mockFS{
+		files: map[string][]byte{
+			"test_weights.bin": buf.Bytes(),
+			"tokenizer/vocab.json": func() []byte {
+				data, _ := json.Marshal(vocab)
+				return data
+			}(),
+			"tokenizer/merges.txt": []byte(""), // Empty merges file for simplicity
+			"tokenizer/special_tokens.json": func() []byte {
+				data, _ := json.Marshal(specialTokens)
+				return data
+			}(),
+		},
+	}
+	m = model.NewModel(config, mockFS)
+
+	// Load weights
+	err := m.LoadWeights("test_weights.bin")
+	if err != nil {
+		t.Fatalf("LoadWeights() error = %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		tokens  []int
+		wantErr bool
+	}{
+		{
+			name:    "single token",
+			tokens:  []int{1},
+			wantErr: false,
+		},
+		{
+			name:    "multiple tokens",
+			tokens:  []int{0, 1},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt // capture range variable
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel() // Run subtests in parallel
+			got, err := m.Infer(tt.tokens)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Infer() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && len(got) != len(tt.tokens) {
+				t.Errorf("Infer() returned %d tokens, want %d", len(got), len(tt.tokens))
+			}
+		})
+	}
+}
+
+func TestModelClose(t *testing.T) {
+	config := model.NewConfig()
+	m := model.NewModel(config, nil)
+
+	// Test Close
+	m.Close()
+
+	// Try to use the model after closing
+	_, err := m.Infer([]int{1})
+	if err == nil {
+		t.Error("Expected error when using closed model")
+	}
 }
