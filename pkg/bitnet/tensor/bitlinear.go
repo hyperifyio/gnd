@@ -1,11 +1,11 @@
 package tensor
 
 import (
-	"fmt"
-	"os"
 	"runtime"
 	"sync"
 	"unsafe"
+
+	"github.com/hyperifyio/gnd/pkg/loggers"
 )
 
 // workBuffer represents a pre-allocated buffer for computations
@@ -51,9 +51,9 @@ func BitLinear(input, weights *Tensor) *Tensor {
 	outFeatures := weights.shape[0]
 
 	// Debug output for shapes
-	fmt.Fprintf(os.Stderr, "[DEBUG] BitLinear input shape: %v\n", input.shape)
-	fmt.Fprintf(os.Stderr, "[DEBUG] BitLinear weights shape: %v\n", weights.shape)
-	fmt.Fprintf(os.Stderr, "[DEBUG] BitLinear output shape: [%d %d]\n", batchSize, outFeatures)
+	loggers.Printf(loggers.Debug, "BitLinear input shape: %v", input.shape)
+	loggers.Printf(loggers.Debug, "BitLinear weights shape: %v", weights.shape)
+	loggers.Printf(loggers.Debug, "BitLinear output shape: [%d %d]", batchSize, outFeatures)
 
 	// Pre-allocate output tensor with aligned memory
 	output := &Tensor{
