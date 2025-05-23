@@ -152,6 +152,7 @@ func (a *AttentionSublayer) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 			return nil, ErrHiddenDimMismatch
 		}
 		input = tensor.NewTensor(x.Shape()[0], 1, hiddenDim)
+		defer input.Close()
 		for b := 0; b < x.Shape()[0]; b++ {
 			for d := 0; d < hiddenDim; d++ {
 				input.Set(x.Get(b, d), b, 0, d)
@@ -171,22 +172,26 @@ func (a *AttentionSublayer) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 	if err != nil {
 		return nil, ErrPreNormForward
 	}
+	defer normed.Close()
 
 	// Project to Q, K, V
 	q, err := a.qProj.Forward(normed)
 	if err != nil {
 		return nil, ErrQueryProjection
 	}
+	defer q.Close()
 
 	k, err := a.kProj.Forward(normed)
 	if err != nil {
 		return nil, ErrKeyProjection
 	}
+	defer k.Close()
 
 	v, err := a.vProj.Forward(normed)
 	if err != nil {
 		return nil, ErrValueProjection
 	}
+	defer v.Close()
 
 	// Reshape for attention
 	headDim := a.hiddenDim / a.numHeads
@@ -194,14 +199,21 @@ func (a *AttentionSublayer) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 
 	// Reshape and transpose Q, K, V
 	q = q.Reshape(input.Shape()[0], input.Shape()[1], a.numHeads, headDim).Transpose(0, 2, 1, 3)
+	defer q.Close()
+
 	k = k.Reshape(input.Shape()[0], input.Shape()[1], a.numKVHeads, kvHeadDim).Transpose(0, 2, 1, 3)
+	defer k.Close()
+
 	v = v.Reshape(input.Shape()[0], input.Shape()[1], a.numKVHeads, kvHeadDim).Transpose(0, 2, 1, 3)
+	defer v.Close()
 
 	// For grouped-query attention, repeat K and V heads
 	if a.numKVHeads < a.numHeads {
 		repeats := a.numHeads / a.numKVHeads
 		k = k.Repeat(1, repeats)
+		defer k.Close()
 		v = v.Repeat(1, repeats)
+		defer v.Close()
 	}
 
 	// Compute attention
@@ -209,10 +221,17 @@ func (a *AttentionSublayer) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 	if err != nil {
 		return nil, ErrScaledDotProduct
 	}
+	defer attn.Close()
 
 	// Project output
 	attn = attn.Transpose(0, 2, 1, 3).Reshape(input.Shape()[0], input.Shape()[1], a.hiddenDim)
-	out := a.outProj.Project(attn)
+	defer attn.Close()
+
+	out, err := a.outProj.Project(attn)
+	if err != nil {
+		return nil, err
+	}
+	defer out.Close()
 
 	// Add residual connection
 	if len(x.Shape()) == 2 {
@@ -333,4 +352,24 @@ func equalShape(a, b []int) bool {
 		}
 	}
 	return true
+}
+
+// Close releases all resources associated with the attention sublayer.
+// This includes closing all tensors and cleaning up memory.
+func (a *AttentionSublayer) Close() {
+	if a.preNorm != nil {
+		a.preNorm.Close()
+	}
+	if a.qProj != nil {
+		a.qProj.Close()
+	}
+	if a.kProj != nil {
+		a.kProj.Close()
+	}
+	if a.vProj != nil {
+		a.vProj.Close()
+	}
+	if a.outProj != nil {
+		a.outProj.Close()
+	}
 }

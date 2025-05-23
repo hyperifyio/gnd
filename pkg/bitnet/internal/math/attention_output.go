@@ -64,9 +64,9 @@ func NewAttentionOutputProjection(hiddenDim, numHeads int) *AttentionOutputProje
 // The function includes special optimizations for single-token inputs
 // (batch_size=1, seq_len=1) to avoid unnecessary reshaping operations.
 // For multi-token inputs, it uses efficient reshaping and linear projection.
-func (out *AttentionOutputProjection) Project(input *tensor.Tensor) *tensor.Tensor {
+func (out *AttentionOutputProjection) Project(input *tensor.Tensor) (*tensor.Tensor, error) {
 	if len(input.Shape()) != 3 {
-		panic("input must be 3D tensor [batch_size, seq_len, num_heads * head_dim]")
+		return nil, ErrInvalidInputShape
 	}
 
 	batchSize := input.Shape()[0]
@@ -78,7 +78,7 @@ func (out *AttentionOutputProjection) Project(input *tensor.Tensor) *tensor.Tens
 
 	flatSize := batchSize * seqLen
 	if flatSize*out.numHeads*headDim != len(input.Data()) {
-		panic("AttentionOutputProjection: shape product does not match data length")
+		return nil, ErrInvalidInputShape
 	}
 
 	var flatInput *tensor.Tensor
@@ -86,16 +86,19 @@ func (out *AttentionOutputProjection) Project(input *tensor.Tensor) *tensor.Tens
 		// Single-token case: manually flatten
 		data := input.Data()
 		flatInput = tensor.NewTensor(1, out.numHeads*headDim)
+		defer flatInput.Close()
 		for i := 0; i < out.numHeads*headDim; i++ {
 			flatInput.Set(data[i], 0, i)
 		}
 	} else {
 		flatInput = input.Reshape(flatSize, out.numHeads*headDim)
+		defer flatInput.Close()
 	}
 
 	loggers.Printf(loggers.Debug, "AttentionOutputProjection flat input shape: %v", flatInput.Shape())
 
 	output := tensor.BitLinear(flatInput, out.outProj)
+	defer output.Close()
 
 	if batchSize == 1 && seqLen == 1 {
 		// Single-token case: manually reshape
@@ -105,12 +108,12 @@ func (out *AttentionOutputProjection) Project(input *tensor.Tensor) *tensor.Tens
 			reshaped.Set(outData[i], 0, 0, i)
 		}
 		loggers.Printf(loggers.Debug, "AttentionOutputProjection output shape: %v", reshaped.Shape())
-		return reshaped
+		return reshaped, nil
 	}
 
-	output = output.Reshape(batchSize, seqLen, out.hiddenDim)
-	loggers.Printf(loggers.Debug, "AttentionOutputProjection output shape: %v", output.Shape())
-	return output
+	reshaped := output.Reshape(batchSize, seqLen, out.hiddenDim)
+	loggers.Printf(loggers.Debug, "AttentionOutputProjection output shape: %v", reshaped.Shape())
+	return reshaped, nil
 }
 
 // SetWeights sets the output projection weights.
@@ -129,4 +132,12 @@ func (out *AttentionOutputProjection) SetWeights(weights *tensor.Tensor) error {
 	}
 	out.outProj = weights
 	return nil
+}
+
+// Close releases all resources associated with the attention output projection.
+// This includes closing all tensors and cleaning up memory.
+func (out *AttentionOutputProjection) Close() {
+	if out.outProj != nil {
+		out.outProj.Close()
+	}
 }

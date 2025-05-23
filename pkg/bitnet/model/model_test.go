@@ -18,6 +18,11 @@ import (
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
 )
 
+// Global test timeout
+const (
+	testTimeout = 30 * time.Second
+)
+
 // testFS implements fs.FS for testing
 type testFS struct {
 	files map[string][]byte
@@ -318,21 +323,21 @@ func createValidWeights() []byte {
 	binary.LittleEndian.PutUint32(header[4:8], 1)          // Version 1
 
 	// Create token embeddings (vocab_size x hidden_size)
-	tokenEmbeddings := make([]byte, 32000*4096) // Example sizes
+	tokenEmbeddings := make([]byte, 100*64) // Smaller dimensions for testing
 
 	// Create transformer blocks
 	blocks := make([]byte, 0)
-	for i := 0; i < 12; i++ { // Example: 12 transformer blocks
+	for i := 0; i < 2; i++ { // Fewer transformer blocks for testing
 		// QKV projection (hidden_size x 3*hidden_size)
-		qkv := make([]byte, 4096*12288)
+		qkv := make([]byte, 64*192)
 		// Output projection (hidden_size x hidden_size)
-		out := make([]byte, 4096*4096)
+		out := make([]byte, 64*64)
 		// Feed-forward weights (hidden_size x intermediate_size)
-		ff1 := make([]byte, 4096*16384)
-		ff2 := make([]byte, 16384*4096)
+		ff1 := make([]byte, 64*256)
+		ff2 := make([]byte, 256*64)
 		// Layer norms
-		ln1 := make([]byte, 4096*2) // mean and variance
-		ln2 := make([]byte, 4096*2)
+		ln1 := make([]byte, 64*2) // mean and variance
+		ln2 := make([]byte, 64*2)
 
 		blocks = append(blocks, qkv...)
 		blocks = append(blocks, out...)
@@ -343,7 +348,7 @@ func createValidWeights() []byte {
 	}
 
 	// Final layer norm
-	finalNorm := make([]byte, 4096*2)
+	finalNorm := make([]byte, 64*2)
 
 	// Combine all parts
 	weights := make([]byte, 0)
@@ -356,6 +361,17 @@ func createValidWeights() []byte {
 }
 
 func TestLoadWeights(t *testing.T) {
+	// Create a smaller config for testing
+	config := &Config{
+		HiddenSize:       64,
+		NumHeads:         2,
+		NumKVHeads:       2,
+		NumLayers:        2,
+		VocabSize:        100,
+		MaxSeqLength:     128,
+		IntermediateSize: 256,
+	}
+
 	tests := []struct {
 		name    string
 		header  []byte
@@ -393,7 +409,7 @@ func TestLoadWeights(t *testing.T) {
 					"tokenizer/special_tokens.json": []byte(`{"<unk>":0}`),
 				},
 			}
-			model := NewModel(nil, fs)
+			model := NewModel(config, fs)
 			err := model.LoadWeights("test.weights")
 			if (err != nil) != tt.wantErr {
 				t.Errorf("LoadWeights() error = %v, wantErr %v", err, tt.wantErr)
@@ -728,11 +744,22 @@ func BenchmarkEmbedTokens(b *testing.B) {
 }
 
 func TestInfer(t *testing.T) {
-	model := NewModel(nil, nil)
+	config := NewConfig()
+	model := NewModel(config, testDataFS)
 	model.weights = &ModelWeights{
 		TokenEmbedding: make([]int8, model.config.VocabSize*model.config.HiddenSize),
 		Blocks:         make([]*TransformerBlock, model.config.NumLayers),
 		FinalNorm:      make([]int8, model.config.HiddenSize),
+	}
+	for i := range model.weights.Blocks {
+		model.weights.Blocks[i] = &TransformerBlock{
+			QKVProj:  make([]int8, 3*model.config.HiddenSize*model.config.HiddenSize),
+			OutProj:  make([]int8, model.config.HiddenSize*model.config.HiddenSize),
+			FFNUp:    make([]int8, model.config.IntermediateSize*model.config.HiddenSize),
+			FFNDown:  make([]int8, model.config.HiddenSize*model.config.IntermediateSize),
+			AttnNorm: make([]int8, model.config.HiddenSize),
+			FFNNorm:  make([]int8, model.config.HiddenSize),
+		}
 	}
 
 	tests := []struct {
@@ -743,7 +770,7 @@ func TestInfer(t *testing.T) {
 		{
 			name:    "valid tokens",
 			tokens:  []int{1, 2, 3},
-			wantErr: true, // Not implemented yet
+			wantErr: false,
 		},
 		{
 			name:    "empty tokens",
@@ -774,6 +801,16 @@ func TestModel_Infer(t *testing.T) {
 		Blocks:         make([]*TransformerBlock, model.config.NumLayers),
 		FinalNorm:      make([]int8, model.config.HiddenSize),
 	}
+	for i := range model.weights.Blocks {
+		model.weights.Blocks[i] = &TransformerBlock{
+			QKVProj:  make([]int8, 3*model.config.HiddenSize*model.config.HiddenSize),
+			OutProj:  make([]int8, model.config.HiddenSize*model.config.HiddenSize),
+			FFNUp:    make([]int8, model.config.IntermediateSize*model.config.HiddenSize),
+			FFNDown:  make([]int8, model.config.HiddenSize*model.config.IntermediateSize),
+			AttnNorm: make([]int8, model.config.HiddenSize),
+			FFNNorm:  make([]int8, model.config.HiddenSize),
+		}
+	}
 
 	tests := []struct {
 		name    string
@@ -783,7 +820,7 @@ func TestModel_Infer(t *testing.T) {
 		{
 			name:    "valid tokens",
 			tokens:  []int{1, 2, 3},
-			wantErr: true, // Not implemented yet
+			wantErr: false,
 		},
 		{
 			name:    "empty tokens",
@@ -1342,7 +1379,11 @@ func TestModelFFNSublayer(t *testing.T) {
 			ffn.SetGamma(convertInt8ToFloat32(ffnNormTensor.Data()))
 
 			// Apply FFN
-			output := ffn.Forward(inputTensor)
+			output, err := ffn.Forward(inputTensor)
+			if err != nil {
+				t.Errorf("FFN Forward failed: %v", err)
+				return
+			}
 
 			// Verify output dimensions
 			shape := output.Shape()
@@ -1388,5 +1429,335 @@ func TestConvertInt8ToFloat32(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestModelConcurrentOperations(t *testing.T) {
+	config := NewConfig()
+	model := NewModel(config, testDataFS)
+	defer model.Close()
+
+	// Initialize dummy weights
+	model.weights = &ModelWeights{
+		TokenEmbedding: make([]int8, model.config.VocabSize*model.config.HiddenSize),
+		Blocks:         make([]*TransformerBlock, model.config.NumLayers),
+		FinalNorm:      make([]int8, model.config.HiddenSize),
+	}
+	for i := range model.weights.Blocks {
+		model.weights.Blocks[i] = &TransformerBlock{
+			QKVProj:  make([]int8, 3*model.config.HiddenSize*model.config.HiddenSize),
+			OutProj:  make([]int8, model.config.HiddenSize*model.config.HiddenSize),
+			FFNUp:    make([]int8, model.config.IntermediateSize*model.config.HiddenSize),
+			FFNDown:  make([]int8, model.config.HiddenSize*model.config.IntermediateSize),
+			AttnNorm: make([]int8, model.config.HiddenSize),
+			FFNNorm:  make([]int8, model.config.HiddenSize),
+		}
+	}
+
+	var wg sync.WaitGroup
+	concurrency := 10
+	iterations := 100
+
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < iterations; j++ {
+				_, err := model.Infer([]int{1, 2, 3})
+				if err != ErrInferenceNotImplemented && err != nil {
+					t.Errorf("concurrent inference failed: %v", err)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+func TestModelStressTest(t *testing.T) {
+	config := NewConfig()
+	model := NewModel(config, testDataFS)
+	defer model.Close()
+
+	// Initialize dummy weights
+	model.weights = &ModelWeights{
+		TokenEmbedding: make([]int8, model.config.VocabSize*model.config.HiddenSize),
+		Blocks:         make([]*TransformerBlock, model.config.NumLayers),
+		FinalNorm:      make([]int8, model.config.HiddenSize),
+	}
+	for i := range model.weights.Blocks {
+		model.weights.Blocks[i] = &TransformerBlock{
+			QKVProj:  make([]int8, 3*model.config.HiddenSize*model.config.HiddenSize),
+			OutProj:  make([]int8, model.config.HiddenSize*model.config.HiddenSize),
+			FFNUp:    make([]int8, model.config.IntermediateSize*model.config.HiddenSize),
+			FFNDown:  make([]int8, model.config.HiddenSize*model.config.IntermediateSize),
+			AttnNorm: make([]int8, model.config.HiddenSize),
+			FFNNorm:  make([]int8, model.config.HiddenSize),
+		}
+	}
+
+	// Test with maximum sequence length
+	maxTokens := make([]int, model.config.MaxSeqLength)
+	for i := range maxTokens {
+		maxTokens[i] = i % model.config.VocabSize
+	}
+
+	// Test multiple iterations with max sequence length
+	for i := 0; i < 10; i++ {
+		_, err := model.Infer(maxTokens)
+		if err != ErrInferenceNotImplemented && err != nil {
+			t.Errorf("stress test failed: %v", err)
+		}
+	}
+}
+
+func FuzzModelInference(f *testing.F) {
+	config := NewConfig()
+	config.NumKVHeads = config.NumHeads // ensure valid grouped-query attention
+	model := NewModel(config, testDataFS)
+	defer model.Close()
+
+	// Patch: initialize dummy weights
+	model.weights = &ModelWeights{
+		TokenEmbedding: make([]int8, model.config.VocabSize*model.config.HiddenSize),
+		Blocks:         make([]*TransformerBlock, model.config.NumLayers),
+		FinalNorm:      make([]int8, model.config.HiddenSize),
+	}
+	for i := range model.weights.Blocks {
+		model.weights.Blocks[i] = &TransformerBlock{
+			QKVProj:  make([]int8, 3*model.config.HiddenSize*model.config.HiddenSize),
+			OutProj:  make([]int8, model.config.HiddenSize*model.config.HiddenSize),
+			FFNUp:    make([]int8, model.config.IntermediateSize*model.config.HiddenSize),
+			FFNDown:  make([]int8, model.config.HiddenSize*model.config.IntermediateSize),
+			AttnNorm: make([]int8, model.config.HiddenSize),
+			FFNNorm:  make([]int8, model.config.HiddenSize),
+		}
+	}
+
+	// Add seed corpus
+	f.Add([]byte{1, 2, 3})
+	f.Add([]byte{0, 0, 0})
+	f.Add([]byte{255, 255, 255})
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		// Convert byte slice to token IDs
+		tokens := make([]int, len(data))
+		for i, b := range data {
+			tokens[i] = int(b) % model.config.VocabSize
+		}
+
+		// Test inference with fuzzed input
+		_, err := model.Infer(tokens)
+		if err != ErrInferenceNotImplemented && err != nil {
+			// Only fail on unexpected errors
+			if !errors.Is(err, ErrInvalidToken) &&
+				!errors.Is(err, ErrSequenceTooLong) {
+				t.Errorf("unexpected error: %v", err)
+			}
+		}
+	})
+}
+
+func TestModelResourceCleanup(t *testing.T) {
+	// Test model cleanup with multiple close calls
+	model := NewModel(nil, testDataFS)
+
+	// First close
+	model.Close()
+
+	// Second close should not panic
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("Close() panicked on second call: %v", r)
+		}
+	}()
+	model.Close()
+
+	// Test operations after close
+	_, err := model.Infer([]int{1, 2, 3})
+	if err == nil {
+		t.Error("expected error after Close(), got nil")
+	}
+}
+
+func BenchmarkModelConcurrentInference(b *testing.B) {
+	model := NewModel(nil, testDataFS)
+	defer model.Close()
+
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_, err := model.Infer([]int{1, 2, 3})
+			if err != ErrInferenceNotImplemented && err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+}
+
+func TestModelMemoryLeaks(t *testing.T) {
+	// Get initial memory stats
+	var m1, m2 runtime.MemStats
+	runtime.ReadMemStats(&m1)
+
+	// Create and use model
+	model := NewModel(nil, testDataFS)
+
+	// Patch: initialize dummy weights (copied from TestModelRaceConditions)
+	model.weights = &ModelWeights{
+		TokenEmbedding: make([]int8, model.config.VocabSize*model.config.HiddenSize),
+		Blocks:         make([]*TransformerBlock, model.config.NumLayers),
+		FinalNorm:      make([]int8, model.config.HiddenSize),
+	}
+	for i := range model.weights.Blocks {
+		model.weights.Blocks[i] = &TransformerBlock{
+			QKVProj:  make([]int8, 3*model.config.HiddenSize*model.config.HiddenSize),
+			OutProj:  make([]int8, model.config.HiddenSize*model.config.HiddenSize),
+			FFNUp:    make([]int8, model.config.IntermediateSize*model.config.HiddenSize),
+			FFNDown:  make([]int8, model.config.HiddenSize*model.config.IntermediateSize),
+			AttnNorm: make([]int8, model.config.HiddenSize),
+			FFNNorm:  make([]int8, model.config.HiddenSize),
+		}
+	}
+
+	// Perform operations that might leak memory
+	for i := 0; i < 1000; i++ {
+		_, err := model.Infer([]int{1, 2, 3})
+		if err != ErrInferenceNotImplemented && err != nil {
+			t.Errorf("inference failed: %v", err)
+		}
+	}
+
+	// Close model
+	model.Close()
+
+	// Force GC
+	runtime.GC()
+
+	// Get final memory stats
+	runtime.ReadMemStats(&m2)
+
+	// Check for significant memory growth
+	// Allow for some overhead but not unbounded growth
+	if m2.Alloc > m1.Alloc && m2.Alloc-m1.Alloc > 1024*1024 { // 1MB threshold
+		t.Errorf("possible memory leak: allocated %d bytes more than initial", m2.Alloc-m1.Alloc)
+	}
+}
+
+func TestModelTensorMemoryLeaks(t *testing.T) {
+	// Get initial memory stats
+	var m1, m2 runtime.MemStats
+	runtime.ReadMemStats(&m1)
+
+	// Create model and tensors
+	model := NewModel(nil, testDataFS)
+
+	// Create and use tensors
+	for i := 0; i < 1000; i++ {
+		tensor := tensor.NewTensor(10, 10)
+		for j := 0; j < 10; j++ {
+			for k := 0; k < 10; k++ {
+				tensor.Set(int8(i%3-1), j, k)
+			}
+		}
+		tensor.Close()
+	}
+
+	// Close model
+	model.Close()
+
+	// Force GC
+	runtime.GC()
+
+	// Get final memory stats
+	runtime.ReadMemStats(&m2)
+
+	// Check for significant memory growth
+	if m2.Alloc > m1.Alloc && m2.Alloc-m1.Alloc > 1024*1024 { // 1MB threshold
+		t.Errorf("possible tensor memory leak: allocated %d bytes more than initial", m2.Alloc-m1.Alloc)
+	}
+}
+
+func TestModelRaceConditions(t *testing.T) {
+	config := NewConfig()
+	config.NumKVHeads = config.NumHeads // ensure valid grouped-query attention
+	model := NewModel(config, testDataFS)
+
+	// Patch: initialize dummy weights
+	model.weights = &ModelWeights{
+		TokenEmbedding: make([]int8, model.config.VocabSize*model.config.HiddenSize),
+		Blocks:         make([]*TransformerBlock, model.config.NumLayers),
+		FinalNorm:      make([]int8, model.config.HiddenSize),
+	}
+	for i := range model.weights.Blocks {
+		model.weights.Blocks[i] = &TransformerBlock{
+			QKVProj:  make([]int8, 3*model.config.HiddenSize*model.config.HiddenSize),
+			OutProj:  make([]int8, model.config.HiddenSize*model.config.HiddenSize),
+			FFNUp:    make([]int8, model.config.IntermediateSize*model.config.HiddenSize),
+			FFNDown:  make([]int8, model.config.HiddenSize*model.config.IntermediateSize),
+			AttnNorm: make([]int8, model.config.HiddenSize),
+			FFNNorm:  make([]int8, model.config.HiddenSize),
+		}
+	}
+
+	// Test concurrent access to shared resources
+	var wg sync.WaitGroup
+	concurrency := 10
+	iterations := 100
+
+	// Test concurrent tensor operations
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < iterations; j++ {
+				tensor := tensor.NewTensor(10, 10)
+				for k := 0; k < 10; k++ {
+					for l := 0; l < 10; l++ {
+						tensor.Set(int8(j%3-1), k, l)
+					}
+				}
+				tensor.Close()
+			}
+		}()
+	}
+
+	// Test concurrent model operations
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < iterations; j++ {
+				_, err := model.Infer([]int{1, 2, 3})
+				if err != ErrInferenceNotImplemented && err != nil && err != ErrInvalidToken && err != ErrSequenceTooLong {
+					t.Errorf("concurrent inference failed: %v", err)
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+	model.Close()
+}
+
+func TestModelConcurrentClose(t *testing.T) {
+	model := NewModel(nil, testDataFS)
+
+	// Test concurrent close operations
+	var wg sync.WaitGroup
+	concurrency := 10
+
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			model.Close()
+		}()
+	}
+
+	wg.Wait()
+
+	// Verify model is closed
+	_, err := model.Infer([]int{1, 2, 3})
+	if err == nil {
+		t.Error("expected error after concurrent Close(), got nil")
 	}
 }

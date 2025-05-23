@@ -77,45 +77,52 @@ func NewLayerNorm(hiddenDim int) *LayerNorm {
 func (l *LayerNorm) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 	// Validate input shape
 	if err := ValidateShape(x, 2, 3); err != nil {
-		DebugLog("input shape validation failed: %v", err)
 		return nil, err
 	}
 
 	// Get input dimensions
-	batchSize := x.Shape()[0]
-	seqLen := 1
-	if len(x.Shape()) == 3 {
-		seqLen = x.Shape()[1]
+	var batchSize, seqLen, hiddenDim int
+	if len(x.Shape()) == 2 {
+		batchSize, hiddenDim = x.Shape()[0], x.Shape()[1]
+		seqLen = 1
+	} else {
+		batchSize, seqLen, hiddenDim = x.Shape()[0], x.Shape()[1], x.Shape()[2]
 	}
-	hiddenDim := x.Shape()[len(x.Shape())-1]
 
 	if hiddenDim != l.hiddenDim {
-		DebugLog("input hidden dimension (%d) does not match layer hidden dimension (%d)", hiddenDim, l.hiddenDim)
 		return nil, ErrHiddenDimMismatch
 	}
 
-	// Create output tensor
-	output := tensor.NewTensor(x.Shape()...)
+	// Create output tensor with same shape as input
+	var output *tensor.Tensor
+	if len(x.Shape()) == 2 {
+		output = tensor.NewTensor(batchSize, hiddenDim)
+	} else {
+		output = tensor.NewTensor(batchSize, seqLen, hiddenDim)
+	}
 
-	// Process in parallel chunks
+	// Process in parallel chunks with a reasonable chunk size
 	var wg sync.WaitGroup
-	chunkSize := batchSize / runtime.NumCPU()
+	numCPU := runtime.NumCPU()
+	chunkSize := (batchSize + numCPU - 1) / numCPU
 	if chunkSize < 1 {
 		chunkSize = 1
 	}
 
-	for b := 0; b < batchSize; b += chunkSize {
+	// Create a channel to collect errors
+	errChan := make(chan error, numCPU)
+
+	for i := 0; i < batchSize; i += chunkSize {
 		wg.Add(1)
-		go func(startBatch int) {
+		go func(start int) {
 			defer wg.Done()
-			endBatch := startBatch + chunkSize
-			if endBatch > batchSize {
-				endBatch = batchSize
+			end := start + chunkSize
+			if end > batchSize {
+				end = batchSize
 			}
 
-			// For each batch element
-			for b := startBatch; b < endBatch; b++ {
-				// For each sequence position
+			// Process each batch element
+			for b := start; b < end; b++ {
 				for s := 0; s < seqLen; s++ {
 					// Calculate mean
 					var sum float32
@@ -131,7 +138,7 @@ func (l *LayerNorm) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 					mean := sum / float32(hiddenDim)
 
 					// Calculate variance
-					var variance float32
+					var sumSq float32
 					for d := 0; d < hiddenDim; d++ {
 						var val float32
 						if len(x.Shape()) == 2 {
@@ -140,12 +147,12 @@ func (l *LayerNorm) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 							val = float32(x.Get(b, s, d))
 						}
 						diff := val - mean
-						variance += diff * diff
+						sumSq += diff * diff
 					}
-					variance /= float32(hiddenDim)
+					variance := sumSq/float32(hiddenDim) + l.epsilon
 
 					// Normalize and scale
-					stdDev := float32(math.Sqrt(float64(variance + l.epsilon)))
+					stdDev := float32(math.Sqrt(float64(variance)))
 					for d := 0; d < hiddenDim; d++ {
 						var val float32
 						if len(x.Shape()) == 2 {
@@ -153,22 +160,43 @@ func (l *LayerNorm) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 						} else {
 							val = float32(x.Get(b, s, d))
 						}
+
+						// Normalize: (x - mean) / sqrt(variance)
 						normalized := (val - mean) / stdDev
+
+						// Scale with gamma
 						scaled := normalized * float32(l.gamma.Get(d))
-						// Clamp to int8 range and convert back to int8
+
+						// Clamp to int8 range
+						if scaled >= 127 {
+							scaled = 127
+						} else if scaled <= -128 {
+							scaled = -128
+						}
+
+						// Set output value
 						if len(x.Shape()) == 2 {
-							output.Set(int8(min(max(int32(math.Round(float64(scaled))), -128), 127)), b, d)
+							output.Set(int8(scaled), b, d)
 						} else {
-							output.Set(int8(min(max(int32(math.Round(float64(scaled))), -128), 127)), b, s, d)
+							output.Set(int8(scaled), b, s, d)
 						}
 					}
 				}
 			}
-		}(b)
+		}(i)
 	}
 
+	// Wait for all goroutines to complete
 	wg.Wait()
-	return output, nil
+
+	// Check for errors
+	select {
+	case err := <-errChan:
+		output.Close()
+		return nil, err
+	default:
+		return output, nil
+	}
 }
 
 // SetGamma sets the learnable scale parameter.
@@ -193,4 +221,12 @@ func (l *LayerNorm) SetGamma(gamma *tensor.Tensor) error {
 // This is the learnable parameter used for scaling the normalized values.
 func (l *LayerNorm) GetGamma() *tensor.Tensor {
 	return l.gamma
+}
+
+// Close releases all resources associated with the layer normalization.
+// This includes closing all tensors and cleaning up memory.
+func (l *LayerNorm) Close() {
+	if l.gamma != nil {
+		l.gamma.Close()
+	}
 }

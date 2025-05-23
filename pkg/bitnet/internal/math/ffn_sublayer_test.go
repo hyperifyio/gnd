@@ -93,7 +93,11 @@ func TestFFNSublayer(t *testing.T) {
 			ffn.SetGamma(tt.gamma)
 
 			// Forward pass
-			output := ffn.Forward(input)
+			output, err := ffn.Forward(input)
+			if err != nil {
+				t.Errorf("FFN Forward failed: %v", err)
+				return
+			}
 
 			// Verify output shape
 			if len(output.Shape()) != 3 {
@@ -159,14 +163,11 @@ func TestFFNSublayerPanics(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			defer func() {
-				if r := recover(); r == nil {
-					t.Error("expected panic")
-				}
-			}()
-
 			ffn := NewFFNSublayer(tt.hiddenDim, tt.intermediateDim)
-			ffn.Forward(tt.input)
+			_, err := ffn.Forward(tt.input)
+			if err == nil {
+				t.Error("expected error for invalid input shape")
+			}
 		})
 	}
 }
@@ -238,7 +239,10 @@ func BenchmarkFFNSublayer(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				_ = ffn.Forward(input)
+				_, err := ffn.Forward(input)
+				if err != nil {
+					b.Fatal(err)
+				}
 			}
 		})
 	}
@@ -289,7 +293,11 @@ func TestFFNSublayer_SingleTokenShape(t *testing.T) {
 			t.Errorf("FFNSublayer.Forward panicked: %v", r)
 		}
 	}()
-	output := ffnSublayer.Forward(input)
+	output, err := ffnSublayer.Forward(input)
+	if err != nil {
+		t.Errorf("FFN Forward failed: %v", err)
+		return
+	}
 
 	// Print output shape and data
 	t.Logf("Output shape: %v", output.Shape())

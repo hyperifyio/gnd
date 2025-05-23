@@ -9,6 +9,9 @@ type rawTensor struct {
 
 // newRawTensor creates a new rawTensor with the given dimensions
 func newRawTensor(rows, cols int) *rawTensor {
+	if rows <= 0 || cols <= 0 {
+		panic("rawTensor: dimensions must be positive")
+	}
 	return &rawTensor{
 		data: make([]int8, rows*cols),
 		rows: rows,

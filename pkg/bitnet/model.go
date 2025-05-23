@@ -38,6 +38,11 @@ var (
 // Returns an error if the file format is invalid, version is unsupported,
 // or if there are any I/O errors during reading.
 func LoadWeights(r io.Reader) error {
+	if r == nil {
+		DebugLog("reader is nil")
+		return ErrInvalidWeightsFormat
+	}
+
 	// Read magic number
 	magic := make([]byte, 4)
 	if _, err := r.Read(magic); err != nil {

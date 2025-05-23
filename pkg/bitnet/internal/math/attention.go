@@ -75,10 +75,16 @@ func ScaledDotProductAttention(q, k, v *tensor.Tensor) (*tensor.Tensor, error) {
 	// Create output tensor
 	output := tensor.NewTensor(batchSize, numHeads, seqLen, headDim)
 
-	// Process in parallel chunks
+	// Process in parallel chunks with a reasonable chunk size
 	var wg sync.WaitGroup
 	numCPU := runtime.NumCPU()
 	chunkSize := (batchSize + numCPU - 1) / numCPU
+	if chunkSize < 1 {
+		chunkSize = 1
+	}
+
+	// Create a channel to collect errors
+	errChan := make(chan error, numCPU)
 
 	for i := 0; i < batchSize; i += chunkSize {
 		wg.Add(1)
@@ -138,8 +144,6 @@ func ScaledDotProductAttention(q, k, v *tensor.Tensor) (*tensor.Tensor, error) {
 							for s2 := 0; s2 < seqLen; s2++ {
 								val += scores[s1*seqLen+s2] * float32(v.Get(b, h, s2, d))
 							}
-							// Remove the extra scaling by sqrt(headDim)
-							val = float32(math.Round(float64(val)))
 							// Clamp to int8 range, saturating for large values
 							if val >= 127 {
 								val = 127
@@ -154,8 +158,17 @@ func ScaledDotProductAttention(q, k, v *tensor.Tensor) (*tensor.Tensor, error) {
 		}(i)
 	}
 
+	// Wait for all goroutines to complete
 	wg.Wait()
-	return output, nil
+
+	// Check for errors
+	select {
+	case err := <-errChan:
+		output.Close()
+		return nil, err
+	default:
+		return output, nil
+	}
 }
 
 // min returns the minimum of two int32 values.

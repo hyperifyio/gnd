@@ -208,41 +208,63 @@ func (t *Tensor) ParallelForEach(fn func(indices []int, value int8)) {
 	data := make([]int8, len(t.data))
 	copy(data, t.data)
 
-	var wg sync.WaitGroup
-	chunkSize := len(data) / runtime.NumCPU()
+	// Get number of CPU cores
+	numCPU := runtime.NumCPU()
+	if numCPU < 1 {
+		numCPU = 1
+	}
+
+	// Calculate chunk size
+	chunkSize := len(data) / numCPU
 	if chunkSize < 1 {
 		chunkSize = 1
 	}
 
-	for i := 0; i < len(data); i += chunkSize {
-		wg.Add(1)
+	// Create wait group for synchronization
+	var wg sync.WaitGroup
+	wg.Add(numCPU)
+
+	// Process chunks in parallel
+	for i := 0; i < numCPU; i++ {
 		go func(start int) {
 			defer wg.Done()
+
+			// Calculate end index
 			end := start + chunkSize
 			if end > len(data) {
 				end = len(data)
 			}
 
+			// Process chunk
 			for j := start; j < end; j++ {
 				indices := t.calculateIndices(j)
 				fn(indices, data[j])
 			}
-		}(i)
+		}(i * chunkSize)
 	}
 
+	// Wait for all goroutines to complete
 	wg.Wait()
 }
 
-// Close marks the tensor as closed and releases any resources.
-// After closing, all operations on the tensor will panic.
+// Close releases all resources associated with the tensor.
+// After calling Close, the tensor cannot be used anymore.
 func (t *Tensor) Close() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	if !t.closed {
-		t.closed = true
-		t.data = nil
+	if t.closed {
+		return
 	}
+
+	// Clear data
+	t.data = nil
+	t.shape = nil
+	t.stride = nil
+	t.closed = true
+
+	// Force GC
+	runtime.GC()
 }
 
 // calculateIndex converts multi-dimensional indices to a linear index.

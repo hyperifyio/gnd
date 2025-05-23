@@ -79,6 +79,8 @@ func (l *Linear) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 
 	// Create 2D view of input tensor for matrix multiplication
 	input2d := tensor.NewTensor(batchSize*seqLen, inDim)
+	defer input2d.Close()
+
 	for b := 0; b < batchSize; b++ {
 		for s := 0; s < seqLen; s++ {
 			for d := 0; d < inDim; d++ {
@@ -95,11 +97,18 @@ func (l *Linear) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 
 	// Perform linear transformation
 	output2d := tensor.BitLinear(input2d, l.weights)
+	defer output2d.Close()
 
 	// Reshape output back to original shape
 	if len(x.Shape()) == 2 {
-		// For 2D input, output is already 2D
-		return output2d, nil
+		// For 2D input, create a new tensor with the output data
+		output := tensor.NewTensor(batchSize, l.outDim)
+		for b := 0; b < batchSize; b++ {
+			for d := 0; d < l.outDim; d++ {
+				output.Set(output2d.Get(b, d), b, d)
+			}
+		}
+		return output, nil
 	}
 
 	// For 3D input, reshape output to 3D
@@ -140,4 +149,12 @@ func (l *Linear) SetWeights(weights *tensor.Tensor) error {
 // This is the matrix used for the linear transformation.
 func (l *Linear) GetWeights() *tensor.Tensor {
 	return l.weights
+}
+
+// Close releases all resources associated with the linear layer.
+// This includes closing all tensors and cleaning up memory.
+func (l *Linear) Close() {
+	if l.weights != nil {
+		l.weights.Close()
+	}
 }

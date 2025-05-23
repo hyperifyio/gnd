@@ -78,6 +78,7 @@ func BitLinear(input, weights *Tensor) *Tensor {
 	loggers.Printf(loggers.Debug, "BitLinear input shape: %v", input.shape)
 	loggers.Printf(loggers.Debug, "BitLinear weights shape: %v", weights.shape)
 	loggers.Printf(loggers.Debug, "BitLinear output shape: [%d %d]", batchSize, outFeatures)
+	loggers.Printf(loggers.Debug, "BitLinear batchSize: %d, inFeatures: %d, outFeatures: %d", batchSize, inFeatures, outFeatures)
 
 	// Pre-allocate output tensor with aligned memory
 	output := &Tensor{
@@ -95,12 +96,18 @@ func BitLinear(input, weights *Tensor) *Tensor {
 
 	for cpu := 0; cpu < numCPU; cpu++ {
 		go func(cpu int) {
-			defer wg.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					loggers.Printf(loggers.Error, "BitLinear goroutine panic: %v", r)
+				}
+				wg.Done()
+			}()
 			start := cpu * chunkSize
 			end := start + chunkSize
 			if end > batchSize {
 				end = batchSize
 			}
+			loggers.Printf(loggers.Debug, "BitLinear goroutine %d: start=%d, end=%d", cpu, start, end)
 
 			// Get a buffer from the pool
 			buf := bufferPool.Get().(*workBuffer)

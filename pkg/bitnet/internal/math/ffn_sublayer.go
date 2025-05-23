@@ -66,7 +66,7 @@ func NewFFNSublayer(hiddenDim, intermediateDim int) *FFNSublayer {
 //
 // Returns a tensor with the same shape as the input.
 // Panics if the input shape is invalid.
-func (f *FFNSublayer) Forward(input *tensor.Tensor) *tensor.Tensor {
+func (f *FFNSublayer) Forward(input *tensor.Tensor) (*tensor.Tensor, error) {
 	// Get input dimensions
 	var batchSize, seqLen, hiddenDim int
 	if len(input.Shape()) == 2 {
@@ -77,7 +77,11 @@ func (f *FFNSublayer) Forward(input *tensor.Tensor) *tensor.Tensor {
 		// [batch_size, seq_len, hidden_dim]
 		batchSize, seqLen, hiddenDim = input.Shape()[0], input.Shape()[1], input.Shape()[2]
 	} else {
-		panic("invalid input shape: expected 2D [seq_len, hidden_dim] or 3D [batch_size, seq_len, hidden_dim]")
+		return nil, ErrInvalidInputShape
+	}
+
+	if hiddenDim != f.hiddenDim {
+		return nil, ErrHiddenDimMismatch
 	}
 
 	// Convert input to float32 for normalization
@@ -121,9 +125,14 @@ func (f *FFNSublayer) Forward(input *tensor.Tensor) *tensor.Tensor {
 			}
 		}
 	}
+	defer normalizedTensor.Close()
 
 	// Apply feed-forward network
-	ffnOutput := f.ffn.Forward(normalizedTensor)
+	ffnOutput, err := f.ffn.Forward(normalizedTensor)
+	if err != nil {
+		return nil, err
+	}
+	defer ffnOutput.Close()
 
 	// Add residual connection
 	var result *tensor.Tensor
@@ -171,7 +180,7 @@ func (f *FFNSublayer) Forward(input *tensor.Tensor) *tensor.Tensor {
 		}
 	}
 
-	return result
+	return result, nil
 }
 
 // SetWeights sets the weights for the feed-forward network.
@@ -196,4 +205,12 @@ func (f *FFNSublayer) SetWeights(upWeights, downWeights *tensor.Tensor) {
 // after the pre-norm layer normalization step.
 func (f *FFNSublayer) SetGamma(gamma []float32) {
 	f.subln.SetGamma(gamma)
+}
+
+// Close releases all resources associated with the feed-forward sublayer.
+// This includes closing all tensors and cleaning up memory.
+func (f *FFNSublayer) Close() {
+	if f.ffn != nil {
+		f.ffn.Close()
+	}
 }

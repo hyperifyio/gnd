@@ -153,7 +153,11 @@ func TestFFN(t *testing.T) {
 			ffn.SetWeights(upWeights, downWeights)
 
 			// Forward pass
-			output := ffn.Forward(input)
+			output, err := ffn.Forward(input)
+			if err != nil {
+				t.Errorf("FFN Forward failed: %v", err)
+				return
+			}
 
 			// Verify output shape
 			if len(output.Shape()) != 3 {

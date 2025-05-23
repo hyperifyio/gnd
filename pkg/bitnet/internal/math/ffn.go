@@ -70,9 +70,9 @@ func NewFFN(hiddenDim, intermediateDim int) *FFN {
 //
 // The implementation uses BitLinear for efficient computation with
 // ternary weights and includes parallel processing for the activation.
-func (f *FFN) Forward(input *tensor.Tensor) *tensor.Tensor {
+func (f *FFN) Forward(input *tensor.Tensor) (*tensor.Tensor, error) {
 	if len(input.Shape()) != 3 {
-		panic("input must be 3D tensor [batch_size, seq_len, hidden_dim]")
+		return nil, ErrInvalidInputShape
 	}
 
 	batchSize := input.Shape()[0]
@@ -80,18 +80,26 @@ func (f *FFN) Forward(input *tensor.Tensor) *tensor.Tensor {
 
 	// Reshape input for linear projection
 	flatInput := input.Reshape(batchSize*seqLen, f.hiddenDim)
+	defer flatInput.Close()
 
 	// First linear layer (up-projection)
 	intermediate := tensor.BitLinear(flatInput, f.upProj)
+	defer intermediate.Close()
 
 	// Apply ReLU² activation
-	intermediate = f.applyReLU2(intermediate)
+	activated, err := f.applyReLU2(intermediate)
+	if err != nil {
+		return nil, err
+	}
+	defer activated.Close()
 
 	// Second linear layer (down-projection)
-	output := tensor.BitLinear(intermediate, f.downProj)
+	output := tensor.BitLinear(activated, f.downProj)
+	defer output.Close()
 
 	// Reshape back to [batch_size, seq_len, hidden_dim]
-	return output.Reshape(batchSize, seqLen, f.hiddenDim)
+	reshaped := output.Reshape(batchSize, seqLen, f.hiddenDim)
+	return reshaped, nil
 }
 
 // applyReLU2 applies the ReLU² activation function to the intermediate outputs.
@@ -106,9 +114,9 @@ func (f *FFN) Forward(input *tensor.Tensor) *tensor.Tensor {
 //
 // The implementation uses parallel processing with chunked computation
 // for better performance on multi-core systems.
-func (f *FFN) applyReLU2(input *tensor.Tensor) *tensor.Tensor {
+func (f *FFN) applyReLU2(input *tensor.Tensor) (*tensor.Tensor, error) {
 	if len(input.Shape()) != 2 {
-		panic("input must be 2D tensor [batch_size * seq_len, intermediate_dim]")
+		return nil, ErrInvalidInputShape
 	}
 
 	batchSize := input.Shape()[0]
@@ -117,12 +125,16 @@ func (f *FFN) applyReLU2(input *tensor.Tensor) *tensor.Tensor {
 	// Create output tensor
 	output := tensor.NewTensor(batchSize, intermediateDim)
 
-	// Process in parallel chunks
+	// Process in parallel chunks with a reasonable chunk size
 	var wg sync.WaitGroup
-	chunkSize := batchSize / runtime.NumCPU()
+	numCPU := runtime.NumCPU()
+	chunkSize := (batchSize + numCPU - 1) / numCPU
 	if chunkSize < 1 {
 		chunkSize = 1
 	}
+
+	// Create a channel to collect errors
+	errChan := make(chan error, numCPU)
 
 	for i := 0; i < batchSize; i += chunkSize {
 		wg.Add(1)
@@ -138,28 +150,42 @@ func (f *FFN) applyReLU2(input *tensor.Tensor) *tensor.Tensor {
 				for d := 0; d < intermediateDim; d++ {
 					// Get input value
 					val := float32(input.Get(b, d))
+
 					// Apply ReLU²: max(0, x)²
 					if val > 0 {
 						val = val * val
-						// Scale down to prevent overflow
-						val = val / 16.0
 					} else {
 						val = 0
 					}
-					// Convert to int8 with clamping
-					if val > 127 {
+
+					// Scale down by 16 to prevent overflow
+					val /= 16
+
+					// Clamp to int8 range
+					if val >= 127 {
 						val = 127
-					} else if val < -128 {
+					} else if val <= -128 {
 						val = -128
 					}
+
+					// Set output value
 					output.Set(int8(val), b, d)
 				}
 			}
 		}(i)
 	}
 
+	// Wait for all goroutines to complete
 	wg.Wait()
-	return output
+
+	// Check for errors
+	select {
+	case err := <-errChan:
+		output.Close()
+		return nil, err
+	default:
+		return output, nil
+	}
 }
 
 // SetWeights sets the feed-forward network weights.
@@ -180,4 +206,15 @@ func (f *FFN) SetWeights(upWeights, downWeights *tensor.Tensor) {
 
 	f.upProj = upWeights
 	f.downProj = downWeights
+}
+
+// Close releases all resources associated with the feed-forward network.
+// This includes closing all tensors and cleaning up memory.
+func (f *FFN) Close() {
+	if f.upProj != nil {
+		f.upProj.Close()
+	}
+	if f.downProj != nil {
+		f.downProj.Close()
+	}
 }
