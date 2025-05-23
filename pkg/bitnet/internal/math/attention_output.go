@@ -118,11 +118,15 @@ func (out *AttentionOutputProjection) Project(input *tensor.Tensor) *tensor.Tens
 // Parameters:
 //   - weights: Output projection weights [hidden_dim, hidden_dim]
 //
-// Panics if the weights tensor has incorrect dimensions.
+// Returns an error if the weights tensor has incorrect dimensions.
 // The weights must match the layer's hidden dimension for both input and output.
-func (out *AttentionOutputProjection) SetWeights(weights *tensor.Tensor) {
-	if weights.Shape()[0] != out.hiddenDim || weights.Shape()[1] != out.hiddenDim {
-		panic("invalid output projection weights shape")
+func (out *AttentionOutputProjection) SetWeights(weights *tensor.Tensor) error {
+	if weights == nil {
+		panic("weights cannot be nil")
+	}
+	if len(weights.Shape()) != 2 || weights.Shape()[0] != out.hiddenDim || weights.Shape()[1] != out.hiddenDim {
+		panic("invalid weights shape")
 	}
 	out.outProj = weights
+	return nil
 }

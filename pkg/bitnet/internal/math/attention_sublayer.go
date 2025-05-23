@@ -40,6 +40,10 @@ var (
 	ErrSetKeyWeights = errors.New("attention: failed to set key weights")
 	// ErrSetValueWeights is returned when setting value weights fails.
 	ErrSetValueWeights = errors.New("attention: failed to set value weights")
+	// ErrSetOutputWeights is returned when setting output weights fails.
+	ErrSetOutputWeights = errors.New("attention: failed to set output weights")
+	// ErrSetGamma is returned when setting the scale parameter fails.
+	ErrSetGamma = errors.New("attention: failed to set gamma")
 )
 
 // AttentionSublayer implements the attention sublayer with pre-norm and residual connection
@@ -79,6 +83,13 @@ type AttentionSublayer struct {
 //
 // Returns a pointer to the AttentionSublayer and an error if validation fails.
 func NewAttentionSublayer(hiddenDim, numHeads, numKVHeads int) (*AttentionSublayer, error) {
+	if numHeads <= 0 {
+		return nil, ErrInvalidHeadDimensions
+	}
+	if numKVHeads <= 0 {
+		return nil, ErrInvalidKVHeads
+	}
+
 	if err := ValidateHeadDimensions(hiddenDim, numHeads, hiddenDim/numHeads); err != nil {
 		return nil, ErrInvalidHeadDimensions
 	}
@@ -123,6 +134,10 @@ func NewAttentionSublayer(hiddenDim, numHeads, numKVHeads int) (*AttentionSublay
 //
 // Returns a tensor with the same shape as the input and an error if any step fails.
 func (a *AttentionSublayer) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
+	if x == nil {
+		return nil, ErrInvalidInputShape
+	}
+
 	// Validate input shape
 	if err := ValidateShape(x, 2, 3); err != nil {
 		return nil, ErrInvalidInputShape
@@ -240,23 +255,57 @@ func (a *AttentionSublayer) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 // SetWeights sets the weights for the attention sublayer.
 //
 // Parameters:
-//   - qWeights: Query projection weights [hidden_dim, num_heads * head_dim]
-//   - kWeights: Key projection weights [hidden_dim, num_kv_heads * kv_head_dim]
-//   - vWeights: Value projection weights [hidden_dim, num_kv_heads * kv_head_dim]
-//   - outWeights: Output projection weights [num_heads * head_dim, hidden_dim]
+//   - queryWeights: Query projection weights [hidden_dim, hidden_dim]
+//   - keyWeights: Key projection weights [hidden_dim, hidden_dim]
+//   - valueWeights: Value projection weights [hidden_dim, hidden_dim]
+//   - outWeights: Output projection weights [hidden_dim, hidden_dim]
 //
 // Returns an error if any weight assignment fails.
-func (a *AttentionSublayer) SetWeights(qWeights, kWeights, vWeights, outWeights *tensor.Tensor) error {
-	if err := a.qProj.SetWeights(qWeights); err != nil {
+func (a *AttentionSublayer) SetWeights(queryWeights, keyWeights, valueWeights, outWeights *tensor.Tensor) error {
+	headDim := a.hiddenDim / a.numHeads
+	kvHeadDim := a.hiddenDim / a.numKVHeads
+
+	// Check for nil weights
+	if queryWeights == nil {
 		return ErrSetQueryWeights
 	}
-	if err := a.kProj.SetWeights(kWeights); err != nil {
+	if keyWeights == nil {
 		return ErrSetKeyWeights
 	}
-	if err := a.vProj.SetWeights(vWeights); err != nil {
+	if valueWeights == nil {
 		return ErrSetValueWeights
 	}
-	a.outProj.SetWeights(outWeights)
+	if outWeights == nil {
+		return ErrSetOutputWeights
+	}
+
+	// Check shapes
+	if len(queryWeights.Shape()) != 2 || queryWeights.Shape()[0] != a.hiddenDim || queryWeights.Shape()[1] != a.numHeads*headDim {
+		return ErrSetQueryWeights
+	}
+	if len(keyWeights.Shape()) != 2 || keyWeights.Shape()[0] != a.hiddenDim || keyWeights.Shape()[1] != a.numKVHeads*kvHeadDim {
+		return ErrSetKeyWeights
+	}
+	if len(valueWeights.Shape()) != 2 || valueWeights.Shape()[0] != a.hiddenDim || valueWeights.Shape()[1] != a.numKVHeads*kvHeadDim {
+		return ErrSetValueWeights
+	}
+	if len(outWeights.Shape()) != 2 || outWeights.Shape()[0] != a.numHeads*headDim || outWeights.Shape()[1] != a.hiddenDim {
+		return ErrSetOutputWeights
+	}
+
+	// Set weights
+	if err := a.qProj.SetWeights(queryWeights); err != nil {
+		return ErrSetQueryWeights
+	}
+	if err := a.kProj.SetWeights(keyWeights); err != nil {
+		return ErrSetKeyWeights
+	}
+	if err := a.vProj.SetWeights(valueWeights); err != nil {
+		return ErrSetValueWeights
+	}
+	if err := a.outProj.SetWeights(outWeights); err != nil {
+		return ErrSetOutputWeights
+	}
 	return nil
 }
 
@@ -267,6 +316,9 @@ func (a *AttentionSublayer) SetWeights(qWeights, kWeights, vWeights, outWeights 
 //
 // Returns an error if the gamma tensor is invalid.
 func (a *AttentionSublayer) SetGamma(gamma *tensor.Tensor) error {
+	if gamma == nil {
+		return ErrSetGamma
+	}
 	return a.preNorm.SetGamma(gamma)
 }
 

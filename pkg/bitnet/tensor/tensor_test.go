@@ -10,42 +10,50 @@ import (
 // TestNewTensor tests tensor creation with various shapes
 func TestNewTensor(t *testing.T) {
 	tests := []struct {
-		name     string
-		shape    []int
-		wantSize int
+		name  string
+		shape []int
+		want  []int
 	}{
 		{
-			name:     "1D tensor",
-			shape:    []int{10},
-			wantSize: 10,
+			name:  "1D tensor",
+			shape: []int{3},
+			want:  []int{3},
 		},
 		{
-			name:     "2D tensor",
-			shape:    []int{3, 4},
-			wantSize: 12,
+			name:  "2D tensor",
+			shape: []int{2, 3},
+			want:  []int{2, 3},
 		},
 		{
-			name:     "3D tensor",
-			shape:    []int{2, 3, 4},
-			wantSize: 24,
+			name:  "3D tensor",
+			shape: []int{2, 3, 4},
+			want:  []int{2, 3, 4},
+		},
+		{
+			name:  "empty shape",
+			shape: []int{},
+			want:  nil,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tensor := NewTensor(tt.shape...)
-			if tensor == nil {
-				t.Fatal("NewTensor returned nil")
+			got := NewTensor(tt.shape...)
+			if tt.want == nil {
+				if got != nil {
+					t.Errorf("NewTensor() = %v, want nil", got)
+				}
+				return
 			}
-			if len(tensor.data) != tt.wantSize {
-				t.Errorf("NewTensor() size = %v, want %v", len(tensor.data), tt.wantSize)
+			if got == nil {
+				t.Fatal("NewTensor() returned nil")
 			}
-			if len(tensor.shape) != len(tt.shape) {
-				t.Errorf("NewTensor() shape length = %v, want %v", len(tensor.shape), len(tt.shape))
+			if len(got.Shape()) != len(tt.want) {
+				t.Errorf("Shape() length = %d, want %d", len(got.Shape()), len(tt.want))
 			}
-			for i, s := range tt.shape {
-				if tensor.shape[i] != s {
-					t.Errorf("NewTensor() shape[%d] = %v, want %v", i, tensor.shape[i], s)
+			for i := range got.Shape() {
+				if got.Shape()[i] != tt.want[i] {
+					t.Errorf("Shape()[%d] = %d, want %d", i, got.Shape()[i], tt.want[i])
 				}
 			}
 		})
@@ -981,6 +989,116 @@ func TestTensor_Add(t *testing.T) {
 					if data[i] != tt.want[i] {
 						t.Errorf("Data[%d] = %v, want %v", i, data[i], tt.want[i])
 					}
+				}
+			}
+		})
+	}
+}
+
+func TestTensor_SetTernary(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   int8
+		indices []int
+		want    int8
+	}{
+		{
+			name:    "set valid ternary value",
+			value:   1,
+			indices: []int{0, 0},
+			want:    1,
+		},
+		{
+			name:    "set invalid ternary value",
+			value:   2,
+			indices: []int{0, 0},
+			want:    1,
+		},
+		{
+			name:    "set negative ternary value",
+			value:   -2,
+			indices: []int{0, 0},
+			want:    -1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tensor := NewTensor(2, 3)
+			tensor.SetTernary(tt.value, tt.indices...)
+			got := tensor.Get(tt.indices...)
+			if got != tt.want {
+				t.Errorf("Get() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNewTensorFromData(t *testing.T) {
+	tests := []struct {
+		name  string
+		data  []int8
+		rows  int
+		want  []int8
+		shape []int
+	}{
+		{
+			name:  "valid 2D data",
+			data:  []int8{1, -1, 0, 1},
+			rows:  2,
+			want:  []int8{1, -1, 0, 1},
+			shape: []int{2, 2},
+		},
+		{
+			name:  "valid 1D data",
+			data:  []int8{1, -1, 0, 1},
+			rows:  0,
+			want:  []int8{1, -1, 0, 1},
+			shape: []int{4},
+		},
+		{
+			name:  "empty data",
+			data:  []int8{},
+			rows:  0,
+			want:  []int8{},
+			shape: []int{0},
+		},
+		{
+			name:  "invalid dimensions",
+			data:  []int8{1, 2, 3},
+			rows:  2,
+			want:  nil,
+			shape: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NewTensorFromData(tt.data, tt.rows)
+			if tt.want == nil {
+				if got != nil {
+					t.Errorf("NewTensorFromData() = %v, want nil", got)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatal("NewTensorFromData() returned nil")
+			}
+			if len(got.Shape()) != len(tt.shape) {
+				t.Errorf("Shape() length = %d, want %d", len(got.Shape()), len(tt.shape))
+			}
+			for i := range tt.shape {
+				if got.Shape()[i] != tt.shape[i] {
+					t.Errorf("Shape()[%d] = %d, want %d", i, got.Shape()[i], tt.shape[i])
+				}
+			}
+			data := got.Data()
+			if len(data) != len(tt.want) {
+				t.Errorf("Data() length = %d, want %d", len(data), len(tt.want))
+			}
+			for i := range data {
+				if data[i] != tt.want[i] {
+					t.Errorf("Data()[%d] = %v, want %v", i, data[i], tt.want[i])
 				}
 			}
 		})

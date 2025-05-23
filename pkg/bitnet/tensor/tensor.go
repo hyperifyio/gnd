@@ -6,6 +6,7 @@
 package tensor
 
 import (
+	"fmt"
 	"runtime"
 	"sync"
 
@@ -63,6 +64,11 @@ type tensorOp struct {
 func NewTensor(shape ...int) *Tensor {
 	if len(shape) == 0 {
 		return nil
+	}
+	for _, dim := range shape {
+		if dim <= 0 {
+			panic(fmt.Sprintf("tensor: all dimensions must be positive, got shape %v", shape))
+		}
 	}
 
 	// Calculate total size and stride
@@ -346,21 +352,41 @@ func (t *Tensor) Reshape(shape ...int) *Tensor {
 
 // NewTensorFromData creates a new tensor from existing data.
 // The shape is inferred from the data length.
-func NewTensorFromData(data []int8) *Tensor {
+// If rows > 0, creates a 2D tensor with the specified number of rows.
+// Otherwise creates a 1D tensor.
+func NewTensorFromData(data []int8, rows int) *Tensor {
 	if len(data) == 0 {
-		return nil
+		// Return a 1D tensor with zero length
+		return &Tensor{
+			data:   make([]int8, 0),
+			shape:  []int{0},
+			stride: []int{1},
+		}
 	}
 
-	// Create tensor with 1D shape
+	if rows <= 0 {
+		// Create 1D tensor
+		t := &Tensor{
+			data:   make([]int8, len(data)),
+			shape:  []int{len(data)},
+			stride: []int{1},
+		}
+		copy(t.data, data)
+		return t
+	}
+
+	// Create 2D tensor
+	cols := len(data) / rows
+	if cols*rows != len(data) {
+		return nil // Invalid dimensions
+	}
+
 	t := &Tensor{
 		data:   make([]int8, len(data)),
-		shape:  []int{len(data)},
-		stride: []int{1},
+		shape:  []int{rows, cols},
+		stride: []int{cols, 1},
 	}
-
-	// Copy data
 	copy(t.data, data)
-
 	return t
 }
 

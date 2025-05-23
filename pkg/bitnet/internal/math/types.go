@@ -37,6 +37,10 @@ type (
 // If multiple dimensions are provided, the tensor's shape must match one of them.
 // Returns ErrInvalidDimensions if the shape does not match.
 func ValidateShape(t *tensor.Tensor, expectedDims ...int) error {
+	if t == nil {
+		tensor.DebugLog("tensor is nil, expected dimensions %v", expectedDims)
+		return ErrInvalidDimensions
+	}
 	shape := t.Shape()
 	for _, dim := range expectedDims {
 		if len(shape) == dim {

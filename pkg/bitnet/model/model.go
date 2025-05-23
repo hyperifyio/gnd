@@ -36,6 +36,7 @@ var (
 	ErrAttentionWeights        = errors.New("bitnet: failed to set attention weights")
 	ErrAttentionForward        = errors.New("bitnet: attention forward pass failed")
 	ErrUnexpectedTensorShape   = errors.New("bitnet: unexpected tensor shape")
+	ErrInvalidTokenID          = errors.New("model: invalid token ID")
 )
 
 // Model represents a BitNet model instance. It manages the model's configuration,
@@ -99,6 +100,10 @@ func NewModel(config *Config, fs fs.FS) *Model {
 // The function reads and initializes all model parameters including embeddings,
 // transformer blocks, and normalization layers.
 func (m *Model) LoadWeights(path string) error {
+	if m == nil {
+		return ErrWeightsNotLoaded
+	}
+
 	// Open the weights file
 	file, err := m.fs.Open(path)
 	if err != nil {
@@ -167,7 +172,14 @@ func (m *Model) LoadWeights(path string) error {
 
 	// Read transformer blocks
 	for i := 0; i < m.config.NumLayers; i++ {
+		if m.weights == nil || m.weights.Blocks == nil || i >= len(m.weights.Blocks) {
+			return ErrWeightsNotLoaded
+		}
+
 		block := m.weights.Blocks[i]
+		if block == nil {
+			return ErrWeightsNotLoaded
+		}
 
 		// Read all weights for this block
 		if err := m.readTernaryWeights(file, block.QKVProj); err != nil {
@@ -194,8 +206,6 @@ func (m *Model) LoadWeights(path string) error {
 			}
 			return err
 		}
-
-		// Read normalization weights
 		if err := m.readTernaryWeights(file, block.AttnNorm); err != nil {
 			if err == io.EOF || err == io.ErrUnexpectedEOF {
 				return ErrWeightsFileRead
@@ -210,7 +220,7 @@ func (m *Model) LoadWeights(path string) error {
 		}
 	}
 
-	// Read final normalization
+	// Read final normalization weights
 	if err := m.readTernaryWeights(file, m.weights.FinalNorm); err != nil {
 		if err == io.EOF || err == io.ErrUnexpectedEOF {
 			return ErrWeightsFileRead
@@ -233,18 +243,16 @@ func (m *Model) LoadWeights(path string) error {
 // input: slice of token IDs
 // Returns: slice of output token IDs
 func (m *Model) Infer(tokens []int) ([]int, error) {
+	if len(tokens) == 0 {
+		return nil, ErrInvalidToken
+	}
+
+	if len(tokens) > m.config.MaxSeqLength {
+		return nil, ErrInvalidToken
+	}
+
 	if m.weights == nil {
 		return nil, ErrWeightsNotLoaded
-	}
-
-	// Handle empty input
-	if len(tokens) == 0 {
-		return []int{}, nil
-	}
-
-	// Check sequence length
-	if len(tokens) > m.config.MaxSeqLength {
-		return nil, ErrSequenceTooLong
 	}
 
 	// Convert tokens to hidden states using embedding layer
@@ -362,7 +370,7 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 
 	// Apply final normalization
 	finalNorm := bitnetmath.NewSubLN(m.config.HiddenSize, 1e-5)
-	finalNormTensor := tensor.NewTensorFromData(m.weights.FinalNorm)
+	finalNormTensor := tensor.NewTensorFromData(m.weights.FinalNorm, m.config.HiddenSize)
 	finalNorm.SetGamma(convertInt8ToFloat32(finalNormTensor.Data()))
 
 	// Convert hidden states to float32 for normalization
@@ -444,46 +452,43 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 	return outputTokens, nil
 }
 
-// embedTokens converts token IDs to their corresponding hidden vectors
-// using the quantized embedding matrix
+// embedTokens converts token IDs to embeddings using the model's token embedding layer.
 func (m *Model) embedTokens(tokens []int) ([][]float32, error) {
-	if m.weights == nil {
+	if m.weights == nil || m.weights.TokenEmbedding == nil {
 		return nil, ErrWeightsNotLoaded
 	}
 
-	// Allocate output tensor
-	hiddenStates := make([][]float32, len(tokens))
-	for i := range hiddenStates {
-		hiddenStates[i] = make([]float32, m.config.HiddenSize)
+	// Pre-allocate embeddings slice
+	embeddings := make([][]float32, len(tokens))
+	for i := range embeddings {
+		embeddings[i] = make([]float32, m.config.HiddenSize)
 	}
 
-	// For each token, look up its embedding vector
+	// Process each token
 	for i, tokenID := range tokens {
 		if tokenID < 0 || tokenID >= m.config.VocabSize {
 			return nil, ErrInvalidToken
 		}
 
-		// Get the embedding vector for this token
+		// Get embedding vector for this token
 		embeddingStart := tokenID * m.config.HiddenSize
-
-		// Convert ternary weights to float32 values
 		for j := 0; j < m.config.HiddenSize; j++ {
 			weight := m.weights.TokenEmbedding[embeddingStart+j]
 			// Convert ternary value (-1, 0, +1) to float32
 			switch weight {
 			case -1:
-				hiddenStates[i][j] = -1.0
+				embeddings[i][j] = -1.0
 			case 0:
-				hiddenStates[i][j] = 0.0
+				embeddings[i][j] = 0.0
 			case 1:
-				hiddenStates[i][j] = 1.0
+				embeddings[i][j] = 1.0
 			default:
 				return nil, ErrInvalidWeightValue
 			}
 		}
 	}
 
-	return hiddenStates, nil
+	return embeddings, nil
 }
 
 // infer is the internal implementation of Infer

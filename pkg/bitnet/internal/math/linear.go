@@ -123,6 +123,9 @@ func (l *Linear) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 // Returns an error if the weights tensor has incorrect shape.
 // The weights must match the layer's input and output dimensions.
 func (l *Linear) SetWeights(weights *tensor.Tensor) error {
+	if weights == nil {
+		return ErrLinearWeightsShape
+	}
 	if len(weights.Shape()) != 2 || weights.Shape()[0] != l.outDim || weights.Shape()[1] != l.inDim {
 		tensor.DebugLog("weights must be 2D tensor with shape [%d, %d], got %v", l.outDim, l.inDim, weights.Shape())
 		return ErrLinearWeightsShape

@@ -37,22 +37,22 @@ func TestAttentionSublayer(t *testing.T) {
 				{-1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1},
 			},
 			kWeights: [][]int8{
-				{1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0},
-				{-1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1},
-				{1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0},
-				{-1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1},
 			},
 			vWeights: [][]int8{
-				{1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0},
-				{-1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1},
-				{1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0},
-				{-1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1},
 			},
 			outWeights: [][]int8{
-				{1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0},
-				{-1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1},
-				{1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0},
-				{-1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1},
 			},
 			gamma: []float32{1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0},
 		},
@@ -329,6 +329,303 @@ func BenchmarkAttentionSublayer(b *testing.B) {
 				if err != nil {
 					b.Fatalf("Forward pass failed: %v", err)
 				}
+			}
+		})
+	}
+}
+
+func TestNewAttentionSublayer(t *testing.T) {
+	tests := []struct {
+		name       string
+		hiddenSize int
+		numHeads   int
+		numKVHeads int
+		wantErr    bool
+	}{
+		{
+			name:       "valid dimensions",
+			hiddenSize: 64,
+			numHeads:   8,
+			numKVHeads: 8,
+			wantErr:    false,
+		},
+		{
+			name:       "invalid head count",
+			hiddenSize: 64,
+			numHeads:   33,
+			numKVHeads: 8,
+			wantErr:    true,
+		},
+		{
+			name:       "invalid KV heads",
+			hiddenSize: 64,
+			numHeads:   8,
+			numKVHeads: 9,
+			wantErr:    true,
+		},
+		{
+			name:       "non-divisible heads",
+			hiddenSize: 64,
+			numHeads:   8,
+			numKVHeads: 3,
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NewAttentionSublayer(tt.hiddenSize, tt.numHeads, tt.numKVHeads)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("NewAttentionSublayer() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestAttentionSublayer_SetWeights(t *testing.T) {
+	hiddenSize := 64
+	numHeads := 8
+	numKVHeads := 8
+
+	tests := []struct {
+		name       string
+		qWeights   *tensor.Tensor
+		kWeights   *tensor.Tensor
+		vWeights   *tensor.Tensor
+		outWeights *tensor.Tensor
+		wantErr    bool
+	}{
+		{
+			name:       "valid weights",
+			qWeights:   tensor.NewTensor(hiddenSize, numHeads*hiddenSize/numHeads),
+			kWeights:   tensor.NewTensor(hiddenSize, numKVHeads*hiddenSize/numKVHeads),
+			vWeights:   tensor.NewTensor(hiddenSize, numKVHeads*hiddenSize/numKVHeads),
+			outWeights: tensor.NewTensor(numHeads*hiddenSize/numHeads, hiddenSize),
+			wantErr:    false,
+		},
+		{
+			name:       "invalid query weights shape",
+			qWeights:   tensor.NewTensor(hiddenSize-1, numHeads*hiddenSize/numHeads),
+			kWeights:   tensor.NewTensor(hiddenSize, numKVHeads*hiddenSize/numKVHeads),
+			vWeights:   tensor.NewTensor(hiddenSize, numKVHeads*hiddenSize/numKVHeads),
+			outWeights: tensor.NewTensor(numHeads*hiddenSize/numHeads, hiddenSize),
+			wantErr:    true,
+		},
+		{
+			name:       "invalid key weights shape",
+			qWeights:   tensor.NewTensor(hiddenSize, numHeads*hiddenSize/numHeads),
+			kWeights:   tensor.NewTensor(hiddenSize, numKVHeads*hiddenSize/numKVHeads-1),
+			vWeights:   tensor.NewTensor(hiddenSize, numKVHeads*hiddenSize/numKVHeads),
+			outWeights: tensor.NewTensor(numHeads*hiddenSize/numHeads, hiddenSize),
+			wantErr:    true,
+		},
+		{
+			name:       "invalid value weights shape",
+			qWeights:   tensor.NewTensor(hiddenSize, numHeads*hiddenSize/numHeads),
+			kWeights:   tensor.NewTensor(hiddenSize, numKVHeads*hiddenSize/numKVHeads),
+			vWeights:   tensor.NewTensor(hiddenSize-1, numKVHeads*hiddenSize/numKVHeads),
+			outWeights: tensor.NewTensor(numHeads*hiddenSize/numHeads, hiddenSize),
+			wantErr:    true,
+		},
+		{
+			name:       "invalid output weights shape",
+			qWeights:   tensor.NewTensor(hiddenSize, numHeads*hiddenSize/numHeads),
+			kWeights:   tensor.NewTensor(hiddenSize, numKVHeads*hiddenSize/numKVHeads),
+			vWeights:   tensor.NewTensor(hiddenSize, numKVHeads*hiddenSize/numKVHeads),
+			outWeights: tensor.NewTensor(numHeads*hiddenSize/numHeads, hiddenSize+1),
+			wantErr:    true,
+		},
+		{
+			name:       "nil query weights",
+			qWeights:   nil,
+			kWeights:   tensor.NewTensor(hiddenSize, numKVHeads*hiddenSize/numKVHeads),
+			vWeights:   tensor.NewTensor(hiddenSize, numKVHeads*hiddenSize/numKVHeads),
+			outWeights: tensor.NewTensor(numHeads*hiddenSize/numHeads, hiddenSize),
+			wantErr:    true,
+		},
+		{
+			name:       "nil key weights",
+			qWeights:   tensor.NewTensor(hiddenSize, numHeads*hiddenSize/numHeads),
+			kWeights:   nil,
+			vWeights:   tensor.NewTensor(hiddenSize, numKVHeads*hiddenSize/numKVHeads),
+			outWeights: tensor.NewTensor(numHeads*hiddenSize/numHeads, hiddenSize),
+			wantErr:    true,
+		},
+		{
+			name:       "nil value weights",
+			qWeights:   tensor.NewTensor(hiddenSize, numHeads*hiddenSize/numHeads),
+			kWeights:   tensor.NewTensor(hiddenSize, numKVHeads*hiddenSize/numKVHeads),
+			vWeights:   nil,
+			outWeights: tensor.NewTensor(numHeads*hiddenSize/numHeads, hiddenSize),
+			wantErr:    true,
+		},
+		{
+			name:       "nil output weights",
+			qWeights:   tensor.NewTensor(hiddenSize, numHeads*hiddenSize/numHeads),
+			kWeights:   tensor.NewTensor(hiddenSize, numKVHeads*hiddenSize/numKVHeads),
+			vWeights:   tensor.NewTensor(hiddenSize, numKVHeads*hiddenSize/numKVHeads),
+			outWeights: nil,
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			attn, err := NewAttentionSublayer(hiddenSize, numHeads, numKVHeads)
+			if err != nil {
+				t.Fatalf("Failed to create attention sublayer: %v", err)
+			}
+			err = attn.SetWeights(tt.qWeights, tt.kWeights, tt.vWeights, tt.outWeights)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("SetWeights() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestAttentionSublayer_SetGamma(t *testing.T) {
+	// Create a valid attention sublayer
+	hiddenSize := 64
+	numHeads := 8
+	numKVHeads := 8
+	attn, err := NewAttentionSublayer(hiddenSize, numHeads, numKVHeads)
+	if err != nil {
+		t.Fatalf("Failed to create attention sublayer: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		gamma   *tensor.Tensor
+		wantErr bool
+	}{
+		{
+			name:    "valid gamma",
+			gamma:   tensor.NewTensor(hiddenSize),
+			wantErr: false,
+		},
+		{
+			name:    "invalid gamma shape",
+			gamma:   tensor.NewTensor(hiddenSize + 1),
+			wantErr: true,
+		},
+		{
+			name:    "nil gamma",
+			gamma:   nil,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := attn.SetGamma(tt.gamma)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("SetGamma() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestAttentionSublayer_Forward(t *testing.T) {
+	// Create a valid attention sublayer
+	hiddenSize := 64
+	numHeads := 8
+	numKVHeads := 8
+	attn, err := NewAttentionSublayer(hiddenSize, numHeads, numKVHeads)
+	if err != nil {
+		t.Fatalf("Failed to create attention sublayer: %v", err)
+	}
+
+	// Set up valid weights
+	qWeights := tensor.NewTensor(hiddenSize, numHeads*hiddenSize/numHeads)
+	kWeights := tensor.NewTensor(hiddenSize, numKVHeads*hiddenSize/numKVHeads)
+	vWeights := tensor.NewTensor(hiddenSize, numKVHeads*hiddenSize/numKVHeads)
+	outWeights := tensor.NewTensor(hiddenSize, hiddenSize)
+	gamma := tensor.NewTensor(hiddenSize)
+
+	err = attn.SetWeights(qWeights, kWeights, vWeights, outWeights)
+	if err != nil {
+		t.Fatalf("Failed to set weights: %v", err)
+	}
+	err = attn.SetGamma(gamma)
+	if err != nil {
+		t.Fatalf("Failed to set gamma: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		input   *tensor.Tensor
+		wantErr bool
+	}{
+		{
+			name:    "valid 2D input",
+			input:   tensor.NewTensor(1, hiddenSize),
+			wantErr: false,
+		},
+		{
+			name:    "valid 3D input",
+			input:   tensor.NewTensor(1, 1, hiddenSize),
+			wantErr: false,
+		},
+		{
+			name:    "invalid input shape",
+			input:   tensor.NewTensor(1, hiddenSize+1),
+			wantErr: true,
+		},
+		{
+			name:    "nil input",
+			input:   nil,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := attn.Forward(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Forward() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestEqualShape(t *testing.T) {
+	tests := []struct {
+		name   string
+		shape1 []int
+		shape2 []int
+		want   bool
+	}{
+		{
+			name:   "equal shapes",
+			shape1: []int{2, 3, 4},
+			shape2: []int{2, 3, 4},
+			want:   true,
+		},
+		{
+			name:   "different lengths",
+			shape1: []int{2, 3, 4},
+			shape2: []int{2, 3},
+			want:   false,
+		},
+		{
+			name:   "different values",
+			shape1: []int{2, 3, 4},
+			shape2: []int{2, 3, 5},
+			want:   false,
+		},
+		{
+			name:   "empty shapes",
+			shape1: []int{},
+			shape2: []int{},
+			want:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := equalShape(tt.shape1, tt.shape2)
+			if got != tt.want {
+				t.Errorf("equalShape() = %v, want %v", got, tt.want)
 			}
 		})
 	}
