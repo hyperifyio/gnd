@@ -134,18 +134,6 @@ func TestTensor_Set(t *testing.T) {
 			indices: []int{1},
 			wantErr: true,
 		},
-		{
-			name:    "clamp to ternary",
-			value:   2,
-			indices: []int{0, 0},
-			wantErr: false,
-		},
-		{
-			name:    "clamp to ternary negative",
-			value:   -2,
-			indices: []int{0, 0},
-			wantErr: false,
-		},
 	}
 
 	for _, tt := range tests {
@@ -159,18 +147,29 @@ func TestTensor_Set(t *testing.T) {
 			tensor.Set(tt.value, tt.indices...)
 			if !tt.wantErr {
 				got := tensor.Get(tt.indices...)
-				expected := tt.value
-				if expected > 1 {
-					expected = 1
-				} else if expected < -1 {
-					expected = -1
-				}
-				if got != expected {
-					t.Errorf("Set() value = %v, want %v", got, expected)
+				if got != tt.value {
+					t.Errorf("Set() value = %v, want %v", got, tt.value)
 				}
 			}
 		})
 	}
+
+	// Ternary clamping tests
+	t.Run("clamp to ternary", func(t *testing.T) {
+		tensor.SetTernary(2, 0, 0)
+		got := tensor.Get(0, 0)
+		if got != 1 {
+			t.Errorf("SetTernary() value = %v, want %v", got, 1)
+		}
+	})
+
+	t.Run("clamp to ternary negative", func(t *testing.T) {
+		tensor.SetTernary(-2, 0, 0)
+		got := tensor.Get(0, 0)
+		if got != -1 {
+			t.Errorf("SetTernary() value = %v, want %v", got, -1)
+		}
+	})
 }
 
 // TestTensor_Shape tests tensor shape retrieval
@@ -676,5 +675,314 @@ func TestTensorReshapeEdgeCase(t *testing.T) {
 		if reshaped.Get(0, 0, i) != int8(i%3-1) {
 			t.Errorf("Reshaped tensor data mismatch at %d: got %v, want %v", i, reshaped.Get(0, 0, i), int8(i%3-1))
 		}
+	}
+}
+
+func TestTensor_Transpose(t *testing.T) {
+	tests := []struct {
+		name      string
+		shape     []int
+		order     []int
+		wantErr   bool
+		wantShape []int
+	}{
+		{
+			name:      "valid 2D transpose",
+			shape:     []int{2, 3},
+			order:     []int{1, 0},
+			wantErr:   false,
+			wantShape: []int{3, 2},
+		},
+		{
+			name:      "valid 3D transpose",
+			shape:     []int{2, 3, 4},
+			order:     []int{0, 2, 1},
+			wantErr:   false,
+			wantShape: []int{2, 4, 3},
+		},
+		{
+			name:      "invalid order length",
+			shape:     []int{2, 3},
+			order:     []int{0},
+			wantErr:   true,
+			wantShape: nil,
+		},
+		{
+			name:      "invalid dimension",
+			shape:     []int{2, 3},
+			order:     []int{0, 2},
+			wantErr:   true,
+			wantShape: nil,
+		},
+		{
+			name:      "duplicate dimension",
+			shape:     []int{2, 3},
+			order:     []int{0, 0},
+			wantErr:   true,
+			wantShape: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create tensor
+			tensor := NewTensor(tt.shape...)
+			if tensor == nil {
+				t.Fatal("NewTensor returned nil")
+			}
+
+			// Fill with test data
+			for i := 0; i < len(tensor.Data()); i++ {
+				tensor.Set(int8(i%3-1), tensor.calculateIndices(i)...)
+			}
+
+			// Test transpose
+			if tt.wantErr {
+				defer func() {
+					if r := recover(); r == nil {
+						t.Error("Transpose did not panic as expected")
+					}
+				}()
+			}
+
+			transposed := tensor.Transpose(tt.order...)
+			if !tt.wantErr {
+				if transposed == nil {
+					t.Fatal("Transpose returned nil")
+				}
+
+				// Verify shape
+				gotShape := transposed.Shape()
+				if len(gotShape) != len(tt.wantShape) {
+					t.Errorf("Shape length = %v, want %v", len(gotShape), len(tt.wantShape))
+				}
+				for i := range gotShape {
+					if gotShape[i] != tt.wantShape[i] {
+						t.Errorf("Shape[%d] = %v, want %v", i, gotShape[i], tt.wantShape[i])
+					}
+				}
+
+				// Verify data integrity
+				for i := 0; i < len(tensor.Data()); i++ {
+					oldIndices := tensor.calculateIndices(i)
+					newIndices := make([]int, len(tt.order))
+					for j, o := range tt.order {
+						newIndices[j] = oldIndices[o]
+					}
+					got := transposed.Get(newIndices...)
+					want := tensor.Get(oldIndices...)
+					if got != want {
+						t.Errorf("Data mismatch at indices %v: got %v, want %v", newIndices, got, want)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestTensor_Repeat(t *testing.T) {
+	tests := []struct {
+		name      string
+		shape     []int
+		dim       int
+		count     int
+		wantErr   bool
+		wantShape []int
+	}{
+		{
+			name:      "valid 2D repeat",
+			shape:     []int{2, 3},
+			dim:       0,
+			count:     2,
+			wantErr:   false,
+			wantShape: []int{4, 3},
+		},
+		{
+			name:      "valid 3D repeat",
+			shape:     []int{2, 3, 4},
+			dim:       1,
+			count:     3,
+			wantErr:   false,
+			wantShape: []int{2, 9, 4},
+		},
+		{
+			name:      "invalid dimension",
+			shape:     []int{2, 3},
+			dim:       2,
+			count:     2,
+			wantErr:   true,
+			wantShape: nil,
+		},
+		{
+			name:      "invalid count",
+			shape:     []int{2, 3},
+			dim:       0,
+			count:     0,
+			wantErr:   true,
+			wantShape: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create tensor
+			tensor := NewTensor(tt.shape...)
+			if tensor == nil {
+				t.Fatal("NewTensor returned nil")
+			}
+
+			// Fill with test data
+			for i := 0; i < len(tensor.Data()); i++ {
+				tensor.Set(int8(i%3-1), tensor.calculateIndices(i)...)
+			}
+
+			// Test repeat
+			if tt.wantErr {
+				defer func() {
+					if r := recover(); r == nil {
+						t.Error("Repeat did not panic as expected")
+					}
+				}()
+			}
+
+			repeated := tensor.Repeat(tt.dim, tt.count)
+			if !tt.wantErr {
+				if repeated == nil {
+					t.Fatal("Repeat returned nil")
+				}
+
+				// Verify shape
+				gotShape := repeated.Shape()
+				if len(gotShape) != len(tt.wantShape) {
+					t.Errorf("Shape length = %v, want %v", len(gotShape), len(tt.wantShape))
+				}
+				for i := range gotShape {
+					if gotShape[i] != tt.wantShape[i] {
+						t.Errorf("Shape[%d] = %v, want %v", i, gotShape[i], tt.wantShape[i])
+					}
+				}
+
+				// Verify data integrity
+				for i := 0; i < len(tensor.Data()); i++ {
+					oldIndices := tensor.calculateIndices(i)
+					for c := 0; c < tt.count; c++ {
+						newIndices := make([]int, len(oldIndices))
+						copy(newIndices, oldIndices)
+						newIndices[tt.dim] = oldIndices[tt.dim] + c*tensor.Shape()[tt.dim]
+						got := repeated.Get(newIndices...)
+						want := tensor.Get(oldIndices...)
+						if got != want {
+							t.Errorf("Data mismatch at indices %v: got %v, want %v", newIndices, got, want)
+						}
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestTensor_Add(t *testing.T) {
+	tests := []struct {
+		name    string
+		shape   []int
+		values1 []int8
+		values2 []int8
+		wantErr bool
+		want    []int8
+	}{
+		{
+			name:    "valid 2D addition",
+			shape:   []int{2, 3},
+			values1: []int8{1, 2, 3, 4, 5, 6},
+			values2: []int8{2, 3, 4, 5, 6, 7},
+			wantErr: false,
+			want:    []int8{3, 5, 7, 9, 11, 13},
+		},
+		{
+			name:    "clamp positive overflow",
+			shape:   []int{2, 2},
+			values1: []int8{100, 100, 100, 100},
+			values2: []int8{100, 100, 100, 100},
+			wantErr: false,
+			want:    []int8{127, 127, 127, 127},
+		},
+		{
+			name:    "clamp negative overflow",
+			shape:   []int{2, 2},
+			values1: []int8{-100, -100, -100, -100},
+			values2: []int8{-100, -100, -100, -100},
+			wantErr: false,
+			want:    []int8{-128, -128, -128, -128},
+		},
+		{
+			name:    "shape mismatch",
+			shape:   []int{2, 3},
+			values1: []int8{1, 2, 3, 4, 5, 6},
+			values2: []int8{1, 2, 3, 4},
+			wantErr: true,
+			want:    nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create tensors
+			t1 := NewTensor(tt.shape...)
+			var t2 *Tensor
+			if tt.wantErr && tt.name == "shape mismatch" {
+				t2 = NewTensor(2, 2) // Different shape to trigger panic
+			} else {
+				t2 = NewTensor(tt.shape...)
+			}
+			if t1 == nil || t2 == nil {
+				t.Fatal("NewTensor returned nil")
+			}
+
+			// Fill with test data
+			for i := 0; i < len(tt.values1); i++ {
+				t1.Set(tt.values1[i], t1.calculateIndices(i)...)
+			}
+			for i := 0; i < len(tt.values2) && i < len(t2.Data()); i++ {
+				t2.Set(tt.values2[i], t2.calculateIndices(i)...)
+			}
+
+			// Test addition
+			if tt.wantErr {
+				defer func() {
+					if r := recover(); r == nil {
+						t.Error("Add did not panic as expected")
+					}
+				}()
+			}
+
+			result := t1.Add(t2)
+			if !tt.wantErr {
+				if result == nil {
+					t.Fatal("Add returned nil")
+				}
+
+				// Verify shape
+				gotShape := result.Shape()
+				if len(gotShape) != len(tt.shape) {
+					t.Errorf("Shape length = %v, want %v", len(gotShape), len(tt.shape))
+				}
+				for i := range gotShape {
+					if gotShape[i] != tt.shape[i] {
+						t.Errorf("Shape[%d] = %v, want %v", i, gotShape[i], tt.shape[i])
+					}
+				}
+
+				// Verify values
+				data := result.Data()
+				if len(data) != len(tt.want) {
+					t.Errorf("Data length = %v, want %v", len(data), len(tt.want))
+				}
+				for i := range data {
+					if data[i] != tt.want[i] {
+						t.Errorf("Data[%d] = %v, want %v", i, data[i], tt.want[i])
+					}
+				}
+			}
+		})
 	}
 }

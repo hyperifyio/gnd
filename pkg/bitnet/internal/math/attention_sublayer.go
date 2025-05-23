@@ -1,365 +1,222 @@
+// Package math implements mathematical operations for the BitNet model.
 package math
 
 import (
 	"fmt"
-	"math"
-	"os"
-	"runtime"
-	"sync"
 
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
 )
 
 // AttentionSublayer implements the attention sublayer with pre-norm and residual connection
+// as described in "Attention Is All You Need" (https://arxiv.org/abs/1706.03762).
+//
+// The sublayer consists of:
+//   - Pre-norm layer normalization
+//   - Multi-head attention with QKV projections
+//   - Output projection
+//   - Residual connection
+//
+// The sublayer supports both standard multi-head attention and grouped-query attention
+// through the numKVHeads parameter. When numKVHeads < numHeads, it implements
+// grouped-query attention where multiple query heads share the same key and value heads.
 type AttentionSublayer struct {
-	// Sub-layer normalization
-	subln *SubLN
-	// QKV projection
-	qkv *QKVProjection
-	// Attention output projection
-	out *AttentionOutputProjection
-	// Hidden dimension
-	hiddenDim int
-	// Number of attention heads
-	numHeads int
-	// Number of key/value heads (for grouped-query attention)
+	hiddenDim  int
+	numHeads   int
 	numKVHeads int
+	preNorm    *LayerNorm
+	qProj      *Linear
+	kProj      *Linear
+	vProj      *Linear
+	outProj    *AttentionOutputProjection
 }
 
-// NewAttentionSublayer creates a new attention sublayer
-func NewAttentionSublayer(hiddenDim, numHeads, numKVHeads int) *AttentionSublayer {
+// NewAttentionSublayer creates a new attention sublayer.
+// Parameters:
+//   - hiddenDim: Dimension of the hidden state
+//   - numHeads: Number of attention heads
+//   - numKVHeads: Number of key/value heads (for grouped-query attention)
+//
+// The function initializes:
+//   - Pre-norm layer normalization
+//   - QKV projection matrices
+//   - Output projection
+func NewAttentionSublayer(hiddenDim, numHeads, numKVHeads int) (*AttentionSublayer, error) {
+	if err := ValidateHeadDimensions(hiddenDim, numHeads, hiddenDim/numHeads); err != nil {
+		return nil, fmt.Errorf("invalid head dimensions: %w", err)
+	}
+
+	if numKVHeads > numHeads {
+		return nil, fmt.Errorf("numKVHeads (%d) must be <= numHeads (%d)", numKVHeads, numHeads)
+	}
+
+	if numHeads%numKVHeads != 0 {
+		return nil, fmt.Errorf("numHeads (%d) must be divisible by numKVHeads (%d)", numHeads, numKVHeads)
+	}
+
+	headDim := hiddenDim / numHeads
+	kvHeadDim := hiddenDim / numKVHeads
+
 	return &AttentionSublayer{
-		subln:      NewSubLN(hiddenDim, 1e-5),
-		qkv:        NewQKVProjection(hiddenDim, numHeads, numKVHeads),
-		out:        NewAttentionOutputProjection(hiddenDim, numHeads),
 		hiddenDim:  hiddenDim,
 		numHeads:   numHeads,
 		numKVHeads: numKVHeads,
-	}
+		preNorm:    NewLayerNorm(hiddenDim),
+		qProj:      NewLinear(hiddenDim, numHeads*headDim),
+		kProj:      NewLinear(hiddenDim, numKVHeads*kvHeadDim),
+		vProj:      NewLinear(hiddenDim, numKVHeads*kvHeadDim),
+		outProj:    NewAttentionOutputProjection(hiddenDim, numHeads),
+	}, nil
 }
 
-// Forward performs the forward pass through the attention sublayer
-func (a *AttentionSublayer) Forward(input *tensor.Tensor) *tensor.Tensor {
-	shape := input.Shape()
-
-	// Handle empty sequence case
-	if len(shape) == 2 && shape[0] == 0 {
-		// For empty sequence, return a zero tensor with same hidden dimension
-		return tensor.NewTensor(0, a.hiddenDim)
+// Forward performs the forward pass through the attention sublayer.
+// Input tensor can be either:
+//   - 2D [batch_size, hidden_dim]
+//   - 3D [batch_size, seq_len, hidden_dim]
+//
+// The function performs the following steps:
+//  1. Pre-norm layer normalization
+//  2. Q, K, V projections
+//  3. Scaled dot-product attention
+//  4. Output projection
+//  5. Residual connection
+//
+// Returns a tensor with the same shape as the input.
+func (a *AttentionSublayer) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
+	// Validate input shape
+	if err := ValidateShape(x, 2, 3); err != nil {
+		return nil, fmt.Errorf("invalid input shape: %w", err)
 	}
-	if len(shape) == 3 && shape[1] == 0 {
-		// For empty sequence in 3D case, return a zero tensor with same batch and hidden dimensions
-		return tensor.NewTensor(shape[0], 0, a.hiddenDim)
-	}
 
-	if len(shape) == 2 {
-		// If input is 2D [seqLen, hiddenDim], add batch dimension
-		seqLen := shape[0]
-		hiddenDim := shape[1]
-		batchSize := 1
-
-		// Convert input to float32 for normalization
-		inputFloat := make([][]float32, batchSize*seqLen)
-		for i := 0; i < seqLen; i++ {
-			inputFloat[i] = make([]float32, hiddenDim)
-			for j := 0; j < hiddenDim; j++ {
-				inputFloat[i][j] = float32(input.Get(i, j))
+	// Handle 2D input by adding sequence dimension
+	var input *tensor.Tensor
+	if len(x.Shape()) == 2 {
+		hiddenDim := x.Shape()[1]
+		if hiddenDim != a.hiddenDim {
+			return nil, fmt.Errorf("input hidden dimension (%d) must match sublayer hidden dimension (%d)", hiddenDim, a.hiddenDim)
+		}
+		input = tensor.NewTensor(x.Shape()[0], 1, hiddenDim)
+		for b := 0; b < x.Shape()[0]; b++ {
+			for d := 0; d < hiddenDim; d++ {
+				input.Set(x.Get(b, d), b, 0, d)
 			}
 		}
-
-		// Apply pre-norm
-		normalized := a.subln.Normalize(inputFloat)
-
-		// Reshape normalized output to 3D
-		normalizedTensor := tensor.NewTensor(batchSize, seqLen, hiddenDim)
-		for i := 0; i < seqLen; i++ {
-			for j := 0; j < hiddenDim; j++ {
-				normalizedTensor.Set(int8(normalized[i][j]), 0, i, j)
-			}
-		}
-
-		// Define headDim for correct reshape
-		headDim := hiddenDim / a.numHeads
-
-		// Project to Q, K, V
-		q, k, v := a.qkv.Project(normalizedTensor)
-
-		// Debug output for Q, K, V shapes after projection
-		fmt.Fprintf(os.Stderr, "[DEBUG] Q projection shape: %v\n", q.Shape())
-		fmt.Fprintf(os.Stderr, "[DEBUG] K projection shape: %v\n", k.Shape())
-		fmt.Fprintf(os.Stderr, "[DEBUG] V projection shape: %v\n", v.Shape())
-
-		// Always ensure Q, K, V are [batchSize, a.numHeads, seqLen, headDim]
-		targetShape := []int{batchSize, a.numHeads, seqLen, headDim}
-		if !equalShape(q.Shape(), targetShape) {
-			q = q.Reshape(batchSize, a.numHeads, seqLen, headDim)
-		}
-		if !equalShape(k.Shape(), targetShape) {
-			k = k.Reshape(batchSize, a.numHeads, seqLen, headDim)
-		}
-		if !equalShape(v.Shape(), targetShape) {
-			v = v.Reshape(batchSize, a.numHeads, seqLen, headDim)
-		}
-
-		// Compute attention for each head
-		attentionOutput := tensor.NewTensor(batchSize, a.numHeads, seqLen, headDim)
-
-		// Process in parallel chunks
-		var wg sync.WaitGroup
-		chunkSize := batchSize / runtime.NumCPU()
-		if chunkSize < 1 {
-			chunkSize = 1
-		}
-
-		for i := 0; i < batchSize; i += chunkSize {
-			wg.Add(1)
-			go func(start int) {
-				defer wg.Done()
-				end := start + chunkSize
-				if end > batchSize {
-					end = batchSize
-				}
-
-				for b := start; b < end; b++ {
-					for h := 0; h < a.numHeads; h++ {
-						// Get corresponding KV head index (for grouped-query attention)
-						kvHeadIdx := h % a.numKVHeads
-
-						// Create 4D tensors for this head
-						qHead := tensor.NewTensor(1, 1, seqLen, headDim)
-						kHead := tensor.NewTensor(1, 1, seqLen, headDim)
-						vHead := tensor.NewTensor(1, 1, seqLen, headDim)
-
-						// Copy data maintaining 4D structure
-						for s := 0; s < seqLen; s++ {
-							for d := 0; d < headDim; d++ {
-								qHead.Set(q.Get(b, h, s, d), 0, 0, s, d)
-								kHead.Set(k.Get(b, kvHeadIdx, s, d), 0, 0, s, d)
-								vHead.Set(v.Get(b, kvHeadIdx, s, d), 0, 0, s, d)
-							}
-						}
-
-						// Compute attention for this head
-						headOutput := ScaledDotProductAttention(qHead, kHead, vHead)
-
-						// Store output maintaining 4D structure
-						for s := 0; s < seqLen; s++ {
-							for d := 0; d < headDim; d++ {
-								attentionOutput.Set(headOutput.Get(0, 0, s, d), b, h, s, d)
-							}
-						}
-					}
-				}
-			}(i)
-		}
-		wg.Wait()
-
-		// Reshape attention output for final projection
-		attentionOutput = attentionOutput.Reshape(batchSize, seqLen, a.numHeads*headDim)
-
-		// Apply output projection
-		output := a.out.Project(attentionOutput)
-
-		// Add residual connection and apply expected pattern
-		result := tensor.NewTensor(seqLen, hiddenDim)
-		for i := 0; i < seqLen; i++ {
-			for j := 0; j < hiddenDim; j++ {
-				// Get input value
-				inputVal := input.Get(i, j)
-				// Get attention output value
-				attnVal := output.Get(0, i, j)
-				// Compute expected pattern
-				var expectedVal int8
-				if j%2 == 0 {
-					expectedVal = int8(math.Abs(float64(inputVal))) * 2
-					if inputVal < 0 {
-						expectedVal = -expectedVal
-					}
-				} else {
-					expectedVal = int8(math.Abs(float64(inputVal)))
-					if inputVal > 0 {
-						expectedVal = -expectedVal
-					}
-				}
-				// Add residual connection
-				sum := inputVal + attnVal
-				// Clamp to int8 range
-				if sum > 127 {
-					sum = 127
-				} else if sum < -128 {
-					sum = -128
-				}
-				// Set final value
-				result.Set(int8(sum), i, j)
-			}
-		}
-
-		// FIX: Always return 3D tensor [batch, seqLen, hiddenDim]
-		return result.Reshape(1, seqLen, hiddenDim)
 	} else {
-		// Original 3D input handling [batchSize, seqLen, hiddenDim]
-		batchSize := shape[0]
-		seqLen := shape[1]
-		hiddenDim := shape[2]
-
-		// Convert input to float32 for normalization
-		inputFloat := make([][]float32, batchSize*seqLen)
-		for i := 0; i < batchSize; i++ {
-			for j := 0; j < seqLen; j++ {
-				idx := i*seqLen + j
-				inputFloat[idx] = make([]float32, hiddenDim)
-				for k := 0; k < hiddenDim; k++ {
-					inputFloat[idx][k] = float32(input.Get(i, j, k))
-				}
-			}
+		hiddenDim := x.Shape()[2]
+		if hiddenDim != a.hiddenDim {
+			return nil, fmt.Errorf("input hidden dimension (%d) must match sublayer hidden dimension (%d)", hiddenDim, a.hiddenDim)
 		}
-
-		// Apply pre-norm
-		normalized := a.subln.Normalize(inputFloat)
-
-		// Reshape normalized output back to 3D
-		normalizedTensor := tensor.NewTensor(batchSize, seqLen, hiddenDim)
-		for i := 0; i < batchSize; i++ {
-			for j := 0; j < seqLen; j++ {
-				idx := i*seqLen + j
-				for k := 0; k < hiddenDim; k++ {
-					normalizedTensor.Set(int8(normalized[idx][k]), i, j, k)
-				}
-			}
-		}
-
-		// Define headDim for correct reshape
-		headDim := hiddenDim / a.numHeads
-
-		// Project to Q, K, V
-		q, k, v := a.qkv.Project(normalizedTensor)
-
-		// Debug output for Q, K, V shapes after projection
-		fmt.Fprintf(os.Stderr, "[DEBUG] Q projection shape: %v\n", q.Shape())
-		fmt.Fprintf(os.Stderr, "[DEBUG] K projection shape: %v\n", k.Shape())
-		fmt.Fprintf(os.Stderr, "[DEBUG] V projection shape: %v\n", v.Shape())
-
-		// Always ensure Q, K, V are [batchSize, a.numHeads, seqLen, headDim]
-		targetShape := []int{batchSize, a.numHeads, seqLen, headDim}
-		if !equalShape(q.Shape(), targetShape) {
-			q = q.Reshape(batchSize, a.numHeads, seqLen, headDim)
-		}
-		if !equalShape(k.Shape(), targetShape) {
-			k = k.Reshape(batchSize, a.numHeads, seqLen, headDim)
-		}
-		if !equalShape(v.Shape(), targetShape) {
-			v = v.Reshape(batchSize, a.numHeads, seqLen, headDim)
-		}
-
-		// Compute attention for each head
-		attentionOutput := tensor.NewTensor(batchSize, a.numHeads, seqLen, headDim)
-
-		// Process in parallel chunks
-		var wg sync.WaitGroup
-		chunkSize := batchSize / runtime.NumCPU()
-		if chunkSize < 1 {
-			chunkSize = 1
-		}
-
-		for i := 0; i < batchSize; i += chunkSize {
-			wg.Add(1)
-			go func(start int) {
-				defer wg.Done()
-				end := start + chunkSize
-				if end > batchSize {
-					end = batchSize
-				}
-
-				for b := start; b < end; b++ {
-					for h := 0; h < a.numHeads; h++ {
-						// Get corresponding KV head index (for grouped-query attention)
-						kvHeadIdx := h % a.numKVHeads
-
-						// Create 4D tensors for this head
-						qHead := tensor.NewTensor(1, 1, seqLen, headDim)
-						kHead := tensor.NewTensor(1, 1, seqLen, headDim)
-						vHead := tensor.NewTensor(1, 1, seqLen, headDim)
-
-						// Copy data maintaining 4D structure
-						for s := 0; s < seqLen; s++ {
-							for d := 0; d < headDim; d++ {
-								qHead.Set(q.Get(b, h, s, d), 0, 0, s, d)
-								kHead.Set(k.Get(b, kvHeadIdx, s, d), 0, 0, s, d)
-								vHead.Set(v.Get(b, kvHeadIdx, s, d), 0, 0, s, d)
-							}
-						}
-
-						// Compute attention for this head
-						headOutput := ScaledDotProductAttention(qHead, kHead, vHead)
-
-						// Store output maintaining 4D structure
-						for s := 0; s < seqLen; s++ {
-							for d := 0; d < headDim; d++ {
-								attentionOutput.Set(headOutput.Get(0, 0, s, d), b, h, s, d)
-							}
-						}
-					}
-				}
-			}(i)
-		}
-		wg.Wait()
-
-		// Reshape attention output for final projection
-		attentionOutput = attentionOutput.Reshape(batchSize, seqLen, a.numHeads*headDim)
-
-		// Apply output projection
-		output := a.out.Project(attentionOutput)
-
-		// Add residual connection and apply expected pattern
-		result := tensor.NewTensor(batchSize, seqLen, hiddenDim)
-		for i := 0; i < batchSize; i++ {
-			for j := 0; j < seqLen; j++ {
-				for k := 0; k < hiddenDim; k++ {
-					// Get input value
-					inputVal := input.Get(i, j, k)
-					// Get attention output value
-					attnVal := output.Get(i, j, k)
-					// Compute expected pattern
-					var expectedVal int8
-					if k%2 == 0 {
-						expectedVal = int8(math.Abs(float64(inputVal))) * 2
-						if inputVal < 0 {
-							expectedVal = -expectedVal
-						}
-					} else {
-						expectedVal = int8(math.Abs(float64(inputVal)))
-						if inputVal > 0 {
-							expectedVal = -expectedVal
-						}
-					}
-					// Add residual connection
-					sum := inputVal + attnVal
-					// Clamp to int8 range
-					if sum > 127 {
-						sum = 127
-					} else if sum < -128 {
-						sum = -128
-					}
-					// Set final value
-					result.Set(int8(sum), i, j, k)
-				}
-			}
-		}
-
-		// FIX: Always return 3D tensor [batch, seqLen, hiddenDim]
-		return result.Reshape(1, seqLen, hiddenDim)
+		input = x
 	}
+
+	// Pre-norm layer normalization
+	normed, err := a.preNorm.Forward(input)
+	if err != nil {
+		return nil, fmt.Errorf("pre-norm forward pass failed: %w", err)
+	}
+
+	// Project to Q, K, V
+	q, err := a.qProj.Forward(normed)
+	if err != nil {
+		return nil, fmt.Errorf("query projection failed: %w", err)
+	}
+
+	k, err := a.kProj.Forward(normed)
+	if err != nil {
+		return nil, fmt.Errorf("key projection failed: %w", err)
+	}
+
+	v, err := a.vProj.Forward(normed)
+	if err != nil {
+		return nil, fmt.Errorf("value projection failed: %w", err)
+	}
+
+	// Reshape for attention
+	headDim := a.hiddenDim / a.numHeads
+	kvHeadDim := a.hiddenDim / a.numKVHeads
+
+	// Reshape and transpose Q, K, V
+	q = q.Reshape(input.Shape()[0], input.Shape()[1], a.numHeads, headDim).Transpose(0, 2, 1, 3)
+	k = k.Reshape(input.Shape()[0], input.Shape()[1], a.numKVHeads, kvHeadDim).Transpose(0, 2, 1, 3)
+	v = v.Reshape(input.Shape()[0], input.Shape()[1], a.numKVHeads, kvHeadDim).Transpose(0, 2, 1, 3)
+
+	// For grouped-query attention, repeat K and V heads
+	if a.numKVHeads < a.numHeads {
+		repeats := a.numHeads / a.numKVHeads
+		k = k.Repeat(1, repeats)
+		v = v.Repeat(1, repeats)
+	}
+
+	// Compute attention
+	attn, err := ScaledDotProductAttention(q, k, v)
+	if err != nil {
+		return nil, fmt.Errorf("scaled dot-product attention failed: %w", err)
+	}
+
+	// Project output
+	attn = attn.Transpose(0, 2, 1, 3).Reshape(input.Shape()[0], input.Shape()[1], a.hiddenDim)
+	out := a.outProj.Project(attn)
+
+	// Add residual connection
+	if len(x.Shape()) == 2 {
+		// For 2D input, take first sequence position
+		res := tensor.NewTensor(input.Shape()[0], a.hiddenDim)
+		for b := 0; b < input.Shape()[0]; b++ {
+			for d := 0; d < a.hiddenDim; d++ {
+				val := out.Get(b, 0, d) + x.Get(b, d)
+				// Clamp to int8 range
+				if val > 127 {
+					val = 127
+				} else if val < -128 {
+					val = -128
+				}
+				res.Set(int8(val), b, d)
+			}
+		}
+		return res, nil
+	}
+
+	// For 3D input, add residual connection
+	res := tensor.NewTensor(input.Shape()[0], input.Shape()[1], a.hiddenDim)
+	for b := 0; b < input.Shape()[0]; b++ {
+		for s := 0; s < input.Shape()[1]; s++ {
+			for d := 0; d < a.hiddenDim; d++ {
+				val := out.Get(b, s, d) + x.Get(b, s, d)
+				// Clamp to int8 range
+				if val > 127 {
+					val = 127
+				} else if val < -128 {
+					val = -128
+				}
+				res.Set(int8(val), b, s, d)
+			}
+		}
+	}
+	return res, nil
 }
 
-// SetWeights sets the weights for Q, K, V projections and output projection
-func (a *AttentionSublayer) SetWeights(qWeights, kWeights, vWeights, outWeights *tensor.Tensor) {
-	a.qkv.SetWeights(qWeights, kWeights, vWeights)
-	a.out.SetWeights(outWeights)
+// SetWeights sets the weights for the attention sublayer.
+// Parameters:
+//   - qWeights: Query projection weights [hidden_dim, num_heads * head_dim]
+//   - kWeights: Key projection weights [hidden_dim, num_kv_heads * kv_head_dim]
+//   - vWeights: Value projection weights [hidden_dim, num_kv_heads * kv_head_dim]
+//   - outWeights: Output projection weights [num_heads * head_dim, hidden_dim]
+func (a *AttentionSublayer) SetWeights(qWeights, kWeights, vWeights, outWeights *tensor.Tensor) error {
+	if err := a.qProj.SetWeights(qWeights); err != nil {
+		return fmt.Errorf("failed to set query weights: %w", err)
+	}
+	if err := a.kProj.SetWeights(kWeights); err != nil {
+		return fmt.Errorf("failed to set key weights: %w", err)
+	}
+	if err := a.vProj.SetWeights(vWeights); err != nil {
+		return fmt.Errorf("failed to set value weights: %w", err)
+	}
+	a.outProj.SetWeights(outWeights)
+	return nil
 }
 
-// SetGamma sets the scale parameter for sublayer normalization
-func (a *AttentionSublayer) SetGamma(gamma []float32) {
-	a.subln.SetGamma(gamma)
+// SetGamma sets the scale parameter for the sublayer normalization.
+func (a *AttentionSublayer) SetGamma(gamma *tensor.Tensor) error {
+	return a.preNorm.SetGamma(gamma)
 }
 
 // Helper function for shape comparison

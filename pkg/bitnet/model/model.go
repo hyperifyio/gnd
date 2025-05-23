@@ -96,18 +96,23 @@ func (m *Model) LoadWeights(path string) error {
 
 	// Read the header
 	header := make([]byte, 8)
-	if _, err := io.ReadFull(file, header); err != nil {
-		loggers.Printf(loggers.Debug, "failed to read weights file header: %v", err)
+	if n, err := io.ReadFull(file, header); err != nil {
+		loggers.Printf(loggers.Debug, "[DEBUG] failed to read weights file header: %v", err)
+		return ErrWeightsFileRead
+	} else if n < 8 {
+		loggers.Printf(loggers.Debug, "[DEBUG] header too short: got %d bytes", n)
 		return ErrWeightsFileRead
 	}
 
 	// Verify magic number
 	if binary.LittleEndian.Uint32(header[0:4]) != 0x424E4554 { // "BNET"
+		loggers.Printf(loggers.Debug, "[DEBUG] invalid magic number: %x", header[0:4])
 		return ErrInvalidWeightsFile
 	}
 
 	// Verify version
 	if binary.LittleEndian.Uint32(header[4:8]) != 1 {
+		loggers.Printf(loggers.Debug, "[DEBUG] unsupported version: %d", binary.LittleEndian.Uint32(header[4:8]))
 		return ErrUnsupportedVersion
 	}
 
@@ -221,7 +226,10 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 	fmt.Fprintf(os.Stderr, "[DEBUG] Initial hiddenStatesTensor data: %v\n", hiddenStatesTensor.Data())
 
 	// Create attention and feed-forward sublayers once
-	attn := bitnetmath.NewAttentionSublayer(m.config.HiddenSize, m.config.NumHeads, m.config.NumKVHeads)
+	attn, err := bitnetmath.NewAttentionSublayer(m.config.HiddenSize, m.config.NumHeads, m.config.NumKVHeads)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create attention sublayer: %w", err)
+	}
 	ffn := bitnetmath.NewFFNSublayer(m.config.HiddenSize, m.config.IntermediateSize)
 
 	// Process through transformer blocks
@@ -267,11 +275,26 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 		fmt.Fprintf(os.Stderr, "[DEBUG] Out tensor shape: %v\n", outTensor.Shape())
 
 		// Set attention weights
-		attn.SetWeights(qTensor, kTensor, vTensor, outTensor)
-		attn.SetGamma(convertInt8ToFloat32(attnNormTensor.Data()))
+		if err := attn.SetWeights(qTensor, kTensor, vTensor, outTensor); err != nil {
+			return nil, fmt.Errorf("failed to set attention weights: %w", err)
+		}
+
+		// Set gamma for attention normalization
+		gammaTensor := tensor.NewTensor(h)
+		gammaData := convertInt8ToFloat32(attnNormTensor.Data())
+		for i := 0; i < h; i++ {
+			gammaTensor.Set(int8(gammaData[i]), i)
+		}
+		if err := attn.SetGamma(gammaTensor); err != nil {
+			return nil, fmt.Errorf("failed to set attention gamma: %w", err)
+		}
 
 		// Apply attention
-		hiddenStatesTensor = attn.Forward(hiddenStatesTensor)
+		var err error
+		hiddenStatesTensor, err = attn.Forward(hiddenStatesTensor)
+		if err != nil {
+			return nil, fmt.Errorf("attention forward pass failed: %w", err)
+		}
 		fmt.Fprintf(os.Stderr, "[DEBUG] After attn.Forward, hiddenStatesTensor shape: %v\n", hiddenStatesTensor.Shape())
 		fmt.Fprintf(os.Stderr, "[DEBUG] After attn.Forward, hiddenStatesTensor data: %v\n", hiddenStatesTensor.Data())
 

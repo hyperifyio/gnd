@@ -29,12 +29,15 @@ type QKVProjection struct {
 // NewQKVProjection creates a new QKV projection with the given parameters
 func NewQKVProjection(hiddenDim, numHeads, numKVHeads int) *QKVProjection {
 	headDim := hiddenDim / numHeads
+	kvHeadDim := hiddenDim / numKVHeads
 
 	// Create projection matrices with correct shapes
-	// Each projection matrix is [hidden_size, hidden_size]
-	qProj := tensor.NewTensor(hiddenDim, hiddenDim)
-	kProj := tensor.NewTensor(hiddenDim, hiddenDim)
-	vProj := tensor.NewTensor(hiddenDim, hiddenDim)
+	// Q projection: [hidden_dim, num_heads * head_dim]
+	// K projection: [hidden_dim, num_kv_heads * kv_head_dim]
+	// V projection: [hidden_dim, num_kv_heads * kv_head_dim]
+	qProj := tensor.NewTensor(hiddenDim, numHeads*headDim)
+	kProj := tensor.NewTensor(hiddenDim, numKVHeads*kvHeadDim)
+	vProj := tensor.NewTensor(hiddenDim, numKVHeads*kvHeadDim)
 
 	return &QKVProjection{
 		numHeads:   numHeads,
@@ -181,14 +184,14 @@ func expandKVHeads(t *tensor.Tensor, numHeads int) *tensor.Tensor {
 // SetWeights sets the QKV projection weights
 func (p *QKVProjection) SetWeights(qWeights, kWeights, vWeights *tensor.Tensor) {
 	// Check tensor shapes
-	if qWeights.Shape()[0] != p.hiddenDim || qWeights.Shape()[1] != p.hiddenDim {
-		panic(fmt.Sprintf("invalid Q weights shape: got %v, want [%d, %d]", qWeights.Shape(), p.hiddenDim, p.hiddenDim))
+	if qWeights.Shape()[0] != p.hiddenDim || qWeights.Shape()[1] != p.numHeads*p.headDim {
+		panic(fmt.Sprintf("invalid Q weights shape: got %v, want [%d, %d]", qWeights.Shape(), p.hiddenDim, p.numHeads*p.headDim))
 	}
-	if kWeights.Shape()[0] != p.hiddenDim || kWeights.Shape()[1] != p.hiddenDim {
-		panic(fmt.Sprintf("invalid K weights shape: got %v, want [%d, %d]", kWeights.Shape(), p.hiddenDim, p.hiddenDim))
+	if kWeights.Shape()[0] != p.hiddenDim || kWeights.Shape()[1] != p.numKVHeads*p.headDim {
+		panic(fmt.Sprintf("invalid K weights shape: got %v, want [%d, %d]", kWeights.Shape(), p.hiddenDim, p.numKVHeads*p.headDim))
 	}
-	if vWeights.Shape()[0] != p.hiddenDim || vWeights.Shape()[1] != p.hiddenDim {
-		panic(fmt.Sprintf("invalid V weights shape: got %v, want [%d, %d]", vWeights.Shape(), p.hiddenDim, p.hiddenDim))
+	if vWeights.Shape()[0] != p.hiddenDim || vWeights.Shape()[1] != p.numKVHeads*p.headDim {
+		panic(fmt.Sprintf("invalid V weights shape: got %v, want [%d, %d]", vWeights.Shape(), p.hiddenDim, p.numKVHeads*p.headDim))
 	}
 
 	// Set projection matrices

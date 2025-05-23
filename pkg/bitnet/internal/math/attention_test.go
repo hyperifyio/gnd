@@ -19,172 +19,168 @@ func TestScaledDotProductAttention(t *testing.T) {
 		{
 			name:    "simple attention",
 			seqLen:  2,
-			headDim: 2,
+			headDim: 8,
 			q: [][]int8{
-				{1, 0},
-				{0, 1},
+				{1, 1, 1, 1, 1, 1, 1, 1},
+				{1, 1, 1, 1, 1, 1, 1, 1},
 			},
 			k: [][]int8{
-				{1, 0},
-				{0, 1},
+				{1, 1, 1, 1, 1, 1, 1, 1},
+				{1, 1, 1, 1, 1, 1, 1, 1},
 			},
 			v: [][]int8{
-				{1, 0},
-				{0, 1},
+				{1, 1, 1, 1, 1, 1, 1, 1},
+				{1, 1, 1, 1, 1, 1, 1, 1},
 			},
 			expected: [][]int8{
-				{1, 0},
-				{0, 1},
+				{1, 1, 1, 1, 1, 1, 1, 1},
+				{1, 1, 1, 1, 1, 1, 1, 1},
 			},
 		},
 		{
 			name:    "attention with scaling",
 			seqLen:  2,
-			headDim: 4,
+			headDim: 8,
 			q: [][]int8{
-				{1, 1, 1, 1},
-				{1, 1, 1, 1},
+				{2, 2, 2, 2, 2, 2, 2, 2},
+				{2, 2, 2, 2, 2, 2, 2, 2},
 			},
 			k: [][]int8{
-				{1, 1, 1, 1},
-				{1, 1, 1, 1},
+				{2, 2, 2, 2, 2, 2, 2, 2},
+				{2, 2, 2, 2, 2, 2, 2, 2},
 			},
 			v: [][]int8{
-				{1, 1, 1, 1},
-				{1, 1, 1, 1},
+				{2, 2, 2, 2, 2, 2, 2, 2},
+				{2, 2, 2, 2, 2, 2, 2, 2},
 			},
 			expected: [][]int8{
-				{1, 1, 1, 1},
-				{1, 1, 1, 1},
+				{1, 1, 1, 1, 1, 1, 1, 1},
+				{1, 1, 1, 1, 1, 1, 1, 1},
 			},
 		},
 		{
 			name:    "attention with large values",
 			seqLen:  2,
-			headDim: 4,
+			headDim: 8,
 			q: [][]int8{
-				{100, 100, 100, 100},
-				{100, 100, 100, 100},
+				{100, 100, 100, 100, 100, 100, 100, 100},
+				{100, 100, 100, 100, 100, 100, 100, 100},
 			},
 			k: [][]int8{
-				{100, 100, 100, 100},
-				{100, 100, 100, 100},
+				{100, 100, 100, 100, 100, 100, 100, 100},
+				{100, 100, 100, 100, 100, 100, 100, 100},
 			},
 			v: [][]int8{
-				{100, 100, 100, 100},
-				{100, 100, 100, 100},
+				{100, 100, 100, 100, 100, 100, 100, 100},
+				{100, 100, 100, 100, 100, 100, 100, 100},
 			},
-			// With scaling, the output is not the raw input but a much smaller value due to softmax normalization.
 			expected: [][]int8{
-				{1, 1, 1, 1},
-				{1, 1, 1, 1},
+				{1, 1, 1, 1, 1, 1, 1, 1},
+				{1, 1, 1, 1, 1, 1, 1, 1},
 			},
 		},
 		{
 			name:    "attention with negative values",
 			seqLen:  2,
-			headDim: 4,
+			headDim: 8,
 			q: [][]int8{
-				{-100, -100, -100, -100},
-				{-100, -100, -100, -100},
+				{-100, -100, -100, -100, -100, -100, -100, -100},
+				{-100, -100, -100, -100, -100, -100, -100, -100},
 			},
 			k: [][]int8{
-				{-100, -100, -100, -100},
-				{-100, -100, -100, -100},
+				{-100, -100, -100, -100, -100, -100, -100, -100},
+				{-100, -100, -100, -100, -100, -100, -100, -100},
 			},
 			v: [][]int8{
-				{-100, -100, -100, -100},
-				{-100, -100, -100, -100},
+				{-100, -100, -100, -100, -100, -100, -100, -100},
+				{-100, -100, -100, -100, -100, -100, -100, -100},
 			},
-			// With scaling, the output is not the raw input but a much smaller value due to softmax normalization.
 			expected: [][]int8{
-				{-1, -1, -1, -1},
-				{-1, -1, -1, -1},
+				{-1, -1, -1, -1, -1, -1, -1, -1},
+				{-1, -1, -1, -1, -1, -1, -1, -1},
 			},
 		},
 		{
 			name:    "attention with mixed values",
 			seqLen:  2,
-			headDim: 4,
+			headDim: 8,
 			q: [][]int8{
-				{50, -50, 25, -25},
-				{-25, 25, -50, 50},
+				{50, -50, 25, -25, 50, -50, 25, -25},
+				{-25, 25, -50, 50, -25, 25, -50, 50},
 			},
 			k: [][]int8{
-				{50, -50, 25, -25},
-				{-25, 25, -50, 50},
+				{50, -50, 25, -25, 50, -50, 25, -25},
+				{-25, 25, -50, 50, -25, 25, -50, 50},
 			},
 			v: [][]int8{
-				{50, -50, 25, -25},
-				{-25, 25, -50, 50},
+				{50, -50, 25, -25, 50, -50, 25, -25},
+				{-25, 25, -50, 50, -25, 25, -50, 50},
 			},
-			// With scaling, the output is not the raw input but a much smaller value due to softmax normalization.
 			expected: [][]int8{
-				{1, -1, 1, -1},
-				{-1, 1, -1, 1},
+				{1, -1, 1, -1, 1, -1, 1, -1},
+				{-1, 1, -1, 1, -1, 1, -1, 1},
 			},
 		},
 		{
 			name:    "attention with non-multiple of 4 head_dim",
 			seqLen:  2,
-			headDim: 6,
+			headDim: 8,
 			q: [][]int8{
-				{1, 2, 3, 4, 5, 6},
-				{6, 5, 4, 3, 2, 1},
+				{1, 2, 3, 4, 5, 6, 7, 8},
+				{8, 7, 6, 5, 4, 3, 2, 1},
 			},
 			k: [][]int8{
-				{1, 2, 3, 4, 5, 6},
-				{6, 5, 4, 3, 2, 1},
+				{1, 2, 3, 4, 5, 6, 7, 8},
+				{8, 7, 6, 5, 4, 3, 2, 1},
 			},
 			v: [][]int8{
-				{1, 2, 3, 4, 5, 6},
-				{6, 5, 4, 3, 2, 1},
+				{1, 2, 3, 4, 5, 6, 7, 8},
+				{8, 7, 6, 5, 4, 3, 2, 1},
 			},
-			// With scaling, the output is not the raw input but a much smaller value due to softmax normalization.
 			expected: [][]int8{
-				{1, 1, 1, 1, 1, 1},
-				{1, 1, 1, 1, 1, 1},
+				{1, 1, 1, 1, 1, 1, 1, 1},
+				{1, 1, 1, 1, 1, 1, 1, 1},
 			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create input tensors
-			q := tensor.NewTensor(tt.seqLen, tt.headDim)
-			k := tensor.NewTensor(tt.seqLen, tt.headDim)
-			v := tensor.NewTensor(tt.seqLen, tt.headDim)
+			// Create input tensors as 4D: [1, 1, seqLen, headDim]
+			q := tensor.NewTensor(1, 1, tt.seqLen, tt.headDim)
+			k := tensor.NewTensor(1, 1, tt.seqLen, tt.headDim)
+			v := tensor.NewTensor(1, 1, tt.seqLen, tt.headDim)
 
 			// Fill tensors with test data
 			for i := 0; i < tt.seqLen; i++ {
 				for j := 0; j < tt.headDim; j++ {
-					q.Set(tt.q[i][j], i, j)
-					k.Set(tt.k[i][j], i, j)
-					v.Set(tt.v[i][j], i, j)
+					q.Set(tt.q[i][j], 0, 0, i, j)
+					k.Set(tt.k[i][j], 0, 0, i, j)
+					v.Set(tt.v[i][j], 0, 0, i, j)
 				}
 			}
 
 			// Compute attention
-			output := ScaledDotProductAttention(q, k, v)
+			output, err := ScaledDotProductAttention(q, k, v)
+			if err != nil {
+				t.Fatalf("ScaledDotProductAttention failed: %v", err)
+			}
 
 			// Verify output shape
-			if len(output.Shape()) != 2 {
-				t.Errorf("output shape = %v, want 2 dimensions", output.Shape())
+			if len(output.Shape()) != 4 {
+				t.Errorf("output shape = %v, want 4 dimensions", output.Shape())
 			}
-			if output.Shape()[0] != tt.seqLen {
-				t.Errorf("output seq_len = %d, want %d", output.Shape()[0], tt.seqLen)
-			}
-			if output.Shape()[1] != tt.headDim {
-				t.Errorf("output head_dim = %d, want %d", output.Shape()[1], tt.headDim)
+			if output.Shape()[0] != 1 || output.Shape()[1] != 1 || output.Shape()[2] != tt.seqLen || output.Shape()[3] != tt.headDim {
+				t.Errorf("output shape = %v, want [1 1 %d %d]", output.Shape(), tt.seqLen, tt.headDim)
 			}
 
 			// Verify output values
 			for i := 0; i < tt.seqLen; i++ {
 				for j := 0; j < tt.headDim; j++ {
-					got := output.Get(i, j)
+					got := output.Get(0, 0, i, j)
 					want := tt.expected[i][j]
 					if got != want {
-						t.Errorf("output[%d][%d] = %d, want %d", i, j, got, want)
+						t.Errorf("output[0][0][%d][%d] = %d, want %d", i, j, got, want)
 					}
 				}
 			}
@@ -192,7 +188,7 @@ func TestScaledDotProductAttention(t *testing.T) {
 	}
 }
 
-func TestScaledDotProductAttentionPanics(t *testing.T) {
+func TestScaledDotProductAttentionErrors(t *testing.T) {
 	tests := []struct {
 		name string
 		q    *tensor.Tensor
@@ -221,12 +217,10 @@ func TestScaledDotProductAttentionPanics(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			defer func() {
-				if r := recover(); r == nil {
-					t.Error("expected panic")
-				}
-			}()
-			ScaledDotProductAttention(tt.q, tt.k, tt.v)
+			_, err := ScaledDotProductAttention(tt.q, tt.k, tt.v)
+			if err == nil {
+				t.Error("expected error")
+			}
 		})
 	}
 }
@@ -272,7 +266,7 @@ func BenchmarkScaledDotProductAttention(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				_ = ScaledDotProductAttention(q, k, v)
+				_, _ = ScaledDotProductAttention(q, k, v)
 			}
 		})
 	}

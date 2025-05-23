@@ -1,6 +1,7 @@
 package math
 
 import (
+	"fmt"
 	"math"
 	"runtime"
 	"sync"
@@ -8,27 +9,42 @@ import (
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
 )
 
-// ScaledDotProductAttention computes the attention weights and output
-// for a single attention head using scaled dot-product attention.
-// q: [batch_size, num_heads, seq_len, head_dim] - Query matrix
-// k: [batch_size, num_heads, seq_len, head_dim] - Key matrix
-// v: [batch_size, num_heads, seq_len, head_dim] - Value matrix
-// Returns: [batch_size, num_heads, seq_len, head_dim] - Attention output
-func ScaledDotProductAttention(q, k, v *tensor.Tensor) *tensor.Tensor {
+// Package math implements mathematical operations for the BitNet model.
+
+// ScaledDotProductAttention implements the scaled dot-product attention mechanism
+// as described in "Attention Is All You Need" (https://arxiv.org/abs/1706.03762).
+//
+// The function computes attention weights using the formula:
+//
+//	Attention(Q, K, V) = softmax(QK^T/sqrt(d_k))V
+//
+// Input tensors must be 4D with shape [batch_size, num_heads, seq_len, head_dim]:
+//   - q: Query matrix
+//   - k: Key matrix
+//   - v: Value matrix
+//
+// All input tensors must have matching dimensions:
+//   - Same batch_size
+//   - Same num_heads
+//   - Same seq_len
+//   - Same head_dim
+//
+// Returns a 4D tensor with shape [batch_size, num_heads, seq_len, head_dim]
+// containing the attention-weighted values.
+//
+// The function performs the following steps:
+//  1. Computes dot products between queries and keys
+//  2. Scales the dot products by 1/sqrt(head_dim)
+//  3. Applies softmax to get attention weights
+//  4. Computes weighted sum of values
+//
+// The computation is parallelized across batch elements for better performance.
+// All intermediate computations use float32 for numerical stability,
+// with final results clamped to int8 range [-128, 127].
+func ScaledDotProductAttention(q, k, v *tensor.Tensor) (*tensor.Tensor, error) {
+	// Validate input shapes
 	if len(q.Shape()) != 4 || len(k.Shape()) != 4 || len(v.Shape()) != 4 {
-		panic("q, k, v must be 4D tensors [batch_size, num_heads, seq_len, head_dim]")
-	}
-	if q.Shape()[0] != k.Shape()[0] || k.Shape()[0] != v.Shape()[0] {
-		panic("batch sizes must match")
-	}
-	if q.Shape()[1] != k.Shape()[1] || k.Shape()[1] != v.Shape()[1] {
-		panic("number of heads must match")
-	}
-	if q.Shape()[2] != k.Shape()[2] || k.Shape()[2] != v.Shape()[2] {
-		panic("sequence lengths must match")
-	}
-	if q.Shape()[3] != k.Shape()[3] || k.Shape()[3] != v.Shape()[3] {
-		panic("head dimensions must match")
+		return nil, fmt.Errorf("input tensors must be 4D")
 	}
 
 	batchSize := q.Shape()[0]
@@ -36,93 +52,101 @@ func ScaledDotProductAttention(q, k, v *tensor.Tensor) *tensor.Tensor {
 	seqLen := q.Shape()[2]
 	headDim := q.Shape()[3]
 
+	// Validate head dimension
+	if headDim < 8 || headDim > 256 {
+		return nil, fmt.Errorf("invalid head dimensions: head dimension must be between 8 and 256, got %d", headDim)
+	}
+
+	// Validate sequence lengths
+	if k.Shape()[2] != seqLen || v.Shape()[2] != seqLen {
+		return nil, fmt.Errorf("mismatched sequence lengths: q=%d, k=%d, v=%d", seqLen, k.Shape()[2], v.Shape()[2])
+	}
+
 	// Create output tensor
 	output := tensor.NewTensor(batchSize, numHeads, seqLen, headDim)
 
 	// Process in parallel chunks
 	var wg sync.WaitGroup
-	chunkSize := batchSize / runtime.NumCPU()
-	if chunkSize < 1 {
-		chunkSize = 1
-	}
+	numCPU := runtime.NumCPU()
+	chunkSize := (batchSize + numCPU - 1) / numCPU
 
-	for b := 0; b < batchSize; b += chunkSize {
+	for i := 0; i < batchSize; i += chunkSize {
 		wg.Add(1)
-		go func(startBatch int) {
+		go func(start int) {
 			defer wg.Done()
-			endBatch := startBatch + chunkSize
-			if endBatch > batchSize {
-				endBatch = batchSize
+			end := start + chunkSize
+			if end > batchSize {
+				end = batchSize
 			}
 
-			// For each batch element
-			for b := startBatch; b < endBatch; b++ {
-				// For each attention head
-				for h := 0; h < numHeads; h++ {
-					// Pre-allocate slices for scores and weights
-					scores := make([][]float32, seqLen)
-					for i := range scores {
-						scores[i] = make([]float32, seqLen)
-					}
-					weights := make([][]float32, seqLen)
-					for i := range weights {
-						weights[i] = make([]float32, seqLen)
-					}
+			// Pre-compute scaling factor
+			scale := float32(1.0 / math.Sqrt(float64(headDim)))
 
-					// Compute dot products
-					for i := 0; i < seqLen; i++ {
-						for j := 0; j < seqLen; j++ {
-							var sum float32
-							// Compute dot product between q[b,h,i] and k[b,h,j]
+			// Process each batch element
+			for b := start; b < end; b++ {
+				for h := 0; h < numHeads; h++ {
+					// Compute attention scores for all positions at once
+					scores := make([]float32, seqLen*seqLen)
+					for s1 := 0; s1 < seqLen; s1++ {
+						for s2 := 0; s2 < seqLen; s2++ {
+							score := float32(0)
 							for d := 0; d < headDim; d++ {
-								sum += float32(q.Get(b, h, i, d)) * float32(k.Get(b, h, j, d))
+								qVal := float32(q.Get(b, h, s1, d))
+								kVal := float32(k.Get(b, h, s2, d))
+								score += qVal * kVal
 							}
-							// Scale by 1/sqrt(head_dim)
-							scores[i][j] = sum / float32(math.Sqrt(float64(headDim)))
+							scores[s1*seqLen+s2] = score * scale
 						}
 					}
 
-					// Apply softmax to get attention weights
-					for i := 0; i < seqLen; i++ {
-						// Find max for numerical stability
-						maxScore := scores[i][0]
-						for j := 1; j < seqLen; j++ {
-							if scores[i][j] > maxScore {
-								maxScore = scores[i][j]
+					// Compute softmax with numerical stability
+					for s1 := 0; s1 < seqLen; s1++ {
+						// Find max score for numerical stability
+						maxScore := scores[s1*seqLen]
+						for s2 := 1; s2 < seqLen; s2++ {
+							if scores[s1*seqLen+s2] > maxScore {
+								maxScore = scores[s1*seqLen+s2]
 							}
 						}
 
 						// Compute exp and sum
-						var sum float32
-						for j := 0; j < seqLen; j++ {
-							weights[i][j] = float32(math.Exp(float64(scores[i][j] - maxScore)))
-							sum += weights[i][j]
+						var sumExp float32
+						for s2 := 0; s2 < seqLen; s2++ {
+							scores[s1*seqLen+s2] = float32(math.Exp(float64(scores[s1*seqLen+s2] - maxScore)))
+							sumExp += scores[s1*seqLen+s2]
 						}
 
 						// Normalize
-						for j := 0; j < seqLen; j++ {
-							weights[i][j] /= sum
+						for s2 := 0; s2 < seqLen; s2++ {
+							scores[s1*seqLen+s2] /= sumExp
 						}
 					}
 
-					// Compute weighted sum of values
-					for i := 0; i < seqLen; i++ {
+					// Apply attention to values
+					for s1 := 0; s1 < seqLen; s1++ {
 						for d := 0; d < headDim; d++ {
-							var sum float32
-							for j := 0; j < seqLen; j++ {
-								sum += weights[i][j] * float32(v.Get(b, h, j, d))
+							var val float32
+							for s2 := 0; s2 < seqLen; s2++ {
+								val += scores[s1*seqLen+s2] * float32(v.Get(b, h, s2, d))
 							}
-							// Clamp to int8 range and convert back to int8
-							output.Set(int8(min(max(int32(math.Round(float64(sum))), -128), 127)), b, h, i, d)
+
+							// Clamp to int8 range
+							if val > 127 {
+								val = 127
+							} else if val < -128 {
+								val = -128
+							}
+
+							output.Set(int8(val), b, h, s1, d)
 						}
 					}
 				}
 			}
-		}(b)
+		}(i)
 	}
-	wg.Wait()
 
-	return output
+	wg.Wait()
+	return output, nil
 }
 
 // min returns the minimum of two int32 values

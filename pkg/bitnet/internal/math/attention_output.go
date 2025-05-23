@@ -1,3 +1,4 @@
+// Package math implements mathematical operations for the BitNet model.
 package math
 
 import (
@@ -7,17 +8,31 @@ import (
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
 )
 
-// AttentionOutputProjection represents the output projection layer for multi-head attention
+// AttentionOutputProjection represents the output projection layer for multi-head attention.
+// This layer projects the concatenated attention outputs from all heads back to the
+// model's hidden dimension.
+//
+// The projection is performed using a linear transformation:
+//
+//	output = input * W
+//
+// where W is a [hidden_dim, hidden_dim] weight matrix.
 type AttentionOutputProjection struct {
-	// Hidden dimension
+	// Hidden dimension of the model
 	hiddenDim int
 	// Number of attention heads
 	numHeads int
-	// Output projection weights
+	// Output projection weights [hidden_dim, hidden_dim]
 	outProj *tensor.Tensor
 }
 
-// NewAttentionOutputProjection creates a new attention output projection layer
+// NewAttentionOutputProjection creates a new attention output projection layer.
+//
+// Parameters:
+//   - hiddenDim: Size of the hidden dimension
+//   - numHeads: Number of attention heads
+//
+// The projection matrix is initialized as a [hidden_dim, hidden_dim] tensor.
 func NewAttentionOutputProjection(hiddenDim, numHeads int) *AttentionOutputProjection {
 	// Create output projection matrix
 	outProj := tensor.NewTensor(hiddenDim, hiddenDim)
@@ -29,9 +44,15 @@ func NewAttentionOutputProjection(hiddenDim, numHeads int) *AttentionOutputProje
 	}
 }
 
-// Project performs the output projection on the concatenated attention contexts
-// input: [batch_size, seq_len, num_heads * head_dim]
-// Returns: [batch_size, seq_len, hidden_dim]
+// Project performs the output projection on the concatenated attention contexts.
+//
+// Input tensor must be 3D with shape [batch_size, seq_len, num_heads * head_dim].
+// The function:
+//  1. Reshapes input if needed for efficient computation
+//  2. Applies linear projection
+//  3. Reshapes output to [batch_size, seq_len, hidden_dim]
+//
+// Returns a 3D tensor with shape [batch_size, seq_len, hidden_dim].
 func (out *AttentionOutputProjection) Project(input *tensor.Tensor) *tensor.Tensor {
 	if len(input.Shape()) != 3 {
 		panic("input must be 3D tensor [batch_size, seq_len, num_heads * head_dim]")
@@ -81,7 +102,12 @@ func (out *AttentionOutputProjection) Project(input *tensor.Tensor) *tensor.Tens
 	return output
 }
 
-// SetWeights sets the output projection weights
+// SetWeights sets the output projection weights.
+//
+// Parameters:
+//   - weights: Output projection weights [hidden_dim, hidden_dim]
+//
+// Panics if the weights tensor has incorrect dimensions.
 func (out *AttentionOutputProjection) SetWeights(weights *tensor.Tensor) {
 	if weights.Shape()[0] != out.hiddenDim || weights.Shape()[1] != out.hiddenDim {
 		panic("invalid output projection weights shape")

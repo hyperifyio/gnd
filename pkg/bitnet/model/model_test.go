@@ -390,8 +390,7 @@ func TestLoadWeightsInvalidData(t *testing.T) {
 				0x42, 0x4E, 0x45, 0x54,
 				// Version 1
 				0x01, 0x00, 0x00, 0x00,
-				// Truncated data
-				0x00,
+				// Not enough data for weights, but at least 8 bytes header
 			},
 		},
 	}
@@ -747,13 +746,13 @@ func BenchmarkEmbedTokens(b *testing.B) {
 func TestModel_Infer(t *testing.T) {
 	// Create a test model with minimal configuration
 	config := &Config{
-		HiddenSize:       4,
-		NumHeads:         2,
-		NumKVHeads:       2,
+		HiddenSize:       32,
+		NumHeads:         4,
+		NumKVHeads:       4,
 		NumLayers:        1,
 		VocabSize:        10,
 		MaxSeqLength:     8,
-		IntermediateSize: 8,
+		IntermediateSize: 16,
 	}
 	model := NewModel(config, testDataFS)
 
@@ -943,7 +942,7 @@ func TestModel_TensorOperations(t *testing.T) {
 
 	// Test parallel operations
 	var wg sync.WaitGroup
-	wg.Add(1)
+	wg.Add(6) // Add for each element in the 2x3 tensor
 	tensor.ParallelForEach(func(indices []int, value int8) {
 		defer wg.Done()
 		if len(indices) != 2 {
@@ -1001,13 +1000,13 @@ func TestModel_TensorOperations(t *testing.T) {
 func TestModelTensorOperations(t *testing.T) {
 	// Create a test model with minimal configuration
 	config := &Config{
-		HiddenSize:       4,
-		NumHeads:         2,
-		NumKVHeads:       2,
+		HiddenSize:       32,
+		NumHeads:         4,
+		NumKVHeads:       4,
 		NumLayers:        1,
 		VocabSize:        10,
 		MaxSeqLength:     8,
-		IntermediateSize: 8,
+		IntermediateSize: 16,
 	}
 	model := NewModel(config, testDataFS)
 
@@ -1127,13 +1126,13 @@ func TestModelTensorOperations(t *testing.T) {
 func TestModelAttentionMechanism(t *testing.T) {
 	// Create a test model with minimal configuration
 	config := &Config{
-		HiddenSize:       4,
-		NumHeads:         2,
-		NumKVHeads:       2,
+		HiddenSize:       32,
+		NumHeads:         4,
+		NumKVHeads:       4,
 		NumLayers:        1,
 		VocabSize:        10,
 		MaxSeqLength:     8,
-		IntermediateSize: 8,
+		IntermediateSize: 16,
 	}
 	model := NewModel(config, testDataFS)
 
@@ -1227,7 +1226,10 @@ func TestModelAttentionMechanism(t *testing.T) {
 			}
 
 			// Create attention sublayer
-			attn := bitnetmath.NewAttentionSublayer(config.HiddenSize, config.NumHeads, config.NumKVHeads)
+			attn, err := bitnetmath.NewAttentionSublayer(config.HiddenSize, config.NumHeads, config.NumKVHeads)
+			if err != nil {
+				t.Fatalf("failed to create attention sublayer: %v", err)
+			}
 
 			// Convert weights to tensors
 			qkvProj := block.QKVProj
@@ -1260,11 +1262,25 @@ func TestModelAttentionMechanism(t *testing.T) {
 			}
 
 			// Set attention weights
-			attn.SetWeights(qTensor, kTensor, vTensor, outTensor)
-			attn.SetGamma(convertInt8ToFloat32(attnNormTensor.Data()))
+			if err := attn.SetWeights(qTensor, kTensor, vTensor, outTensor); err != nil {
+				t.Fatalf("failed to set attention weights: %v", err)
+			}
+
+			// Set gamma for attention normalization
+			gammaTensor := tensor.NewTensor(h)
+			gammaData := convertInt8ToFloat32(attnNormTensor.Data())
+			for i := 0; i < h; i++ {
+				gammaTensor.Set(int8(gammaData[i]), i)
+			}
+			if err := attn.SetGamma(gammaTensor); err != nil {
+				t.Fatalf("failed to set attention gamma: %v", err)
+			}
 
 			// Apply attention
-			output := attn.Forward(hiddenStatesTensor)
+			output, err := attn.Forward(hiddenStatesTensor)
+			if err != nil {
+				t.Fatalf("attention forward pass failed: %v", err)
+			}
 
 			// Verify output dimensions
 			shape := output.Shape()
@@ -1278,13 +1294,13 @@ func TestModelAttentionMechanism(t *testing.T) {
 func TestModelFFNSublayer(t *testing.T) {
 	// Create a test model with minimal configuration
 	config := &Config{
-		HiddenSize:       4,
-		NumHeads:         2,
-		NumKVHeads:       2,
+		HiddenSize:       32,
+		NumHeads:         4,
+		NumKVHeads:       4,
 		NumLayers:        1,
 		VocabSize:        10,
 		MaxSeqLength:     8,
-		IntermediateSize: 8,
+		IntermediateSize: 16,
 	}
 	model := NewModel(config, testDataFS)
 

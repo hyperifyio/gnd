@@ -21,24 +21,20 @@ func TestAttentionSublayer(t *testing.T) {
 	}{
 		{
 			name:       "standard attention",
-			hiddenDim:  8,
-			numHeads:   2,
-			numKVHeads: 2,
+			hiddenDim:  32,
+			numHeads:   4,
+			numKVHeads: 4,
 			input: [][][]int8{
 				{
-					{1, 0, -1, 1, 0, -1, 1, 0},
-					{-1, 1, 0, -1, 1, 0, -1, 1},
+					{1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0},
+					{-1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1},
 				},
 			},
 			qWeights: [][]int8{
-				{1, 0, -1, 1, 0, -1, 1, 0},
-				{-1, 1, 0, -1, 1, 0, -1, 1},
-				{1, 0, -1, 1, 0, -1, 1, 0},
-				{-1, 1, 0, -1, 1, 0, -1, 1},
-				{1, 0, -1, 1, 0, -1, 1, 0},
-				{-1, 1, 0, -1, 1, 0, -1, 1},
-				{1, 0, -1, 1, 0, -1, 1, 0},
-				{-1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1},
 			},
 			kWeights: [][]int8{
 				{1, 0, -1, 1, 0, -1, 1, 0},
@@ -74,32 +70,36 @@ func TestAttentionSublayer(t *testing.T) {
 		},
 		{
 			name:       "grouped-query attention",
-			hiddenDim:  8,
-			numHeads:   4,
-			numKVHeads: 2,
+			hiddenDim:  32,
+			numHeads:   8,
+			numKVHeads: 4,
 			input: [][][]int8{
 				{
-					{1, 0, -1, 1, 0, -1, 1, 0},
-					{-1, 1, 0, -1, 1, 0, -1, 1},
+					{1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0},
+					{-1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1},
 				},
 			},
 			qWeights: [][]int8{
-				{1, 0, -1, 1, 0, -1, 1, 0},
-				{-1, 1, 0, -1, 1, 0, -1, 1},
-				{1, 0, -1, 1, 0, -1, 1, 0},
-				{-1, 1, 0, -1, 1, 0, -1, 1},
-				{1, 0, -1, 1, 0, -1, 1, 0},
-				{-1, 1, 0, -1, 1, 0, -1, 1},
-				{1, 0, -1, 1, 0, -1, 1, 0},
-				{-1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0, 1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1, -1, 1, 0, -1, 1, 0, -1, 1},
 			},
 			kWeights: [][]int8{
 				{1, 0, -1, 1, 0, -1, 1, 0},
 				{-1, 1, 0, -1, 1, 0, -1, 1},
 				{1, 0, -1, 1, 0, -1, 1, 0},
 				{-1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1},
 			},
 			vWeights: [][]int8{
+				{1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1},
+				{1, 0, -1, 1, 0, -1, 1, 0},
+				{-1, 1, 0, -1, 1, 0, -1, 1},
 				{1, 0, -1, 1, 0, -1, 1, 0},
 				{-1, 1, 0, -1, 1, 0, -1, 1},
 				{1, 0, -1, 1, 0, -1, 1, 0},
@@ -122,7 +122,10 @@ func TestAttentionSublayer(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create attention sublayer
-			attn := NewAttentionSublayer(tt.hiddenDim, tt.numHeads, tt.numKVHeads)
+			attn, err := NewAttentionSublayer(tt.hiddenDim, tt.numHeads, tt.numKVHeads)
+			if err != nil {
+				t.Fatalf("Failed to create attention sublayer: %v", err)
+			}
 
 			// Create input tensor
 			input := tensor.NewTensor(len(tt.input), len(tt.input[0]), len(tt.input[0][0]))
@@ -163,12 +166,25 @@ func TestAttentionSublayer(t *testing.T) {
 				}
 			}
 
-			// Set weights and gamma
+			// Set weights
 			attn.SetWeights(qWeights, kWeights, vWeights, outWeights)
-			attn.SetGamma(tt.gamma)
+
+			// Convert gamma to tensor
+			gammaTensor := tensor.NewTensor(tt.hiddenDim)
+			for i, v := range tt.gamma {
+				gammaTensor.Set(int8(v), i)
+			}
+
+			// Set gamma
+			if err := attn.SetGamma(gammaTensor); err != nil {
+				t.Fatalf("Failed to set gamma: %v", err)
+			}
 
 			// Forward pass
-			output := attn.Forward(input)
+			output, err := attn.Forward(input)
+			if err != nil {
+				t.Fatalf("Forward pass failed: %v", err)
+			}
 
 			// Verify output shape
 			if len(output.Shape()) != 3 {
@@ -242,7 +258,7 @@ func TestAttentionSublayerPanics(t *testing.T) {
 				}
 			}()
 
-			attn := NewAttentionSublayer(tt.hiddenDim, tt.numHeads, tt.numKVHeads)
+			attn, _ := NewAttentionSublayer(tt.hiddenDim, tt.numHeads, tt.numKVHeads)
 			attn.Forward(tt.input)
 		})
 	}
@@ -282,7 +298,10 @@ func BenchmarkAttentionSublayer(b *testing.B) {
 	for _, bm := range benchmarks {
 		b.Run(bm.name, func(b *testing.B) {
 			// Create attention sublayer
-			attn := NewAttentionSublayer(bm.hiddenDim, bm.numHeads, bm.numKVHeads)
+			attn, err := NewAttentionSublayer(bm.hiddenDim, bm.numHeads, bm.numKVHeads)
+			if err != nil {
+				b.Fatalf("Failed to create attention sublayer: %v", err)
+			}
 
 			// Create input tensor
 			input := tensor.NewTensor(1, bm.seqLen, bm.hiddenDim)
@@ -314,12 +333,26 @@ func BenchmarkAttentionSublayer(b *testing.B) {
 			for i := range gamma {
 				gamma[i] = 1.0
 			}
-			attn.SetGamma(gamma)
 
+			// Convert gamma to tensor
+			gammaTensor := tensor.NewTensor(bm.hiddenDim)
+			for i, v := range gamma {
+				gammaTensor.Set(int8(v), i)
+			}
+
+			// Set gamma
+			if err := attn.SetGamma(gammaTensor); err != nil {
+				b.Fatalf("Failed to set gamma: %v", err)
+			}
+
+			// Forward pass
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				_ = attn.Forward(input)
+				_, err := attn.Forward(input)
+				if err != nil {
+					b.Fatalf("Forward pass failed: %v", err)
+				}
 			}
 		})
 	}

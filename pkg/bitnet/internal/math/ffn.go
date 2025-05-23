@@ -101,8 +101,8 @@ func (f *FFN) applyReLU2(input *tensor.Tensor) *tensor.Tensor {
 					} else {
 						val = 0
 					}
-					// Clamp to int8 range and convert back to int8
-					output.Set(int8(min(max(int32(val), -128), 127)), b, d)
+					// Convert to int8 without clamping
+					output.Set(int8(val), b, d)
 				}
 			}
 		}(i)

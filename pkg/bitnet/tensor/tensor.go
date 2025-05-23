@@ -102,11 +102,11 @@ func (t *Tensor) Set(value int8, indices ...int) {
 		panic("tensor: index out of range")
 	}
 
-	// Clamp value to ternary range
-	if value > 1 {
-		value = 1
-	} else if value < -1 {
-		value = -1
+	// Clamp value to int8 range
+	if value > 127 {
+		value = 127
+	} else if value < -128 {
+		value = -128
 	}
 
 	t.data[index] = value
@@ -327,6 +327,204 @@ func NewTensorFromData(data []int8) *Tensor {
 	copy(t.data, data)
 
 	return t
+}
+
+// Transpose returns a new tensor with dimensions permuted according to the given order.
+// The order slice specifies the new order of dimensions.
+// For example, if t has shape [2,3,4] and order is [0,2,1], the result will have shape [2,4,3].
+func (t *Tensor) Transpose(order ...int) *Tensor {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	if t.closed {
+		panic("tensor: Transpose called on closed tensor")
+	}
+
+	if len(order) != len(t.shape) {
+		panic("tensor: order length must match tensor rank")
+	}
+
+	// Validate order
+	used := make([]bool, len(order))
+	for _, o := range order {
+		if o < 0 || o >= len(order) {
+			panic("tensor: invalid dimension in order")
+		}
+		if used[o] {
+			panic("tensor: duplicate dimension in order")
+		}
+		used[o] = true
+	}
+
+	// Create new tensor with permuted shape
+	newShape := make([]int, len(order))
+	for i, o := range order {
+		newShape[i] = t.shape[o]
+	}
+
+	// Create new tensor
+	result := &Tensor{
+		data:   make([]int8, len(t.data)),
+		shape:  newShape,
+		stride: make([]int, len(order)),
+	}
+
+	// Calculate new strides
+	stride := 1
+	for i := len(order) - 1; i >= 0; i-- {
+		result.stride[i] = stride
+		stride *= newShape[i]
+	}
+
+	// Copy data with permutation
+	for i := 0; i < len(t.data); i++ {
+		oldIndices := t.calculateIndices(i)
+		newIndices := make([]int, len(order))
+		for j, o := range order {
+			newIndices[j] = oldIndices[o]
+		}
+		newIndex := 0
+		for j, idx := range newIndices {
+			newIndex += idx * result.stride[j]
+		}
+		result.data[newIndex] = t.data[i]
+	}
+
+	return result
+}
+
+// Repeat repeats the tensor along the specified dimension.
+// The dimension must be valid (0 <= dim < len(t.shape)).
+// The count must be positive.
+func (t *Tensor) Repeat(dim int, count int) *Tensor {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	if t.closed {
+		panic("tensor: Repeat called on closed tensor")
+	}
+
+	if dim < 0 || dim >= len(t.shape) {
+		panic("tensor: invalid dimension for repeat")
+	}
+	if count <= 0 {
+		panic("tensor: repeat count must be positive")
+	}
+
+	// Create new shape
+	newShape := make([]int, len(t.shape))
+	copy(newShape, t.shape)
+	newShape[dim] *= count
+
+	// Create new tensor
+	result := &Tensor{
+		data:   make([]int8, len(t.data)*count),
+		shape:  newShape,
+		stride: make([]int, len(t.shape)),
+	}
+
+	// Calculate new strides
+	stride := 1
+	for i := len(t.shape) - 1; i >= 0; i-- {
+		result.stride[i] = stride
+		stride *= newShape[i]
+	}
+
+	// Copy data with repetition
+	for i := 0; i < len(t.data); i++ {
+		oldIndices := t.calculateIndices(i)
+		for c := 0; c < count; c++ {
+			newIndices := make([]int, len(oldIndices))
+			copy(newIndices, oldIndices)
+			newIndices[dim] = oldIndices[dim] + c*t.shape[dim]
+			newIndex := 0
+			for j, idx := range newIndices {
+				newIndex += idx * result.stride[j]
+			}
+			result.data[newIndex] = t.data[i]
+		}
+	}
+
+	return result
+}
+
+// Add performs element-wise addition of two tensors.
+// Both tensors must have the same shape.
+func (t *Tensor) Add(other *Tensor) *Tensor {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	if t.closed {
+		panic("tensor: Add called on closed tensor")
+	}
+
+	if other == nil {
+		panic("tensor: cannot add nil tensor")
+	}
+
+	if other.closed {
+		panic("tensor: cannot add closed tensor")
+	}
+
+	// Validate shapes match
+	if len(t.shape) != len(other.shape) {
+		panic("tensor: shapes must match for addition")
+	}
+	for i := range t.shape {
+		if t.shape[i] != other.shape[i] {
+			panic("tensor: shapes must match for addition")
+		}
+	}
+
+	// Create result tensor
+	result := &Tensor{
+		data:   make([]int8, len(t.data)),
+		shape:  t.shape,
+		stride: t.stride,
+	}
+
+	// Add elements
+	for i := 0; i < len(t.data); i++ {
+		// Convert to int32 to handle overflow during addition
+		sum := int32(t.data[i]) + int32(other.data[i])
+		// Clamp to int8 range (-128 to 127)
+		if sum > 127 {
+			result.data[i] = 127
+		} else if sum < -128 {
+			result.data[i] = -128
+		} else {
+			result.data[i] = int8(sum)
+		}
+	}
+
+	return result
+}
+
+// SetTernary assigns a value to the tensor, clamping to ternary range (-1, 0, 1)
+func (t *Tensor) SetTernary(value int8, indices ...int) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	if t.closed {
+		panic("tensor: SetTernary called on closed tensor")
+	}
+
+	if len(indices) != len(t.shape) {
+		panic("tensor: invalid number of indices")
+	}
+
+	index := t.calculateIndex(indices)
+	if index < 0 || index >= len(t.data) {
+		panic("tensor: index out of range")
+	}
+
+	// Clamp value to ternary range
+	if value > 1 {
+		value = 1
+	} else if value < -1 {
+		value = -1
+	}
+	t.data[index] = value
 }
 
 // Verify interface implementation
