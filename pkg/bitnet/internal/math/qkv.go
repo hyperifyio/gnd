@@ -82,7 +82,7 @@ func NewQKVProjection(hiddenDim, numHeads, numKVHeads int) *QKVProjection {
 //
 // Returns Q, K, V tensors of shape [batch_size, num_heads, seq_len, head_dim].
 // The implementation includes debug logging for tensor shapes and data lengths.
-func (p *QKVProjection) Project(input *tensor.Tensor) (*tensor.Tensor, *tensor.Tensor, *tensor.Tensor) {
+func (p *QKVProjection) Project(input *tensor.Tensor) (*tensor.Tensor, *tensor.Tensor, *tensor.Tensor, error) {
 	// Debug output for input tensor
 	loggers.Printf(loggers.Debug, "Input tensor shape: %v", input.Shape())
 	loggers.Printf(loggers.Debug, "Input tensor data length: %d", len(input.Data()))
@@ -125,15 +125,29 @@ func (p *QKVProjection) Project(input *tensor.Tensor) (*tensor.Tensor, *tensor.T
 	loggers.Printf(loggers.Debug, "2D input tensor shape: %v", input2d.Shape())
 	loggers.Printf(loggers.Debug, "2D input tensor data length: %d", len(input2d.Data()))
 
-	// Apply projections
-	q2d := tensor.BitLinear(input2d, p.qProj)
-	k2d := tensor.BitLinear(input2d, p.kProj)
-	v2d := tensor.BitLinear(input2d, p.vProj)
+	// Apply linear transformations
+	query, err := tensor.BitLinear(input2d, p.qProj)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	defer query.Close()
+
+	key, err := tensor.BitLinear(input2d, p.kProj)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	defer key.Close()
+
+	value, err := tensor.BitLinear(input2d, p.vProj)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	defer value.Close()
 
 	// Debug output for 2D projections
-	loggers.Printf(loggers.Debug, "Q 2D shape: %v", q2d.Shape())
-	loggers.Printf(loggers.Debug, "K 2D shape: %v", k2d.Shape())
-	loggers.Printf(loggers.Debug, "V 2D shape: %v", v2d.Shape())
+	loggers.Printf(loggers.Debug, "Q 2D shape: %v", query.Shape())
+	loggers.Printf(loggers.Debug, "K 2D shape: %v", key.Shape())
+	loggers.Printf(loggers.Debug, "V 2D shape: %v", value.Shape())
 
 	// Create output tensors with correct shapes [batch, num_heads, seq_len, head_dim]
 	q := tensor.NewTensor(batchSize, p.numHeads, seqLen, p.headDim)
@@ -148,7 +162,7 @@ func (p *QKVProjection) Project(input *tensor.Tensor) (*tensor.Tensor, *tensor.T
 				for d := 0; d < p.headDim; d++ {
 					// Calculate the correct index in the 2D projection
 					idx := b*seqLen + s
-					val := q2d.Get(idx, h*p.headDim+d)
+					val := query.Get(idx, h*p.headDim+d)
 					q.Set(val, b, h, s, d)
 				}
 			}
@@ -157,9 +171,9 @@ func (p *QKVProjection) Project(input *tensor.Tensor) (*tensor.Tensor, *tensor.T
 				for d := 0; d < p.headDim; d++ {
 					// Calculate the correct index in the 2D projection
 					idx := b*seqLen + s
-					val := k2d.Get(idx, h*p.headDim+d)
+					val := key.Get(idx, h*p.headDim+d)
 					k.Set(val, b, h, s, d)
-					val = v2d.Get(idx, h*p.headDim+d)
+					val = value.Get(idx, h*p.headDim+d)
 					v.Set(val, b, h, s, d)
 				}
 			}
@@ -197,7 +211,7 @@ func (p *QKVProjection) Project(input *tensor.Tensor) (*tensor.Tensor, *tensor.T
 		v = expandedV
 	}
 
-	return q, k, v
+	return q, k, v, nil
 }
 
 // SetWeights sets the QKV projection weights.

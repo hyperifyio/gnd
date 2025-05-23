@@ -74,7 +74,11 @@ func TestBitLinear(t *testing.T) {
 			}
 
 			// Run BitLinear
-			output := BitLinear(input, weights)
+			output, err := BitLinear(input, weights)
+			if err != nil {
+				t.Fatalf("BitLinear failed: %v", err)
+			}
+			defer output.Close()
 
 			// Debug: print output matrix for the first test case
 			if tt.name == "simple 2x2 matrix multiplication" {
@@ -334,7 +338,12 @@ func TestBitLinear_EdgeCases(t *testing.T) {
 				tt.setup(input, weights)
 			}
 
-			output := BitLinear(input, weights)
+			output, err := BitLinear(input, weights)
+			if err != nil {
+				t.Fatalf("BitLinear failed: %v", err)
+			}
+			defer output.Close()
+
 			if !tt.wantErr {
 				if output == nil {
 					t.Fatal("BitLinear returned nil")

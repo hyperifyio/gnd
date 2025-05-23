@@ -8,6 +8,7 @@ package tensor
 import (
 	"runtime"
 	"sync"
+	"sync/atomic"
 
 	"github.com/hyperifyio/gnd/pkg/loggers"
 )
@@ -44,7 +45,7 @@ type Tensor struct {
 	shape  []int        // Dimensions of the tensor
 	stride []int        // Stride values for efficient indexing
 	mu     sync.RWMutex // Mutex for thread safety
-	closed bool         // Flag indicating if tensor is closed
+	closed uint32       // Atomic flag: 0=open, 1=closed
 }
 
 // tensorOp represents a tensor operation to be performed.
@@ -92,12 +93,11 @@ func NewTensor(shape ...int) *Tensor {
 // Get retrieves a value from the tensor at the specified indices.
 // Panics if the tensor is closed, indices are invalid, or out of range.
 func (t *Tensor) Get(indices ...int) int8 {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-
-	if t.closed {
+	if atomic.LoadUint32(&t.closed) == 1 {
 		panic("tensor: Get called on closed tensor")
 	}
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 
 	if len(indices) != len(t.shape) {
 		panic("tensor: invalid number of indices")
@@ -115,12 +115,11 @@ func (t *Tensor) Get(indices ...int) int8 {
 // The value is clamped to the int8 range [-128, 127].
 // Panics if the tensor is closed, indices are invalid, or out of range.
 func (t *Tensor) Set(value int8, indices ...int) {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-
-	if t.closed {
+	if atomic.LoadUint32(&t.closed) == 1 {
 		panic("tensor: Set called on closed tensor")
 	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
 
 	if len(indices) != len(t.shape) {
 		panic("tensor: invalid number of indices")
@@ -144,12 +143,11 @@ func (t *Tensor) Set(value int8, indices ...int) {
 // setRaw assigns a value to the tensor without clamping (for internal use only).
 // Panics if the tensor is closed, indices are invalid, or out of range.
 func (t *Tensor) setRaw(value int8, indices ...int) {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-
-	if t.closed {
+	if atomic.LoadUint32(&t.closed) == 1 {
 		panic("tensor: Set called on closed tensor")
 	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
 
 	if len(indices) != len(t.shape) {
 		panic("tensor: invalid number of indices")
@@ -166,12 +164,11 @@ func (t *Tensor) setRaw(value int8, indices ...int) {
 // Shape returns a copy of the tensor's dimensions.
 // Panics if the tensor is closed.
 func (t *Tensor) Shape() []int {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-
-	if t.closed {
+	if atomic.LoadUint32(&t.closed) == 1 {
 		panic("tensor: Shape called on closed tensor")
 	}
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 
 	shape := make([]int, len(t.shape))
 	copy(shape, t.shape)
@@ -181,12 +178,11 @@ func (t *Tensor) Shape() []int {
 // Data returns a copy of the underlying data array.
 // Panics if the tensor is closed.
 func (t *Tensor) Data() []int8 {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-
-	if t.closed {
+	if atomic.LoadUint32(&t.closed) == 1 {
 		panic("tensor: Data called on closed tensor")
 	}
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 
 	data := make([]int8, len(t.data))
 	copy(data, t.data)
@@ -197,12 +193,11 @@ func (t *Tensor) Data() []int8 {
 // The function is called with the indices and value for each element.
 // Panics if the tensor is closed.
 func (t *Tensor) ParallelForEach(fn func(indices []int, value int8)) {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-
-	if t.closed {
+	if atomic.LoadUint32(&t.closed) == 1 {
 		panic("tensor: ParallelForEach called on closed tensor")
 	}
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 
 	// Create a copy of the data to avoid race conditions
 	data := make([]int8, len(t.data))
@@ -250,20 +245,13 @@ func (t *Tensor) ParallelForEach(fn func(indices []int, value int8)) {
 // Close releases all resources associated with the tensor.
 // After calling Close, the tensor cannot be used anymore.
 func (t *Tensor) Close() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	if t.closed {
+	if !atomic.CompareAndSwapUint32(&t.closed, 0, 1) {
 		return
 	}
-
-	// Clear data
+	// No lock: just clear fields
 	t.data = nil
 	t.shape = nil
 	t.stride = nil
-	t.closed = true
-
-	// Force GC
 	runtime.GC()
 }
 
@@ -304,7 +292,7 @@ func (t *Tensor) Reshape(shape ...int) *Tensor {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
-	if t.closed {
+	if t.closed == 1 {
 		panic("tensor: Reshape called on closed tensor")
 	}
 
@@ -419,7 +407,7 @@ func (t *Tensor) Transpose(order ...int) *Tensor {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
-	if t.closed {
+	if t.closed == 1 {
 		panic("tensor: Transpose called on closed tensor")
 	}
 
@@ -483,7 +471,7 @@ func (t *Tensor) Repeat(dim int, count int) *Tensor {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
-	if t.closed {
+	if t.closed == 1 {
 		panic("tensor: Repeat called on closed tensor")
 	}
 
@@ -538,7 +526,7 @@ func (t *Tensor) Add(other *Tensor) *Tensor {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
-	if t.closed {
+	if t.closed == 1 {
 		panic("tensor: Add called on closed tensor")
 	}
 
@@ -546,7 +534,7 @@ func (t *Tensor) Add(other *Tensor) *Tensor {
 		panic("tensor: cannot add nil tensor")
 	}
 
-	if other.closed {
+	if other.closed == 1 {
 		panic("tensor: cannot add closed tensor")
 	}
 
@@ -591,7 +579,7 @@ func (t *Tensor) SetTernary(value int8, indices ...int) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
-	if t.closed {
+	if t.closed == 1 {
 		panic("tensor: SetTernary called on closed tensor")
 	}
 

@@ -97,7 +97,11 @@ func (out *AttentionOutputProjection) Project(input *tensor.Tensor) (*tensor.Ten
 
 	loggers.Printf(loggers.Debug, "AttentionOutputProjection flat input shape: %v", flatInput.Shape())
 
-	output := tensor.BitLinear(flatInput, out.outProj)
+	// Apply linear transformation
+	output, err := tensor.BitLinear(flatInput, out.outProj)
+	if err != nil {
+		return nil, err
+	}
 	defer output.Close()
 
 	if batchSize == 1 && seqLen == 1 {

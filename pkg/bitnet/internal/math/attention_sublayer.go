@@ -8,14 +8,7 @@ import (
 	"errors"
 
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
-	"github.com/hyperifyio/gnd/pkg/loggers"
 )
-
-// DebugLog logs debug information with formatting.
-// Used for internal debugging and diagnostics in the math package.
-func DebugLog(format string, args ...interface{}) {
-	loggers.Printf(loggers.Debug, format, args...)
-}
 
 var (
 	// ErrInvalidHeadDimensions is returned when the head dimensions are invalid for attention.

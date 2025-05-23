@@ -87,8 +87,11 @@ func (f *FFN) Forward(input *tensor.Tensor) (*tensor.Tensor, error) {
 	flatInput := input.Reshape(batchSize*seqLen, f.hiddenDim)
 	defer flatInput.Close()
 
-	// First linear layer (up-projection)
-	intermediate := tensor.BitLinear(flatInput, f.upProj)
+	// Apply first linear transformation
+	intermediate, err := tensor.BitLinear(flatInput, f.upProj)
+	if err != nil {
+		return nil, err
+	}
 	defer intermediate.Close()
 
 	// Apply ReLU² activation
@@ -98,8 +101,11 @@ func (f *FFN) Forward(input *tensor.Tensor) (*tensor.Tensor, error) {
 	}
 	defer activated.Close()
 
-	// Second linear layer (down-projection)
-	output := tensor.BitLinear(activated, f.downProj)
+	// Apply second linear transformation
+	output, err := tensor.BitLinear(activated, f.downProj)
+	if err != nil {
+		return nil, err
+	}
 	defer output.Close()
 
 	// Reshape back to [batch_size, seq_len, hidden_dim]

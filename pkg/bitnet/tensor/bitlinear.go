@@ -8,6 +8,7 @@ package tensor
 import (
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"unsafe"
 
 	"github.com/hyperifyio/gnd/pkg/loggers"
@@ -54,6 +55,7 @@ func alignedAlloc[T any](size int) []T {
 //
 // Returns:
 //   - 8-bit output tensor with shape [batch_size, out_features]
+//   - error if dimensions don't match or tensors are closed
 //
 // The function performs the following optimizations:
 //   - Memory-aligned allocations for better cache performance
@@ -61,12 +63,22 @@ func alignedAlloc[T any](size int) []T {
 //   - Loop unrolling for faster matrix multiplication
 //   - Reuse of work buffers to reduce allocations
 //   - Branchless clamping of output values
-func BitLinear(input, weights *Tensor) *Tensor {
+func BitLinear(input, weights *Tensor) (*Tensor, error) {
+	// Lock both tensors for the duration of the operation
+	input.mu.RLock()
+	weights.mu.RLock()
+	defer input.mu.RUnlock()
+	defer weights.mu.RUnlock()
+
+	if atomic.LoadUint32(&input.closed) == 1 || atomic.LoadUint32(&weights.closed) == 1 {
+		panic(ErrTensorClosed)
+	}
+
 	if len(input.shape) != 2 || len(weights.shape) != 2 {
-		panic("bitlinear: input and weights must be 2D tensors")
+		panic(ErrInvalidShape)
 	}
 	if input.shape[1] != weights.shape[1] {
-		panic("bitlinear: input and weight dimensions must match")
+		panic(ErrDimensionMismatch)
 	}
 
 	batchSize := input.shape[0]
@@ -90,6 +102,7 @@ func BitLinear(input, weights *Tensor) *Tensor {
 	type result struct {
 		batchIdx int
 		values   []int8
+		err      error
 	}
 	resultChan := make(chan result, batchSize)
 
@@ -136,12 +149,12 @@ func BitLinear(input, weights *Tensor) *Tensor {
 					f := 0
 					// Process 4 elements at a time
 					for ; f+3 < inFeatures; f += 4 {
-						// Get input activations (8-bit) - using atomic load
+						// Get input activations (8-bit)
 						act0 := int32(input.data[b*inFeatures+f])
 						act1 := int32(input.data[b*inFeatures+f+1])
 						act2 := int32(input.data[b*inFeatures+f+2])
 						act3 := int32(input.data[b*inFeatures+f+3])
-						// Get weights (1.58-bit) - using atomic load
+						// Get weights (1.58-bit)
 						w0 := int32(weights.data[o*inFeatures+f])
 						w1 := int32(weights.data[o*inFeatures+f+1])
 						w2 := int32(weights.data[o*inFeatures+f+2])
@@ -183,13 +196,13 @@ func BitLinear(input, weights *Tensor) *Tensor {
 
 	// Collect results
 	for result := range resultChan {
-		// Store results using atomic operations
-		for o, v := range result.values {
-			output.data[result.batchIdx*outFeatures+o] = v
+		if result.err != nil {
+			return nil, result.err
 		}
+		copy(output.data[result.batchIdx*outFeatures:], result.values)
 	}
 
-	return output
+	return output, nil
 }
 
 // min returns the minimum of two int32 values.

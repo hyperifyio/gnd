@@ -138,7 +138,10 @@ func TestQKVProjection(t *testing.T) {
 			proj.SetWeights(qWeights, kWeights, vWeights)
 
 			// Project input
-			q, k, v := proj.Project(input)
+			q, k, v, err := proj.Project(input)
+			if err != nil {
+				t.Fatalf("QKVProjection.Project failed: %v", err)
+			}
 
 			// Verify output shapes
 			if len(q.Shape()) != 4 {
