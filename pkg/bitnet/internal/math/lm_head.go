@@ -5,6 +5,8 @@
 package math
 
 import (
+	"fmt"
+
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
 )
 
@@ -68,21 +70,38 @@ func (l *LMHead) Forward(input *tensor.Tensor) (*tensor.Tensor, error) {
 	if len(input.Shape()) != 3 {
 		return nil, ErrInvalidInputShape
 	}
+	if input.Shape()[2] != l.hiddenDim {
+		return nil, ErrInvalidInputShape
+	}
 
 	batchSize := input.Shape()[0]
 	seqLen := input.Shape()[1]
+
+	var reshaped *tensor.Tensor
+	var output *tensor.Tensor
+	var err error
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic in LMHead.Forward: %v", r)
+			reshaped = nil
+			output = nil
+		}
+	}()
 
 	// Reshape input for linear projection
 	flatInput := input.Reshape(batchSize*seqLen, l.hiddenDim)
 	defer flatInput.Close()
 
 	// Apply linear transformation
-	output := tensor.BitLinear(flatInput, l.weights)
+	output, err = tensor.BitLinear(flatInput, l.weights)
+	if err != nil {
+		return nil, err
+	}
 	defer output.Close()
 
 	// Reshape back to [batch_size, seq_len, vocab_size]
-	reshaped := output.Reshape(batchSize, seqLen, l.vocabSize)
-	return reshaped, nil
+	reshaped = output.Reshape(batchSize, seqLen, l.vocabSize)
+	return reshaped, err
 }
 
 // SetWeights sets the transposed embedding weights for the layer.

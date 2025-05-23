@@ -55,6 +55,7 @@ func alignedAlloc[T any](size int) []T {
 //
 // Returns:
 //   - 8-bit output tensor with shape [batch_size, out_features]
+//   - error if dimensions don't match or tensors are closed
 //
 // The function performs the following optimizations:
 //   - Memory-aligned allocations for better cache performance
@@ -62,7 +63,7 @@ func alignedAlloc[T any](size int) []T {
 //   - Loop unrolling for faster matrix multiplication
 //   - Reuse of work buffers to reduce allocations
 //   - Branchless clamping of output values
-func BitLinear(input, weights *Tensor) *Tensor {
+func BitLinear(input, weights *Tensor) (*Tensor, error) {
 	// Lock both tensors for the duration of the operation
 	input.mu.RLock()
 	weights.mu.RLock()
@@ -70,14 +71,14 @@ func BitLinear(input, weights *Tensor) *Tensor {
 	defer weights.mu.RUnlock()
 
 	if atomic.LoadUint32(&input.closed) == 1 || atomic.LoadUint32(&weights.closed) == 1 {
-		panic("bitlinear: cannot operate on closed tensors")
+		panic(ErrTensorClosed)
 	}
 
 	if len(input.shape) != 2 || len(weights.shape) != 2 {
-		panic("bitlinear: input and weights must be 2D tensors")
+		panic(ErrInvalidShape)
 	}
 	if input.shape[1] != weights.shape[1] {
-		panic("bitlinear: input and weight dimensions must match")
+		panic(ErrDimensionMismatch)
 	}
 
 	batchSize := input.shape[0]
@@ -196,15 +197,12 @@ func BitLinear(input, weights *Tensor) *Tensor {
 	// Collect results
 	for result := range resultChan {
 		if result.err != nil {
-			panic(result.err)
+			return nil, result.err
 		}
-		// Store results
-		for o, v := range result.values {
-			output.data[result.batchIdx*outFeatures+o] = v
-		}
+		copy(output.data[result.batchIdx*outFeatures:], result.values)
 	}
 
-	return output
+	return output, nil
 }
 
 // min returns the minimum of two int32 values.

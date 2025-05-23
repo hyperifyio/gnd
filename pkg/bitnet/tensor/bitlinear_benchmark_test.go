@@ -55,10 +55,11 @@ func BenchmarkBitLinear(b *testing.B) {
 
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				output := BitLinear(input, weights)
-				if output == nil {
-					b.Fatal("BitLinear returned nil")
+				output, err := BitLinear(input, weights)
+				if err != nil {
+					b.Fatalf("BitLinear failed: %v", err)
 				}
+				defer output.Close()
 			}
 		})
 	}
@@ -91,10 +92,11 @@ func BenchmarkModelWeightsLoading(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				// Simulate loading model weights
-				output := BitLinear(input, weights)
-				if output == nil {
-					b.Fatal("BitLinear returned nil")
+				output, err := BitLinear(input, weights)
+				if err != nil {
+					b.Fatalf("BitLinear failed: %v", err)
 				}
+				defer output.Close()
 			}
 		})
 	}
@@ -176,10 +178,11 @@ func BenchmarkBitLinearCPU(b *testing.B) {
 
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				output := BitLinear(input, weights)
-				if output == nil {
-					b.Fatal("BitLinear returned nil")
+				output, err := BitLinear(input, weights)
+				if err != nil {
+					b.Fatalf("BitLinear failed: %v", err)
 				}
+				defer output.Close()
 			}
 		})
 	}
@@ -213,10 +216,11 @@ func BenchmarkBitLinearMem(b *testing.B) {
 
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				output := BitLinear(input, weights)
-				if output == nil {
-					b.Fatal("BitLinear returned nil")
+				output, err := BitLinear(input, weights)
+				if err != nil {
+					b.Fatalf("BitLinear failed: %v", err)
 				}
+				defer output.Close()
 			}
 		})
 	}

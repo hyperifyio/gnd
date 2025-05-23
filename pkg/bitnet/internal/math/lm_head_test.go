@@ -82,13 +82,13 @@ func TestLMHead_Forward(t *testing.T) {
 	}{
 		{
 			name:      "valid input and weights",
-			hiddenDim: 2560,
-			vocabSize: 128000,
+			hiddenDim: 512,
+			vocabSize: 32000,
 			input: func() *tensor.Tensor {
-				t := tensor.NewTensor(2, 3, 2560)
+				t := tensor.NewTensor(2, 3, 512)
 				for i := 0; i < 2; i++ {
 					for j := 0; j < 3; j++ {
-						for k := 0; k < 2560; k++ {
+						for k := 0; k < 512; k++ {
 							t.Set(1, i, j, k)
 						}
 					}
@@ -96,26 +96,26 @@ func TestLMHead_Forward(t *testing.T) {
 				return t
 			}(),
 			weights: func() *tensor.Tensor {
-				t := tensor.NewTensor(128000, 2560)
-				for i := 0; i < 128000; i++ {
-					for j := 0; j < 2560; j++ {
+				t := tensor.NewTensor(32000, 512)
+				for i := 0; i < 32000; i++ {
+					for j := 0; j < 512; j++ {
 						t.Set(1, i, j)
 					}
 				}
 				return t
 			}(),
-			wantShape: []int{2, 3, 128000},
+			wantShape: []int{2, 3, 32000},
 			wantErr:   false,
 		},
 		{
 			name:      "nil weights",
-			hiddenDim: 2560,
-			vocabSize: 128000,
+			hiddenDim: 512,
+			vocabSize: 32000,
 			input: func() *tensor.Tensor {
-				t := tensor.NewTensor(2, 3, 2560)
+				t := tensor.NewTensor(2, 3, 512)
 				for i := 0; i < 2; i++ {
 					for j := 0; j < 3; j++ {
-						for k := 0; k < 2560; k++ {
+						for k := 0; k < 512; k++ {
 							t.Set(1, i, j, k)
 						}
 					}
@@ -128,15 +128,15 @@ func TestLMHead_Forward(t *testing.T) {
 		},
 		{
 			name:      "invalid input shape",
-			hiddenDim: 2560,
-			vocabSize: 128000,
+			hiddenDim: 512,
+			vocabSize: 32000,
 			input: func() *tensor.Tensor {
 				return tensor.NewTensor(2, 3, 4, 5)
 			}(),
 			weights: func() *tensor.Tensor {
-				t := tensor.NewTensor(128000, 2560)
-				for i := 0; i < 128000; i++ {
-					for j := 0; j < 2560; j++ {
+				t := tensor.NewTensor(32000, 512)
+				for i := 0; i < 32000; i++ {
+					for j := 0; j < 512; j++ {
 						t.Set(1, i, j)
 					}
 				}
@@ -147,13 +147,13 @@ func TestLMHead_Forward(t *testing.T) {
 		},
 		{
 			name:      "mismatched input dimension",
-			hiddenDim: 2560,
-			vocabSize: 128000,
+			hiddenDim: 512,
+			vocabSize: 32000,
 			input: func() *tensor.Tensor {
-				t := tensor.NewTensor(2, 3, 2048)
+				t := tensor.NewTensor(2, 3, 256)
 				for i := 0; i < 2; i++ {
 					for j := 0; j < 3; j++ {
-						for k := 0; k < 2048; k++ {
+						for k := 0; k < 256; k++ {
 							t.Set(1, i, j, k)
 						}
 					}
@@ -161,9 +161,9 @@ func TestLMHead_Forward(t *testing.T) {
 				return t
 			}(),
 			weights: func() *tensor.Tensor {
-				t := tensor.NewTensor(128000, 2560)
-				for i := 0; i < 128000; i++ {
-					for j := 0; j < 2560; j++ {
+				t := tensor.NewTensor(32000, 512)
+				for i := 0; i < 32000; i++ {
+					for j := 0; j < 512; j++ {
 						t.Set(1, i, j)
 					}
 				}

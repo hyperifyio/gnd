@@ -100,32 +100,41 @@ func (l *Linear) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 		}
 	}
 
-	// Perform linear transformation
-	output2d := tensor.BitLinear(input2d, l.weights)
+	// Apply linear transformation
+	output2d, err := tensor.BitLinear(input2d, l.weights)
+	if err != nil {
+		return nil, err
+	}
 	defer output2d.Close()
 
-	// Reshape output back to original shape
+	// Create output tensor with correct shape
+	var output *tensor.Tensor
 	if len(x.Shape()) == 2 {
-		// For 2D input, create a new tensor with the output data
-		output := tensor.NewTensor(batchSize, l.outDim)
+		output = tensor.NewTensor(batchSize, l.outDim)
+	} else {
+		output = tensor.NewTensor(batchSize, seqLen, l.outDim)
+	}
+
+	// Copy data from output2d to output
+	if len(x.Shape()) == 2 {
+		// Input was 2D, output should be 2D
 		for b := 0; b < batchSize; b++ {
 			for d := 0; d < l.outDim; d++ {
 				output.Set(output2d.Get(b, d), b, d)
 			}
 		}
-		return output, nil
-	}
-
-	// For 3D input, reshape output to 3D
-	output := tensor.NewTensor(batchSize, seqLen, l.outDim)
-	for b := 0; b < batchSize; b++ {
-		for s := 0; s < seqLen; s++ {
-			for d := 0; d < l.outDim; d++ {
-				val := output2d.Get(b*seqLen+s, d)
-				output.Set(val, b, s, d)
+	} else {
+		// Input was 3D, output should be 3D
+		for b := 0; b < batchSize; b++ {
+			for s := 0; s < seqLen; s++ {
+				for d := 0; d < l.outDim; d++ {
+					val := output2d.Get(b*seqLen+s, d)
+					output.Set(val, b, s, d)
+				}
 			}
 		}
 	}
+
 	return output, nil
 }
 
