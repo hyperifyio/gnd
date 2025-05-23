@@ -21,6 +21,8 @@ type Linear struct {
 	outDim int
 	// Weight matrix [out_dim, in_dim]
 	weights *tensor.Tensor
+	// Flag indicating if the layer has been closed
+	closed bool
 }
 
 // NewLinear creates a new linear transformation layer.
@@ -57,6 +59,9 @@ func NewLinear(inDim, outDim int) *Linear {
 // Returns a tensor with the same shape as input but with out_dim as the last dimension.
 // The implementation handles both single-token and multi-token cases efficiently.
 func (l *Linear) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
+	if l.closed {
+		panic("Linear layer has been closed")
+	}
 	// Validate input shape
 	if err := ValidateShape(x, 2, 3); err != nil {
 		tensor.DebugLog("input shape validation failed: %v", err)
@@ -132,6 +137,9 @@ func (l *Linear) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 // Returns an error if the weights tensor has incorrect shape.
 // The weights must match the layer's input and output dimensions.
 func (l *Linear) SetWeights(weights *tensor.Tensor) error {
+	if l.closed {
+		panic("Linear layer has been closed")
+	}
 	if weights == nil {
 		return ErrLinearWeightsShape
 	}
@@ -148,13 +156,19 @@ func (l *Linear) SetWeights(weights *tensor.Tensor) error {
 // Returns the weight tensor with shape [out_dim, in_dim].
 // This is the matrix used for the linear transformation.
 func (l *Linear) GetWeights() *tensor.Tensor {
+	if l.closed {
+		panic("Linear layer has been closed")
+	}
 	return l.weights
 }
 
 // Close releases all resources associated with the linear layer.
 // This includes closing all tensors and cleaning up memory.
 func (l *Linear) Close() {
-	if l.weights != nil {
-		l.weights.Close()
+	if !l.closed {
+		if l.weights != nil {
+			l.weights.Close()
+		}
+		l.closed = true
 	}
 }

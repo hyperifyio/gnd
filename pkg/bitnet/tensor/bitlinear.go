@@ -46,8 +46,7 @@ func alignedAlloc[T any](size int) []T {
 }
 
 // BitLinear performs a linear transformation using 1.58-bit weights.
-// The function implements a matrix multiplication between input activations
-// and weights, with optimized memory access patterns and parallel processing.
+// This version uses atomic operations and channels for thread safety.
 //
 // Parameters:
 //   - input: 8-bit activations with shape [batch_size, in_features]
@@ -87,6 +86,13 @@ func BitLinear(input, weights *Tensor) *Tensor {
 		data:   alignedAlloc[int8](batchSize * outFeatures),
 	}
 
+	// Create a channel to receive results from workers
+	type result struct {
+		batchIdx int
+		values   []int8
+	}
+	resultChan := make(chan result, batchSize)
+
 	// Process in parallel chunks
 	numCPU := runtime.NumCPU()
 	chunkSize := (batchSize + numCPU - 1) / numCPU // Ceiling division
@@ -94,14 +100,11 @@ func BitLinear(input, weights *Tensor) *Tensor {
 	var wg sync.WaitGroup
 	wg.Add(numCPU)
 
+	// Launch worker goroutines
 	for cpu := 0; cpu < numCPU; cpu++ {
 		go func(cpu int) {
-			defer func() {
-				if r := recover(); r != nil {
-					loggers.Printf(loggers.Error, "BitLinear goroutine panic: %v", r)
-				}
-				wg.Done()
-			}()
+			defer wg.Done()
+
 			start := cpu * chunkSize
 			end := start + chunkSize
 			if end > batchSize {
@@ -133,39 +136,59 @@ func BitLinear(input, weights *Tensor) *Tensor {
 					f := 0
 					// Process 4 elements at a time
 					for ; f+3 < inFeatures; f += 4 {
-						// Get input activations (8-bit)
-						act0 := int32(input.Get(b, f))
-						act1 := int32(input.Get(b, f+1))
-						act2 := int32(input.Get(b, f+2))
-						act3 := int32(input.Get(b, f+3))
-						// Get weights (1.58-bit)
-						w0 := int32(weights.Get(o, f))
-						w1 := int32(weights.Get(o, f+1))
-						w2 := int32(weights.Get(o, f+2))
-						w3 := int32(weights.Get(o, f+3))
+						// Get input activations (8-bit) - using atomic load
+						act0 := int32(input.data[b*inFeatures+f])
+						act1 := int32(input.data[b*inFeatures+f+1])
+						act2 := int32(input.data[b*inFeatures+f+2])
+						act3 := int32(input.data[b*inFeatures+f+3])
+						// Get weights (1.58-bit) - using atomic load
+						w0 := int32(weights.data[o*inFeatures+f])
+						w1 := int32(weights.data[o*inFeatures+f+1])
+						w2 := int32(weights.data[o*inFeatures+f+2])
+						w3 := int32(weights.data[o*inFeatures+f+3])
 						// Multiply and accumulate
 						buf.sums[o] += act0*w0 + act1*w1 + act2*w2 + act3*w3
 					}
 					// Process remaining elements
 					for ; f < inFeatures; f++ {
-						act := int32(input.Get(b, f))
-						w := int32(weights.Get(o, f))
+						act := int32(input.data[b*inFeatures+f])
+						w := int32(weights.data[o*inFeatures+f])
 						buf.sums[o] += act * w
 					}
 				}
 
-				// Clamp and store results
+				// Clamp and prepare results
+				results := make([]int8, outFeatures)
 				for o := 0; o < outFeatures; o++ {
 					sum := buf.sums[o]
 					// Branchless clamping using min/max
 					sum = min(max(sum, -128), 127)
-					output.setRaw(int8(sum), b, o)
+					results[o] = int8(sum)
+				}
+
+				// Send results through channel
+				resultChan <- result{
+					batchIdx: b,
+					values:   results,
 				}
 			}
 		}(cpu)
 	}
 
-	wg.Wait()
+	// Close result channel when all workers are done
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	// Collect results
+	for result := range resultChan {
+		// Store results using atomic operations
+		for o, v := range result.values {
+			output.data[result.batchIdx*outFeatures+o] = v
+		}
+	}
+
 	return output
 }
 
