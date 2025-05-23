@@ -7,7 +7,6 @@ package model
 import (
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"io/fs"
 	"runtime"
@@ -40,6 +39,10 @@ var (
 	ErrAttentionForward        = errors.New("bitnet: attention forward pass failed")
 	ErrUnexpectedTensorShape   = errors.New("bitnet: unexpected tensor shape")
 	ErrInvalidTokenID          = errors.New("model: invalid token ID")
+	ErrAttentionGamma          = errors.New("bitnet: failed to set attention gamma")
+	ErrFFNForward              = errors.New("bitnet: FFN forward pass failed")
+	ErrFinalNormGamma          = errors.New("bitnet: failed to set final norm gamma")
+	ErrFinalNormForward        = errors.New("bitnet: final norm forward pass failed")
 )
 
 // Model represents a BitNet model instance. It manages the model's configuration,
@@ -282,7 +285,8 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 		// Create attention sublayer
 		attn, err := math.NewAttentionSublayer(m.config.HiddenSize, m.config.NumHeads, m.config.NumKVHeads)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create attention sublayer: %w", err)
+			loggers.Printf(loggers.Debug, "failed to create attention sublayer: %v", err)
+			return nil, ErrAttentionSublayer
 		}
 		defer attn.Close()
 
@@ -313,7 +317,8 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 
 		// Set attention weights
 		if err := attn.SetWeights(qTensor, kTensor, vTensor, outTensor); err != nil {
-			return nil, fmt.Errorf("failed to set attention weights: %w", err)
+			loggers.Printf(loggers.Debug, "failed to set attention weights: %v", err)
+			return nil, ErrAttentionWeights
 		}
 
 		// Convert attention norm to float32 and create tensor
@@ -323,7 +328,8 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 			attnGammaTensor.Set(int8(block.AttnNorm[i]), i)
 		}
 		if err := attn.SetGamma(attnGammaTensor); err != nil {
-			return nil, fmt.Errorf("failed to set attention gamma: %w", err)
+			loggers.Printf(loggers.Debug, "failed to set attention gamma: %v", err)
+			return nil, ErrAttentionGamma
 		}
 
 		// Create FFN sublayer
@@ -361,13 +367,15 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 		// Apply attention
 		hiddenStatesTensor, err = attn.Forward(hiddenStatesTensor)
 		if err != nil {
-			return nil, fmt.Errorf("attention forward pass failed: %w", err)
+			loggers.Printf(loggers.Debug, "attention forward pass failed: %v", err)
+			return nil, ErrAttentionForward
 		}
 
 		// Apply FFN
 		hiddenStatesTensor, err = ffn.Forward(hiddenStatesTensor)
 		if err != nil {
-			return nil, fmt.Errorf("FFN forward pass failed: %w", err)
+			loggers.Printf(loggers.Debug, "FFN forward pass failed: %v", err)
+			return nil, ErrFFNForward
 		}
 	}
 
@@ -390,13 +398,15 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 		finalNormGammaTensor.Set(int8(finalNormGammaData[i]), i)
 	}
 	if err := finalNorm.SetGamma(finalNormGammaTensor); err != nil {
-		return nil, fmt.Errorf("failed to set final norm gamma: %w", err)
+		loggers.Printf(loggers.Debug, "failed to set final norm gamma: %v", err)
+		return nil, ErrFinalNormGamma
 	}
 
 	// Apply final normalization
 	hiddenStatesTensor, err = finalNorm.Forward(hiddenStatesTensor)
 	if err != nil {
-		return nil, fmt.Errorf("final norm forward pass failed: %w", err)
+		loggers.Printf(loggers.Debug, "final norm forward pass failed: %v", err)
+		return nil, ErrFinalNormForward
 	}
 
 	// For now, just return input tokens as output
