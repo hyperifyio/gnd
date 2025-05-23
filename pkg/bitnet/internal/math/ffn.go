@@ -120,6 +120,9 @@ func (f *FFN) Forward(input *tensor.Tensor) (*tensor.Tensor, error) {
 // The implementation uses parallel processing with chunked computation
 // for better performance on multi-core systems.
 func (f *FFN) applyReLU2(input *tensor.Tensor) (*tensor.Tensor, error) {
+	if input == nil {
+		return nil, ErrInvalidInputShape
+	}
 	if len(input.Shape()) != 2 {
 		return nil, ErrInvalidInputShape
 	}

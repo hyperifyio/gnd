@@ -398,3 +398,149 @@ func TestFFN_Close(t *testing.T) {
 		})
 	}
 }
+
+func TestFFN_applyReLU2(t *testing.T) {
+	tests := []struct {
+		name        string
+		inputShape  []int
+		inputValues [][]int8
+		wantErr     bool
+		wantValues  [][]int8
+	}{
+		{
+			name:       "valid 2D input with positive values",
+			inputShape: []int{2, 3},
+			inputValues: [][]int8{
+				{1, 2, 3},
+				{4, 5, 6},
+			},
+			wantErr: false,
+			wantValues: [][]int8{
+				{0, 0, 0}, // Values divided by 16 and clamped
+				{1, 1, 2},
+			},
+		},
+		{
+			name:       "valid 2D input with negative values",
+			inputShape: []int{2, 3},
+			inputValues: [][]int8{
+				{-1, -2, -3},
+				{-4, -5, -6},
+			},
+			wantErr: false,
+			wantValues: [][]int8{
+				{0, 0, 0}, // ReLU² of negative values is 0
+				{0, 0, 0},
+			},
+		},
+		{
+			name:       "valid 2D input with mixed values",
+			inputShape: []int{2, 3},
+			inputValues: [][]int8{
+				{-1, 0, 1},
+				{-2, 2, -3},
+			},
+			wantErr: false,
+			wantValues: [][]int8{
+				{0, 0, 0},
+				{0, 0, 0},
+			},
+		},
+		{
+			name:       "invalid 1D input",
+			inputShape: []int{3},
+			inputValues: [][]int8{
+				{1, 2, 3},
+			},
+			wantErr: true,
+		},
+		{
+			name:       "invalid 3D input",
+			inputShape: []int{2, 2, 2},
+			inputValues: [][]int8{
+				{1, 2, 3, 4}, // Flattened 2x2 matrix
+				{5, 6, 7, 8}, // Flattened 2x2 matrix
+			},
+			wantErr: true,
+		},
+		{
+			name:        "empty input",
+			inputShape:  []int{0, 0},
+			inputValues: [][]int8{},
+			wantErr:     false,
+			wantValues:  [][]int8{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.name == "empty input" {
+				defer func() {
+					if r := recover(); r == nil {
+						t.Error("expected panic for empty input shape, but did not panic")
+					}
+				}()
+			}
+			input := tensor.NewTensor(tt.inputShape...)
+			if input != nil {
+				for i := range tt.inputValues {
+					for j := range tt.inputValues[i] {
+						if len(tt.inputShape) == 1 {
+							input.Set(tt.inputValues[i][j], j)
+						} else if len(tt.inputShape) == 2 {
+							input.Set(tt.inputValues[i][j], i, j)
+						}
+					}
+				}
+			}
+
+			// Create FFN with arbitrary dimensions
+			ffn := NewFFN(4, 8)
+			defer ffn.Close()
+
+			// Call applyReLU2
+			output, err := ffn.applyReLU2(input)
+
+			// Check error
+			if tt.wantErr {
+				if err == nil {
+					t.Error("applyReLU2() error = nil, want error")
+				}
+				if output != nil {
+					t.Error("applyReLU2() output = non-nil, want nil")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("applyReLU2() error = %v, want nil", err)
+				return
+			}
+
+			if output == nil {
+				t.Error("applyReLU2() output = nil, want non-nil")
+				return
+			}
+
+			// Verify output shape
+			if len(output.Shape()) != 2 {
+				t.Errorf("output shape = %v, want 2 dimensions", output.Shape())
+				return
+			}
+
+			// Verify output values
+			for i := range tt.wantValues {
+				for j := range tt.wantValues[i] {
+					got := output.Get(i, j)
+					want := tt.wantValues[i][j]
+					if got != want {
+						t.Errorf("output[%d][%d] = %d, want %d", i, j, got, want)
+					}
+				}
+			}
+
+			// Clean up
+			output.Close()
+		})
+	}
+}
