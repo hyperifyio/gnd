@@ -6,15 +6,15 @@ package math
 
 import (
 	"errors"
-	"log"
 
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
+	"github.com/hyperifyio/gnd/pkg/loggers"
 )
 
 // DebugLog logs debug information with formatting.
 // Used for internal debugging and diagnostics in the math package.
 func DebugLog(format string, args ...interface{}) {
-	log.Printf("[DEBUG] "+format, args...)
+	loggers.Printf(loggers.Debug, format, args...)
 }
 
 var (
