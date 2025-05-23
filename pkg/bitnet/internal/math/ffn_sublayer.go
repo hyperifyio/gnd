@@ -48,7 +48,7 @@ func (f *FFNSublayer) Forward(input *tensor.Tensor) *tensor.Tensor {
 	// Apply pre-norm
 	normalized := f.subln.Normalize(inputFloat)
 
-	// Reshape normalized output back to 3D
+	// Reshape normalized output back to 3D tensor
 	normalizedTensor := tensor.NewTensor(batchSize, seqLen, hiddenDim)
 	for i := 0; i < batchSize; i++ {
 		for j := 0; j < seqLen; j++ {

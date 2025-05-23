@@ -243,3 +243,60 @@ func BenchmarkFFNSublayer(b *testing.B) {
 		})
 	}
 }
+
+func TestFFNSublayer_SingleTokenShape(t *testing.T) {
+	hiddenDim := 4
+	intermediateDim := 8
+	batchSize := 1
+	seqLen := 1
+
+	// Create FFNSublayer
+	ffnSublayer := NewFFNSublayer(hiddenDim, intermediateDim)
+
+	// Set dummy weights and gamma
+	upWeights := tensor.NewTensor(intermediateDim, hiddenDim)
+	downWeights := tensor.NewTensor(hiddenDim, intermediateDim)
+	for i := 0; i < intermediateDim; i++ {
+		for j := 0; j < hiddenDim; j++ {
+			upWeights.Set(1, i, j)
+		}
+	}
+	for i := 0; i < hiddenDim; i++ {
+		for j := 0; j < intermediateDim; j++ {
+			downWeights.Set(1, i, j)
+		}
+	}
+	ffnSublayer.SetWeights(upWeights, downWeights)
+	ffnSublayer.SetGamma([]float32{1, 1, 1, 1})
+
+	// Create input tensor [1, 1, 4]
+	input := tensor.NewTensor(batchSize, seqLen, hiddenDim)
+	for i := 0; i < batchSize; i++ {
+		for j := 0; j < seqLen; j++ {
+			for k := 0; k < hiddenDim; k++ {
+				input.Set(int8(k+1), i, j, k)
+			}
+		}
+	}
+
+	// Print input shape and data
+	t.Logf("Input shape: %v", input.Shape())
+	t.Logf("Input data: %v", input.Data())
+
+	// Run forward pass and catch panics
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("FFNSublayer.Forward panicked: %v", r)
+		}
+	}()
+	output := ffnSublayer.Forward(input)
+
+	// Print output shape and data
+	t.Logf("Output shape: %v", output.Shape())
+	t.Logf("Output data: %v", output.Data())
+
+	// Check output shape
+	if len(output.Shape()) != 3 || output.Shape()[0] != batchSize || output.Shape()[1] != seqLen || output.Shape()[2] != hiddenDim {
+		t.Errorf("Output shape = %v, want [%d %d %d]", output.Shape(), batchSize, seqLen, hiddenDim)
+	}
+}

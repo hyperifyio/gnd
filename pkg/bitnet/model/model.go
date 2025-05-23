@@ -217,6 +217,9 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 		}
 	}
 
+	fmt.Fprintf(os.Stderr, "[DEBUG] Initial hiddenStatesTensor shape: %v\n", hiddenStatesTensor.Shape())
+	fmt.Fprintf(os.Stderr, "[DEBUG] Initial hiddenStatesTensor data: %v\n", hiddenStatesTensor.Data())
+
 	// Create attention and feed-forward sublayers once
 	attn := bitnetmath.NewAttentionSublayer(m.config.HiddenSize, m.config.NumHeads, m.config.NumKVHeads)
 	ffn := bitnetmath.NewFFNSublayer(m.config.HiddenSize, m.config.IntermediateSize)
@@ -269,6 +272,8 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 
 		// Apply attention
 		hiddenStatesTensor = attn.Forward(hiddenStatesTensor)
+		fmt.Fprintf(os.Stderr, "[DEBUG] After attn.Forward, hiddenStatesTensor shape: %v\n", hiddenStatesTensor.Shape())
+		fmt.Fprintf(os.Stderr, "[DEBUG] After attn.Forward, hiddenStatesTensor data: %v\n", hiddenStatesTensor.Data())
 
 		// Convert weights to tensors
 		ffnUpTensor := tensor.NewTensor(m.config.IntermediateSize, h)
@@ -296,6 +301,8 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 
 		// Apply feed-forward
 		hiddenStatesTensor = ffn.Forward(hiddenStatesTensor)
+		fmt.Fprintf(os.Stderr, "[DEBUG] After ffn.Forward, hiddenStatesTensor shape: %v\n", hiddenStatesTensor.Shape())
+		fmt.Fprintf(os.Stderr, "[DEBUG] After ffn.Forward, hiddenStatesTensor data: %v\n", hiddenStatesTensor.Data())
 	}
 
 	// Apply final normalization
@@ -308,7 +315,15 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 	for i := 0; i < len(tokens); i++ {
 		hiddenStatesFloat[i] = make([]float32, m.config.HiddenSize)
 		for j := 0; j < m.config.HiddenSize; j++ {
-			hiddenStatesFloat[i][j] = float32(hiddenStatesTensor.Get(i, j))
+			if len(hiddenStatesTensor.Shape()) == 3 {
+				// [batch, seq, hidden] - use [0, i, j] for batch=1
+				hiddenStatesFloat[i][j] = float32(hiddenStatesTensor.Get(0, i, j))
+			} else if len(hiddenStatesTensor.Shape()) == 2 {
+				// [seq, hidden]
+				hiddenStatesFloat[i][j] = float32(hiddenStatesTensor.Get(i, j))
+			} else {
+				panic("unexpected hiddenStatesTensor shape")
+			}
 		}
 	}
 

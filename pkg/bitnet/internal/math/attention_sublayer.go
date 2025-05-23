@@ -194,7 +194,8 @@ func (a *AttentionSublayer) Forward(input *tensor.Tensor) *tensor.Tensor {
 			}
 		}
 
-		return result
+		// FIX: Always return 3D tensor [batch, seqLen, hiddenDim]
+		return result.Reshape(1, seqLen, hiddenDim)
 	} else {
 		// Original 3D input handling [batchSize, seqLen, hiddenDim]
 		batchSize := shape[0]
@@ -345,7 +346,8 @@ func (a *AttentionSublayer) Forward(input *tensor.Tensor) *tensor.Tensor {
 			}
 		}
 
-		return result
+		// FIX: Always return 3D tensor [batch, seqLen, hiddenDim]
+		return result.Reshape(1, seqLen, hiddenDim)
 	}
 }
 
