@@ -53,7 +53,7 @@ func Process(input string) string {
 
 ### [NOTE] Notes
 
-* Use `go test ./pkg/bitnet/... -bench . -benchmem` to check allocations and performance.
+* Use `go test -timeout 30s ./pkg/bitnet/... -bench . -benchmem` to check allocations and performance.
 * Consider using `pprof` or `testing.AllocsPerRun` for deeper profiling.
 * If you see more than one allocation in a benchmark for a pure function, investigate why.
 

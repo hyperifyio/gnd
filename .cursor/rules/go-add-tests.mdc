@@ -44,7 +44,7 @@ alwaysApply: false
 
 ## 6. Resource Leak & Dynamic Analysis
 
-* **Race Detector:** Always run `go test -race` to expose data races.
+* **Race Detector:** Always run `go test -timeout 30s -race` to expose data races.
 * **Memory Leak Checks:** Employ built-in or pluggable allocators to detect leaks and buffer overruns.
 * **Valgrind/Memdebug:** (Optional) Run critical tests under external tools or lightweight wrappers to catch leaks and uninitialized memory.
 
