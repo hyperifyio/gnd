@@ -289,9 +289,13 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 		// Convert weights to tensors
 		h := m.config.HiddenSize
 		qTensor := tensor.NewTensor(h, h)
+		defer qTensor.Close()
 		kTensor := tensor.NewTensor(h, h)
+		defer kTensor.Close()
 		vTensor := tensor.NewTensor(h, h)
+		defer vTensor.Close()
 		outTensor := tensor.NewTensor(h, h)
+		defer outTensor.Close()
 
 		// Copy weights into projection matrices
 		for i := 0; i < h; i++ {
@@ -314,6 +318,7 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 
 		// Convert attention norm to float32 and create tensor
 		attnGammaTensor := tensor.NewTensor(h)
+		defer attnGammaTensor.Close()
 		for i := 0; i < h; i++ {
 			attnGammaTensor.Set(int8(block.AttnNorm[i]), i)
 		}
@@ -327,7 +332,9 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 
 		// Convert FFN weights to tensors
 		ffnUpTensor := tensor.NewTensor(m.config.IntermediateSize, m.config.HiddenSize)
+		defer ffnUpTensor.Close()
 		ffnDownTensor := tensor.NewTensor(m.config.HiddenSize, m.config.IntermediateSize)
+		defer ffnDownTensor.Close()
 
 		// Copy FFN weights
 		for i := 0; i < m.config.IntermediateSize; i++ {
@@ -370,12 +377,14 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 
 	// Convert final norm weights to tensor
 	finalNormTensor := tensor.NewTensor(m.config.HiddenSize)
+	defer finalNormTensor.Close()
 	for i := 0; i < m.config.HiddenSize; i++ {
 		finalNormTensor.Set(m.weights.FinalNorm[i], i)
 	}
 
 	// Set final norm gamma
 	finalNormGammaTensor := tensor.NewTensor(m.config.HiddenSize)
+	defer finalNormGammaTensor.Close()
 	finalNormGammaData := convertInt8ToFloat32(finalNormTensor.Data())
 	for i := 0; i < m.config.HiddenSize; i++ {
 		finalNormGammaTensor.Set(int8(finalNormGammaData[i]), i)
