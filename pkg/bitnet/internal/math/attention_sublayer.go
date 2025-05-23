@@ -2,9 +2,29 @@
 package math
 
 import (
-	"fmt"
+	"errors"
+	"log"
 
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
+)
+
+// DebugLog logs debug information with formatting
+func DebugLog(format string, args ...interface{}) {
+	log.Printf("[DEBUG] "+format, args...)
+}
+
+var (
+	ErrInvalidHeadDimensions = errors.New("attention: invalid head dimensions")
+	ErrInvalidKVHeads        = errors.New("attention: numKVHeads must be <= numHeads")
+	ErrNonDivisibleHeads     = errors.New("attention: numHeads must be divisible by numKVHeads")
+	ErrPreNormForward        = errors.New("attention: pre-norm forward pass failed")
+	ErrQueryProjection       = errors.New("attention: query projection failed")
+	ErrKeyProjection         = errors.New("attention: key projection failed")
+	ErrValueProjection       = errors.New("attention: value projection failed")
+	ErrScaledDotProduct      = errors.New("attention: scaled dot-product attention failed")
+	ErrSetQueryWeights       = errors.New("attention: failed to set query weights")
+	ErrSetKeyWeights         = errors.New("attention: failed to set key weights")
+	ErrSetValueWeights       = errors.New("attention: failed to set value weights")
 )
 
 // AttentionSublayer implements the attention sublayer with pre-norm and residual connection
@@ -42,15 +62,17 @@ type AttentionSublayer struct {
 //   - Output projection
 func NewAttentionSublayer(hiddenDim, numHeads, numKVHeads int) (*AttentionSublayer, error) {
 	if err := ValidateHeadDimensions(hiddenDim, numHeads, hiddenDim/numHeads); err != nil {
-		return nil, fmt.Errorf("invalid head dimensions: %w", err)
+		return nil, ErrInvalidHeadDimensions
 	}
 
 	if numKVHeads > numHeads {
-		return nil, fmt.Errorf("numKVHeads (%d) must be <= numHeads (%d)", numKVHeads, numHeads)
+		DebugLog("numKVHeads (%d) must be <= numHeads (%d)", numKVHeads, numHeads)
+		return nil, ErrInvalidKVHeads
 	}
 
 	if numHeads%numKVHeads != 0 {
-		return nil, fmt.Errorf("numHeads (%d) must be divisible by numKVHeads (%d)", numHeads, numKVHeads)
+		DebugLog("numHeads (%d) must be divisible by numKVHeads (%d)", numHeads, numKVHeads)
+		return nil, ErrNonDivisibleHeads
 	}
 
 	headDim := hiddenDim / numHeads
@@ -84,7 +106,7 @@ func NewAttentionSublayer(hiddenDim, numHeads, numKVHeads int) (*AttentionSublay
 func (a *AttentionSublayer) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 	// Validate input shape
 	if err := ValidateShape(x, 2, 3); err != nil {
-		return nil, fmt.Errorf("invalid input shape: %w", err)
+		return nil, ErrInvalidInputShape
 	}
 
 	// Handle 2D input by adding sequence dimension
@@ -92,7 +114,8 @@ func (a *AttentionSublayer) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 	if len(x.Shape()) == 2 {
 		hiddenDim := x.Shape()[1]
 		if hiddenDim != a.hiddenDim {
-			return nil, fmt.Errorf("input hidden dimension (%d) must match sublayer hidden dimension (%d)", hiddenDim, a.hiddenDim)
+			DebugLog("input hidden dimension (%d) must match sublayer hidden dimension (%d)", hiddenDim, a.hiddenDim)
+			return nil, ErrHiddenDimMismatch
 		}
 		input = tensor.NewTensor(x.Shape()[0], 1, hiddenDim)
 		for b := 0; b < x.Shape()[0]; b++ {
@@ -103,7 +126,8 @@ func (a *AttentionSublayer) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 	} else {
 		hiddenDim := x.Shape()[2]
 		if hiddenDim != a.hiddenDim {
-			return nil, fmt.Errorf("input hidden dimension (%d) must match sublayer hidden dimension (%d)", hiddenDim, a.hiddenDim)
+			DebugLog("input hidden dimension (%d) must match sublayer hidden dimension (%d)", hiddenDim, a.hiddenDim)
+			return nil, ErrHiddenDimMismatch
 		}
 		input = x
 	}
@@ -111,23 +135,23 @@ func (a *AttentionSublayer) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 	// Pre-norm layer normalization
 	normed, err := a.preNorm.Forward(input)
 	if err != nil {
-		return nil, fmt.Errorf("pre-norm forward pass failed: %w", err)
+		return nil, ErrPreNormForward
 	}
 
 	// Project to Q, K, V
 	q, err := a.qProj.Forward(normed)
 	if err != nil {
-		return nil, fmt.Errorf("query projection failed: %w", err)
+		return nil, ErrQueryProjection
 	}
 
 	k, err := a.kProj.Forward(normed)
 	if err != nil {
-		return nil, fmt.Errorf("key projection failed: %w", err)
+		return nil, ErrKeyProjection
 	}
 
 	v, err := a.vProj.Forward(normed)
 	if err != nil {
-		return nil, fmt.Errorf("value projection failed: %w", err)
+		return nil, ErrValueProjection
 	}
 
 	// Reshape for attention
@@ -149,7 +173,7 @@ func (a *AttentionSublayer) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 	// Compute attention
 	attn, err := ScaledDotProductAttention(q, k, v)
 	if err != nil {
-		return nil, fmt.Errorf("scaled dot-product attention failed: %w", err)
+		return nil, ErrScaledDotProduct
 	}
 
 	// Project output
@@ -202,13 +226,13 @@ func (a *AttentionSublayer) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 //   - outWeights: Output projection weights [num_heads * head_dim, hidden_dim]
 func (a *AttentionSublayer) SetWeights(qWeights, kWeights, vWeights, outWeights *tensor.Tensor) error {
 	if err := a.qProj.SetWeights(qWeights); err != nil {
-		return fmt.Errorf("failed to set query weights: %w", err)
+		return ErrSetQueryWeights
 	}
 	if err := a.kProj.SetWeights(kWeights); err != nil {
-		return fmt.Errorf("failed to set key weights: %w", err)
+		return ErrSetKeyWeights
 	}
 	if err := a.vProj.SetWeights(vWeights); err != nil {
-		return fmt.Errorf("failed to set value weights: %w", err)
+		return ErrSetValueWeights
 	}
 	a.outProj.SetWeights(outWeights)
 	return nil

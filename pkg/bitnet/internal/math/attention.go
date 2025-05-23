@@ -1,7 +1,7 @@
 package math
 
 import (
-	"fmt"
+	"errors"
 	"math"
 	"runtime"
 	"sync"
@@ -10,6 +10,12 @@ import (
 )
 
 // Package math implements mathematical operations for the BitNet model.
+
+var (
+	ErrInputTensorsMustBe4D = errors.New("attention: input tensors must be 4D")
+	ErrInvalidHeadDimension = errors.New("attention: invalid head dimensions")
+	ErrMismatchedSeqLengths = errors.New("attention: mismatched sequence lengths")
+)
 
 // ScaledDotProductAttention implements the scaled dot-product attention mechanism
 // as described in "Attention Is All You Need" (https://arxiv.org/abs/1706.03762).
@@ -44,7 +50,7 @@ import (
 func ScaledDotProductAttention(q, k, v *tensor.Tensor) (*tensor.Tensor, error) {
 	// Validate input shapes
 	if len(q.Shape()) != 4 || len(k.Shape()) != 4 || len(v.Shape()) != 4 {
-		return nil, fmt.Errorf("input tensors must be 4D")
+		return nil, ErrInputTensorsMustBe4D
 	}
 
 	batchSize := q.Shape()[0]
@@ -54,12 +60,14 @@ func ScaledDotProductAttention(q, k, v *tensor.Tensor) (*tensor.Tensor, error) {
 
 	// Validate head dimension
 	if headDim < 8 || headDim > 256 {
-		return nil, fmt.Errorf("invalid head dimensions: head dimension must be between 8 and 256, got %d", headDim)
+		tensor.DebugLog("invalid head dimensions: head dimension must be between 8 and 256, got %d", headDim)
+		return nil, ErrInvalidHeadDimension
 	}
 
 	// Validate sequence lengths
 	if k.Shape()[2] != seqLen || v.Shape()[2] != seqLen {
-		return nil, fmt.Errorf("mismatched sequence lengths: q=%d, k=%d, v=%d", seqLen, k.Shape()[2], v.Shape()[2])
+		tensor.DebugLog("mismatched sequence lengths: q=%d, k=%d, v=%d", seqLen, k.Shape()[2], v.Shape()[2])
+		return nil, ErrMismatchedSeqLengths
 	}
 
 	// Create output tensor

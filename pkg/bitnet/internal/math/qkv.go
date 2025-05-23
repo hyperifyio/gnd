@@ -2,9 +2,9 @@ package math
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
+	"github.com/hyperifyio/gnd/pkg/loggers"
 )
 
 // QKVProjection represents the Query, Key, and Value projection matrices
@@ -55,8 +55,8 @@ func NewQKVProjection(hiddenDim, numHeads, numKVHeads int) *QKVProjection {
 // Returns: Q, K, V tensors of shape [batch_size, num_heads, seq_len, head_dim]
 func (p *QKVProjection) Project(input *tensor.Tensor) (*tensor.Tensor, *tensor.Tensor, *tensor.Tensor) {
 	// Debug output for input tensor
-	fmt.Fprintf(os.Stderr, "[DEBUG] Input tensor shape: %v\n", input.Shape())
-	fmt.Fprintf(os.Stderr, "[DEBUG] Input tensor data length: %d\n", len(input.Data()))
+	loggers.Printf(loggers.Debug, "Input tensor shape: %v", input.Shape())
+	loggers.Printf(loggers.Debug, "Input tensor data length: %d", len(input.Data()))
 
 	// Get input dimensions
 	var batchSize, seqLen, hiddenDim int
@@ -91,8 +91,8 @@ func (p *QKVProjection) Project(input *tensor.Tensor) (*tensor.Tensor, *tensor.T
 	}
 
 	// Debug output for 2D input tensor
-	fmt.Fprintf(os.Stderr, "[DEBUG] 2D input tensor shape: %v\n", input2d.Shape())
-	fmt.Fprintf(os.Stderr, "[DEBUG] 2D input tensor data length: %d\n", len(input2d.Data()))
+	loggers.Printf(loggers.Debug, "2D input tensor shape: %v", input2d.Shape())
+	loggers.Printf(loggers.Debug, "2D input tensor data length: %d", len(input2d.Data()))
 
 	// Apply projections
 	q2d := tensor.BitLinear(input2d, p.qProj)
@@ -100,9 +100,9 @@ func (p *QKVProjection) Project(input *tensor.Tensor) (*tensor.Tensor, *tensor.T
 	v2d := tensor.BitLinear(input2d, p.vProj)
 
 	// Debug output for 2D projections
-	fmt.Fprintf(os.Stderr, "[DEBUG] Q 2D shape: %v\n", q2d.Shape())
-	fmt.Fprintf(os.Stderr, "[DEBUG] K 2D shape: %v\n", k2d.Shape())
-	fmt.Fprintf(os.Stderr, "[DEBUG] V 2D shape: %v\n", v2d.Shape())
+	loggers.Printf(loggers.Debug, "Q 2D shape: %v", q2d.Shape())
+	loggers.Printf(loggers.Debug, "K 2D shape: %v", k2d.Shape())
+	loggers.Printf(loggers.Debug, "V 2D shape: %v", v2d.Shape())
 
 	// Create output tensors with correct shapes [batch, num_heads, seq_len, head_dim]
 	q := tensor.NewTensor(batchSize, p.numHeads, seqLen, p.headDim)
@@ -136,9 +136,9 @@ func (p *QKVProjection) Project(input *tensor.Tensor) (*tensor.Tensor, *tensor.T
 	}
 
 	// Debug output for output tensors
-	fmt.Fprintf(os.Stderr, "[DEBUG] Q output shape: %v\n", q.Shape())
-	fmt.Fprintf(os.Stderr, "[DEBUG] K output shape: %v\n", k.Shape())
-	fmt.Fprintf(os.Stderr, "[DEBUG] V output shape: %v\n", v.Shape())
+	loggers.Printf(loggers.Debug, "Q output shape: %v", q.Shape())
+	loggers.Printf(loggers.Debug, "K output shape: %v", k.Shape())
+	loggers.Printf(loggers.Debug, "V output shape: %v", v.Shape())
 
 	// Expand key/value heads if necessary
 	if p.numKVHeads < p.numHeads {
@@ -172,12 +172,12 @@ func (p *QKVProjection) Project(input *tensor.Tensor) (*tensor.Tensor, *tensor.T
 // SetWeights sets the QKV projection weights
 func (p *QKVProjection) SetWeights(qWeights, kWeights, vWeights *tensor.Tensor) {
 	// Debug output for weight shapes
-	fmt.Fprintf(os.Stderr, "[DEBUG] Q weights shape: %v\n", qWeights.Shape())
-	fmt.Fprintf(os.Stderr, "[DEBUG] K weights shape: %v\n", kWeights.Shape())
-	fmt.Fprintf(os.Stderr, "[DEBUG] V weights shape: %v\n", vWeights.Shape())
-	fmt.Fprintf(os.Stderr, "[DEBUG] Expected Q shape: [%d, %d]\n", p.hiddenDim, p.numHeads*p.headDim)
-	fmt.Fprintf(os.Stderr, "[DEBUG] Expected K shape: [%d, %d]\n", p.hiddenDim, p.numKVHeads*(p.hiddenDim/p.numKVHeads))
-	fmt.Fprintf(os.Stderr, "[DEBUG] Expected V shape: [%d, %d]\n", p.hiddenDim, p.numKVHeads*(p.hiddenDim/p.numKVHeads))
+	loggers.Printf(loggers.Debug, "Q weights shape: %v", qWeights.Shape())
+	loggers.Printf(loggers.Debug, "K weights shape: %v", kWeights.Shape())
+	loggers.Printf(loggers.Debug, "V weights shape: %v", vWeights.Shape())
+	loggers.Printf(loggers.Debug, "Expected Q shape: [%d, %d]", p.hiddenDim, p.numHeads*p.headDim)
+	loggers.Printf(loggers.Debug, "Expected K shape: [%d, %d]", p.hiddenDim, p.numKVHeads*(p.hiddenDim/p.numKVHeads))
+	loggers.Printf(loggers.Debug, "Expected V shape: [%d, %d]", p.hiddenDim, p.numKVHeads*(p.hiddenDim/p.numKVHeads))
 
 	// Check tensor shapes
 	if qWeights.Shape()[0] != p.hiddenDim || qWeights.Shape()[1] != p.numHeads*p.headDim {

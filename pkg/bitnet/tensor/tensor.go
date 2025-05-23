@@ -7,6 +7,11 @@ import (
 	"sync"
 )
 
+// DebugLog logs debug information to stderr
+func DebugLog(format string, args ...interface{}) {
+	fmt.Fprintf(os.Stderr, "[DEBUG] "+format+"\n", args...)
+}
+
 // TensorType defines the core tensor operations
 type TensorType interface {
 	Get(indices ...int) int8

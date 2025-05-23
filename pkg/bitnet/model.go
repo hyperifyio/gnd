@@ -1,8 +1,20 @@
 package bitnet
 
 import (
-	"fmt"
+	"errors"
 	"io"
+	"log"
+)
+
+// DebugLog logs debug information with formatting
+func DebugLog(format string, args ...interface{}) {
+	log.Printf("[DEBUG] "+format, args...)
+}
+
+var (
+	ErrInvalidWeightsFormat = errors.New("bitnet: invalid weights file format")
+	ErrUnsupportedVersion   = errors.New("bitnet: unsupported weights file version")
+	ErrWeightsFileRead      = errors.New("bitnet: failed to read weights file")
 )
 
 // LoadWeights loads the model weights from a reader
@@ -10,19 +22,23 @@ func LoadWeights(r io.Reader) error {
 	// Read magic number
 	magic := make([]byte, 4)
 	if _, err := r.Read(magic); err != nil {
-		return fmt.Errorf("bitnet: invalid weights file format")
+		DebugLog("failed to read magic number: %v", err)
+		return ErrInvalidWeightsFormat
 	}
 	if string(magic) != "BITN" {
-		return fmt.Errorf("bitnet: invalid weights file format")
+		DebugLog("invalid magic number: %s", string(magic))
+		return ErrInvalidWeightsFormat
 	}
 
 	// Read version
 	version := make([]byte, 1)
 	if _, err := r.Read(version); err != nil {
-		return fmt.Errorf("bitnet: failed to read weights file")
+		DebugLog("failed to read version: %v", err)
+		return ErrWeightsFileRead
 	}
 	if version[0] != 1 {
-		return fmt.Errorf("bitnet: unsupported weights file version")
+		DebugLog("unsupported version: %d", version[0])
+		return ErrUnsupportedVersion
 	}
 
 	// Read weights
@@ -33,7 +49,8 @@ func LoadWeights(r io.Reader) error {
 			if err == io.EOF {
 				break
 			}
-			return fmt.Errorf("bitnet: failed to read weights file")
+			DebugLog("failed to read weights: %v", err)
+			return ErrWeightsFileRead
 		}
 		weights = append(weights, int8(b[0]))
 	}

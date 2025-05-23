@@ -2,7 +2,6 @@
 package math
 
 import (
-	"fmt"
 	"math"
 	"runtime"
 	"sync"
@@ -46,7 +45,8 @@ func NewLayerNorm(hiddenDim int) *LayerNorm {
 func (l *LayerNorm) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 	// Validate input shape
 	if err := ValidateShape(x, 2, 3); err != nil {
-		return nil, fmt.Errorf("input must be 2D or 3D tensor: %w", err)
+		DebugLog("input shape validation failed: %v", err)
+		return nil, err
 	}
 
 	// Get input dimensions
@@ -58,7 +58,8 @@ func (l *LayerNorm) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 	hiddenDim := x.Shape()[len(x.Shape())-1]
 
 	if hiddenDim != l.hiddenDim {
-		return nil, fmt.Errorf("input hidden dimension (%d) must match layer hidden dimension (%d)", hiddenDim, l.hiddenDim)
+		DebugLog("input hidden dimension (%d) does not match layer hidden dimension (%d)", hiddenDim, l.hiddenDim)
+		return nil, ErrHiddenDimMismatch
 	}
 
 	// Create output tensor
@@ -141,7 +142,8 @@ func (l *LayerNorm) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 // SetGamma sets the learnable scale parameter.
 func (l *LayerNorm) SetGamma(gamma *tensor.Tensor) error {
 	if len(gamma.Shape()) != 1 || gamma.Shape()[0] != l.hiddenDim {
-		return fmt.Errorf("gamma must be 1D tensor with shape [%d], got %v", l.hiddenDim, gamma.Shape())
+		DebugLog("gamma shape %v does not match required shape [%d]", gamma.Shape(), l.hiddenDim)
+		return ErrInvalidGammaShape
 	}
 	l.gamma = gamma
 	return nil

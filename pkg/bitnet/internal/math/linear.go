@@ -2,8 +2,6 @@
 package math
 
 import (
-	"fmt"
-
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
 )
 
@@ -39,7 +37,8 @@ func NewLinear(inDim, outDim int) *Linear {
 func (l *Linear) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 	// Validate input shape
 	if err := ValidateShape(x, 2, 3); err != nil {
-		return nil, fmt.Errorf("input must be 2D or 3D tensor: %w", err)
+		tensor.DebugLog("input shape validation failed: %v", err)
+		return nil, ErrLinearInputShape
 	}
 
 	// Get input dimensions
@@ -52,7 +51,8 @@ func (l *Linear) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 	}
 
 	if inDim != l.inDim {
-		return nil, fmt.Errorf("input dimension (%d) must match layer input dimension (%d)", inDim, l.inDim)
+		tensor.DebugLog("input dimension (%d) must match layer input dimension (%d)", inDim, l.inDim)
+		return nil, ErrLinearInputDimension
 	}
 
 	// Create 2D view of input tensor for matrix multiplication
@@ -96,7 +96,8 @@ func (l *Linear) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 // SetWeights sets the weight matrix.
 func (l *Linear) SetWeights(weights *tensor.Tensor) error {
 	if len(weights.Shape()) != 2 || weights.Shape()[0] != l.outDim || weights.Shape()[1] != l.inDim {
-		return fmt.Errorf("weights must be 2D tensor with shape [%d, %d], got %v", l.outDim, l.inDim, weights.Shape())
+		tensor.DebugLog("weights must be 2D tensor with shape [%d, %d], got %v", l.outDim, l.inDim, weights.Shape())
+		return ErrLinearWeightsShape
 	}
 	l.weights = weights
 	return nil
