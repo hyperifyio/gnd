@@ -5,9 +5,21 @@
 package math
 
 import (
-	"fmt"
+	"errors"
 
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
+	"github.com/hyperifyio/gnd/pkg/loggers"
+)
+
+// DebugLog logs debug information with formatting.
+// Used for internal debugging and diagnostics in the math package.
+func DebugLog(format string, args ...interface{}) {
+	loggers.Printf(loggers.Debug, format, args...)
+}
+
+var (
+	// ErrLMHeadPanic is returned when a panic occurs in the LMHead.Forward method
+	ErrLMHeadPanic = errors.New("lmhead: panic in forward pass")
 )
 
 // LMHead represents the final output layer of the BitNet model.
@@ -82,7 +94,8 @@ func (l *LMHead) Forward(input *tensor.Tensor) (*tensor.Tensor, error) {
 	var err error
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("panic in LMHead.Forward: %v", r)
+			DebugLog("panic in LMHead.Forward: %v", r)
+			err = ErrLMHeadPanic
 			reshaped = nil
 			output = nil
 		}
