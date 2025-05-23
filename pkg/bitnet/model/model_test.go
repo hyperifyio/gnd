@@ -15,6 +15,8 @@ import (
 	"time"
 
 	bitnetmath "github.com/hyperifyio/gnd/pkg/bitnet/internal/math"
+	"github.com/hyperifyio/gnd/pkg/bitnet/internal/model"
+	internalmodel "github.com/hyperifyio/gnd/pkg/bitnet/internal/model"
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
 )
 
@@ -563,7 +565,7 @@ func TestEmbedTokens(t *testing.T) {
 		{
 			name:    "empty tokens",
 			tokens:  []int{},
-			wantErr: false,
+			wantErr: true,
 		},
 		{
 			name:    "invalid token",
@@ -744,54 +746,221 @@ func BenchmarkEmbedTokens(b *testing.B) {
 }
 
 func TestInfer(t *testing.T) {
-	config := NewConfig()
-	model := NewModel(config, testDataFS)
-	model.weights = &ModelWeights{
-		TokenEmbedding: make([]int8, model.config.VocabSize*model.config.HiddenSize),
-		Blocks:         make([]*TransformerBlock, model.config.NumLayers),
-		FinalNorm:      make([]int8, model.config.HiddenSize),
-	}
-	for i := range model.weights.Blocks {
-		model.weights.Blocks[i] = &TransformerBlock{
-			QKVProj:  make([]int8, 3*model.config.HiddenSize*model.config.HiddenSize),
-			OutProj:  make([]int8, model.config.HiddenSize*model.config.HiddenSize),
-			FFNUp:    make([]int8, model.config.IntermediateSize*model.config.HiddenSize),
-			FFNDown:  make([]int8, model.config.HiddenSize*model.config.IntermediateSize),
-			AttnNorm: make([]int8, model.config.HiddenSize),
-			FFNNorm:  make([]int8, model.config.HiddenSize),
-		}
-	}
-
 	tests := []struct {
-		name    string
-		tokens  []int
-		wantErr bool
+		name        string
+		input       string
+		want        string
+		wantErr     error
+		setupModel  func(*Model)
+		checkMemory bool
 	}{
 		{
-			name:    "valid tokens",
-			tokens:  []int{1, 2, 3},
-			wantErr: false,
+			name:  "successful inference",
+			input: "hello world",
+			want:  "hello world",
+			setupModel: func(m *Model) {
+				// Use the test filesystem which has our test vocabulary
+				m.fs = testDataFS
+				tokenizer, err := internalmodel.NewTokenizer(m.fs, "tokenizer")
+				if err != nil {
+					t.Fatalf("Failed to create tokenizer: %v", err)
+				}
+				m.tokenizer = tokenizer
+			},
 		},
 		{
-			name:    "empty tokens",
-			tokens:  []int{},
-			wantErr: true,
+			name:    "empty input",
+			input:   "",
+			wantErr: ErrInvalidToken,
+			setupModel: func(m *Model) {
+				m.fs = testDataFS
+				tokenizer, err := internalmodel.NewTokenizer(m.fs, "tokenizer")
+				if err != nil {
+					t.Fatalf("Failed to create tokenizer: %v", err)
+				}
+				m.tokenizer = tokenizer
+			},
 		},
 		{
 			name:    "sequence too long",
-			tokens:  make([]int, model.config.MaxSeqLength+1),
-			wantErr: true,
+			input:   "long sequence",
+			wantErr: ErrSequenceTooLong,
+			setupModel: func(m *Model) {
+				m.fs = testDataFS
+				tokenizer, err := internalmodel.NewTokenizer(m.fs, "tokenizer")
+				if err != nil {
+					t.Fatalf("Failed to create tokenizer: %v", err)
+				}
+				m.tokenizer = tokenizer
+				// Force a long sequence by modifying the tokenizer's MaxTokens
+				tokenizer.MaxTokens = 1
+			},
+		},
+		{
+			name:    "tokenization error",
+			input:   "invalid input",
+			wantErr: ErrTokenization,
+			setupModel: func(m *Model) {
+				// Use an empty filesystem to force tokenization error
+				m.fs = &testFS{files: map[string][]byte{}}
+				tokenizer, err := internalmodel.NewTokenizer(m.fs, "tokenizer")
+				if err != nil {
+					t.Fatalf("Failed to create tokenizer: %v", err)
+				}
+				m.tokenizer = tokenizer
+			},
+		},
+		{
+			name:        "memory leak check",
+			input:       "hello world",
+			want:        "hello world",
+			checkMemory: true,
+			setupModel: func(m *Model) {
+				m.fs = testDataFS
+				tokenizer, err := internalmodel.NewTokenizer(m.fs, "tokenizer")
+				if err != nil {
+					t.Fatalf("Failed to create tokenizer: %v", err)
+				}
+				m.tokenizer = tokenizer
+			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := model.Infer(tt.tokens)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Infer() error = %v, wantErr %v", err, tt.wantErr)
+			// Create model with test configuration
+			model := NewModel(NewConfig(), testDataFS)
+			if tt.setupModel != nil {
+				tt.setupModel(model)
 			}
+
+			// Track memory usage if requested
+			var m runtime.MemStats
+			if tt.checkMemory {
+				runtime.ReadMemStats(&m)
+				beforeAlloc := m.TotalAlloc
+				defer func() {
+					runtime.ReadMemStats(&m)
+					if m.TotalAlloc-beforeAlloc > 1024*1024 { // 1MB threshold
+						t.Errorf("Potential memory leak: allocated %d bytes", m.TotalAlloc-beforeAlloc)
+					}
+				}()
+			}
+
+			// Run inference
+			got, err := model.infer(tt.input)
+
+			// Check error
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("infer() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			// Check result
+			if err == nil && got != tt.want {
+				t.Errorf("infer() = %v, want %v", got, tt.want)
+			}
+
+			// Cleanup
+			model.Close()
 		})
 	}
+}
+
+func TestInferConcurrent(t *testing.T) {
+	model := NewModel(NewConfig(), testDataFS)
+	defer model.Close()
+
+	// Setup tokenizer with test data
+	tokenizer, err := internalmodel.NewTokenizer(testDataFS, "tokenizer")
+	if err != nil {
+		t.Fatalf("Failed to create tokenizer: %v", err)
+	}
+	model.tokenizer = tokenizer
+
+	// Run concurrent inference
+	const numGoroutines = 10
+	const numIterations = 100
+	var wg sync.WaitGroup
+	wg.Add(numGoroutines)
+
+	for i := 0; i < numGoroutines; i++ {
+		go func() {
+			defer wg.Done()
+			for j := 0; j < numIterations; j++ {
+				output, err := model.infer("hello world")
+				if err != nil {
+					t.Errorf("Concurrent inference failed: %v", err)
+					return
+				}
+				if output != "hello world" {
+					t.Errorf("Unexpected output: got %v, want %v", output, "hello world")
+					return
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+}
+
+func TestInferStress(t *testing.T) {
+	model := NewModel(NewConfig(), testDataFS)
+	defer model.Close()
+
+	// Setup tokenizer with test data
+	tokenizer, err := internalmodel.NewTokenizer(testDataFS, "tokenizer")
+	if err != nil {
+		t.Fatalf("Failed to create tokenizer: %v", err)
+	}
+	model.tokenizer = tokenizer
+
+	// Run stress test
+	const numIterations = 1000
+	for i := 0; i < numIterations; i++ {
+		output, err := model.infer("hello world")
+		if err != nil {
+			t.Errorf("Stress test failed at iteration %d: %v", i, err)
+			return
+		}
+		if output != "hello world" {
+			t.Errorf("Unexpected output at iteration %d: got %v, want %v", i, output, "hello world")
+			return
+		}
+	}
+}
+
+func FuzzInfer(f *testing.F) {
+	// Add seed corpus
+	f.Add("hello world")
+	f.Add("")
+	f.Add("a very long string that might cause issues")
+	f.Add("special chars !@#$%^&*()")
+
+	f.Fuzz(func(t *testing.T, input string) {
+		model := NewModel(NewConfig(), testDataFS)
+		defer model.Close()
+
+		// Setup tokenizer with test data
+		tokenizer, err := internalmodel.NewTokenizer(testDataFS, "tokenizer")
+		if err != nil {
+			t.Fatalf("Failed to create tokenizer: %v", err)
+		}
+		model.tokenizer = tokenizer
+
+		output, err := model.infer(input)
+		if err != nil {
+			// Only fail if we get an unexpected error
+			if !errors.Is(err, ErrInvalidToken) && !errors.Is(err, ErrSequenceTooLong) {
+				t.Errorf("Unexpected error: %v", err)
+			}
+			return
+		}
+
+		if output == "" && input != "" {
+			t.Errorf("Empty output for non-empty input")
+		}
+	})
 }
 
 func TestModel_Infer(t *testing.T) {
@@ -1515,53 +1684,6 @@ func TestModelStressTest(t *testing.T) {
 	}
 }
 
-func FuzzModelInference(f *testing.F) {
-	config := NewConfig()
-	config.NumKVHeads = config.NumHeads // ensure valid grouped-query attention
-	model := NewModel(config, testDataFS)
-	defer model.Close()
-
-	// Patch: initialize dummy weights
-	model.weights = &ModelWeights{
-		TokenEmbedding: make([]int8, model.config.VocabSize*model.config.HiddenSize),
-		Blocks:         make([]*TransformerBlock, model.config.NumLayers),
-		FinalNorm:      make([]int8, model.config.HiddenSize),
-	}
-	for i := range model.weights.Blocks {
-		model.weights.Blocks[i] = &TransformerBlock{
-			QKVProj:  make([]int8, 3*model.config.HiddenSize*model.config.HiddenSize),
-			OutProj:  make([]int8, model.config.HiddenSize*model.config.HiddenSize),
-			FFNUp:    make([]int8, model.config.IntermediateSize*model.config.HiddenSize),
-			FFNDown:  make([]int8, model.config.HiddenSize*model.config.IntermediateSize),
-			AttnNorm: make([]int8, model.config.HiddenSize),
-			FFNNorm:  make([]int8, model.config.HiddenSize),
-		}
-	}
-
-	// Add seed corpus
-	f.Add([]byte{1, 2, 3})
-	f.Add([]byte{0, 0, 0})
-	f.Add([]byte{255, 255, 255})
-
-	f.Fuzz(func(t *testing.T, data []byte) {
-		// Convert byte slice to token IDs
-		tokens := make([]int, len(data))
-		for i, b := range data {
-			tokens[i] = int(b) % model.config.VocabSize
-		}
-
-		// Test inference with fuzzed input
-		_, err := model.Infer(tokens)
-		if err != ErrInferenceNotImplemented && err != nil {
-			// Only fail on unexpected errors
-			if !errors.Is(err, ErrInvalidToken) &&
-				!errors.Is(err, ErrSequenceTooLong) {
-				t.Errorf("unexpected error: %v", err)
-			}
-		}
-	})
-}
-
 func TestModelResourceCleanup(t *testing.T) {
 	// Test model cleanup with multiple close calls
 	model := NewModel(nil, testDataFS)
@@ -1764,5 +1886,313 @@ func TestModelConcurrentClose(t *testing.T) {
 	_, err := model.Infer([]int{1, 2, 3})
 	if err == nil {
 		t.Error("expected error after concurrent Close(), got nil")
+	}
+}
+
+func TestModelInfer(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		setup   func(*Model)
+		want    string
+		wantErr error
+	}{
+		{
+			name:  "empty input",
+			input: "",
+			setup: func(m *Model) {
+				m.tokenizer = &model.Tokenizer{}
+			},
+			wantErr: ErrTokenization,
+		},
+		{
+			name:  "nil tokenizer",
+			input: "test",
+			setup: func(m *Model) {
+				m.tokenizer = nil
+			},
+			wantErr: ErrTokenizerNotLoaded,
+		},
+		{
+			name:  "sequence too long",
+			input: string(make([]byte, 4097)), // MaxSeqLength + 1
+			setup: func(m *Model) {
+				m.tokenizer = &model.Tokenizer{}
+			},
+			wantErr: ErrTokenization,
+		},
+		{
+			name:  "tokenization error",
+			input: "test",
+			setup: func(m *Model) {
+				m.tokenizer = &model.Tokenizer{}
+			},
+			wantErr: ErrTokenization,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewModel(nil, testDataFS)
+			if tt.setup != nil {
+				tt.setup(m)
+			}
+
+			got, err := m.infer(tt.input)
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("infer() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if err == nil && got != tt.want {
+				t.Errorf("infer() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLoadWeightsEdgeCases(t *testing.T) {
+	tests := []struct {
+		name    string
+		setup   func(*testFS)
+		wantErr error
+	}{
+		{
+			name: "file not found",
+			setup: func(fs *testFS) {
+				// No files added to fs
+			},
+			wantErr: ErrWeightsFileOpen,
+		},
+		{
+			name: "invalid magic number",
+			setup: func(fs *testFS) {
+				fs.files["weights.bin"] = []byte{0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00}
+			},
+			wantErr: ErrInvalidWeightsFile,
+		},
+		{
+			name: "unsupported version",
+			setup: func(fs *testFS) {
+				header := make([]byte, 8)
+				binary.LittleEndian.PutUint32(header[0:4], 0x424E4554) // "BNET"
+				binary.LittleEndian.PutUint32(header[4:8], 2)          // Version 2
+				fs.files["weights.bin"] = header
+			},
+			wantErr: ErrUnsupportedVersion,
+		},
+		{
+			name: "short header",
+			setup: func(fs *testFS) {
+				fs.files["weights.bin"] = []byte{0x42, 0x4E, 0x45, 0x54} // Only magic number
+			},
+			wantErr: ErrWeightsFileRead,
+		},
+		{
+			name: "invalid weight value",
+			setup: func(fs *testFS) {
+				header := make([]byte, 8)
+				binary.LittleEndian.PutUint32(header[0:4], 0x424E4554) // "BNET"
+				binary.LittleEndian.PutUint32(header[4:8], 1)          // Version 1
+				// Add invalid weight data
+				data := append(header, []byte{0xFF, 0xFF, 0xFF, 0xFF}...)
+				fs.files["weights.bin"] = data
+			},
+			wantErr: ErrWeightsFileRead,
+		},
+		{
+			name: "unexpected EOF during weight reading",
+			setup: func(fs *testFS) {
+				header := make([]byte, 8)
+				binary.LittleEndian.PutUint32(header[0:4], 0x424E4554) // "BNET"
+				binary.LittleEndian.PutUint32(header[4:8], 1)          // Version 1
+				// Add incomplete weight data
+				data := append(header, []byte{0x1A}...) // Only one byte of weights
+				fs.files["weights.bin"] = data
+			},
+			wantErr: ErrWeightsFileRead,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := &testFS{files: make(map[string][]byte)}
+			if tt.setup != nil {
+				tt.setup(fs)
+			}
+
+			m := NewModel(nil, fs)
+			err := m.LoadWeights("weights.bin")
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("LoadWeights() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestEmbedTokensEdgeCases(t *testing.T) {
+	tests := []struct {
+		name    string
+		setup   func(*Model)
+		tokens  []int
+		wantErr error
+	}{
+		{
+			name: "nil weights",
+			setup: func(m *Model) {
+				m.weights = nil
+			},
+			tokens:  []int{1, 2, 3},
+			wantErr: ErrWeightsNotLoaded,
+		},
+		{
+			name: "empty tokens",
+			setup: func(m *Model) {
+				m.weights = &ModelWeights{
+					TokenEmbedding: make([]int8, 32000*2048), // VocabSize * HiddenSize
+				}
+			},
+			tokens:  []int{},
+			wantErr: ErrInvalidToken,
+		},
+		{
+			name: "invalid token ID",
+			setup: func(m *Model) {
+				m.weights = &ModelWeights{
+					TokenEmbedding: make([]int8, 32000*2048), // VocabSize * HiddenSize
+				}
+			},
+			tokens:  []int{32001}, // Token ID exceeds VocabSize
+			wantErr: ErrInvalidToken,
+		},
+		{
+			name: "negative token ID",
+			setup: func(m *Model) {
+				m.weights = &ModelWeights{
+					TokenEmbedding: make([]int8, 32000*2048), // VocabSize * HiddenSize
+				}
+			},
+			tokens:  []int{-1},
+			wantErr: ErrInvalidToken,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewModel(nil, testDataFS)
+			if tt.setup != nil {
+				tt.setup(m)
+			}
+
+			_, err := m.embedTokens(tt.tokens)
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("embedTokens() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestLoadWeights_NilReceiverAndBlocks(t *testing.T) {
+	// Nil receiver
+	var m *Model
+	err := m.LoadWeights("any")
+	if !errors.Is(err, ErrWeightsNotLoaded) {
+		t.Errorf("LoadWeights(nil) error = %v, want %v", err, ErrWeightsNotLoaded)
+	}
+
+	// Nil weights/blocks and block == nil
+	config := &Config{HiddenSize: 2, NumHeads: 1, NumKVHeads: 1, NumLayers: 2, VocabSize: 2, MaxSeqLength: 2, IntermediateSize: 2}
+	fs := &testFS{files: map[string][]byte{"weights.bin": createValidWeights()}}
+	m2 := NewModel(config, fs)
+	m2.weights = nil
+	// Simulate nil weights/blocks
+	m2.weights = &ModelWeights{Blocks: nil}
+	if err := m2.LoadWeights("weights.bin"); err == nil {
+		t.Error("expected error for nil weights.Blocks, got nil")
+	}
+	// Simulate block == nil
+	m2.weights = &ModelWeights{Blocks: []*TransformerBlock{nil, nil}}
+	if err := m2.LoadWeights("weights.bin"); err == nil {
+		t.Error("expected error for nil block, got nil")
+	}
+}
+
+func TestLoadWeights_TokenizerInitError(t *testing.T) {
+	config := &Config{HiddenSize: 2, NumHeads: 1, NumKVHeads: 1, NumLayers: 1, VocabSize: 2, MaxSeqLength: 2, IntermediateSize: 2}
+	fs := &testFS{files: map[string][]byte{"weights.bin": createValidWeights()}}
+	m := NewModel(config, fs)
+	// Remove tokenizer files to force tokenizer init error
+	err := m.LoadWeights("weights.bin")
+	if !errors.Is(err, ErrTokenizerInit) {
+		t.Errorf("LoadWeights() tokenizer init error = %v, want %v", err, ErrTokenizerInit)
+	}
+}
+
+func TestInfer_NilWeightsAndEmbedTokensError(t *testing.T) {
+	m := NewModel(nil, testDataFS)
+	m.weights = nil
+	_, err := m.Infer([]int{1, 2, 3})
+	if !errors.Is(err, ErrWeightsNotLoaded) {
+		t.Errorf("Infer() error = %v, want %v", err, ErrWeightsNotLoaded)
+	}
+	// embedTokens error
+	m.weights = &ModelWeights{TokenEmbedding: nil}
+	_, err = m.Infer([]int{1, 2, 3})
+	if !errors.Is(err, ErrWeightsNotLoaded) {
+		t.Errorf("Infer() error = %v, want %v", err, ErrWeightsNotLoaded)
+	}
+}
+
+func TestEmbedTokens_InvalidWeightValue(t *testing.T) {
+	m := NewModel(nil, testDataFS)
+	m.weights = &ModelWeights{TokenEmbedding: make([]int8, m.config.VocabSize*m.config.HiddenSize)}
+	// Set an invalid weight value
+	m.weights.TokenEmbedding[0] = 42
+	_, err := m.embedTokens([]int{0})
+	if !errors.Is(err, ErrInvalidWeightValue) {
+		t.Errorf("embedTokens() error = %v, want %v", err, ErrInvalidWeightValue)
+	}
+}
+
+// mockTokenizer allows overriding Tokenize and Detokenize for testing
+type mockTokenizer struct {
+	model.Tokenizer
+	TokenizeFn   func(string) ([]int, error)
+	DetokenizeFn func([]int) (string, error)
+}
+
+func (m *mockTokenizer) Tokenize(input string) ([]int, error) {
+	if m.TokenizeFn != nil {
+		return m.TokenizeFn(input)
+	}
+	return nil, errors.New("tokenize not implemented")
+}
+
+func (m *mockTokenizer) Detokenize(tokens []int) (string, error) {
+	if m.DetokenizeFn != nil {
+		return m.DetokenizeFn(tokens)
+	}
+	return "", errors.New("detokenize not implemented")
+}
+
+// wrapper for Model to override Infer
+type modelWithInfer struct {
+	*Model
+}
+
+func (mw *modelWithInfer) Infer(tokens []int) ([]int, error) {
+	return nil, errors.New("fail")
+}
+
+func TestInferInternal_DetokenizationAndInferenceError(t *testing.T) {
+	m := NewModel(nil, testDataFS)
+	// Use a real tokenizer
+	tok := &model.Tokenizer{}
+	m.tokenizer = tok
+	m.weights = &ModelWeights{TokenEmbedding: make([]int8, m.config.VocabSize*m.config.HiddenSize)}
+	// Only test the inference error path
+	mw := &modelWithInfer{Model: m}
+	_, err := mw.infer("test")
+	if err == nil {
+		t.Error("infer() expected error from Infer, got nil")
 	}
 }

@@ -170,21 +170,3 @@ func ScaledDotProductAttention(q, k, v *tensor.Tensor) (*tensor.Tensor, error) {
 		return output, nil
 	}
 }
-
-// min returns the minimum of two int32 values.
-// This is a utility function used internally for bounds checking.
-func min(a, b int32) int32 {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-// max returns the maximum of two int32 values.
-// This is a utility function used internally for bounds checking.
-func max(a, b int32) int32 {
-	if a > b {
-		return a
-	}
-	return b
-}

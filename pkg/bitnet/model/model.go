@@ -297,6 +297,9 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 
 // embedTokens converts token IDs to embeddings using the model's token embedding layer.
 func (m *Model) embedTokens(tokens []int) ([][]float32, error) {
+	if len(tokens) == 0 {
+		return nil, ErrInvalidToken
+	}
 	if m.weights == nil || m.weights.TokenEmbedding == nil {
 		return nil, ErrWeightsNotLoaded
 	}

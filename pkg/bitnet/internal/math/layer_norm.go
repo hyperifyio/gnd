@@ -5,11 +5,21 @@
 package math
 
 import (
+	"fmt"
 	"math"
 	"runtime"
 	"sync"
 
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
+)
+
+var (
+	// ErrInvalidHiddenDim is returned when the hidden dimension is invalid
+	ErrInvalidHiddenDim = fmt.Errorf("invalid hidden dimension")
+	// ErrNilTensor is returned when a nil tensor is provided
+	ErrNilTensor = fmt.Errorf("nil tensor provided")
+	// ErrInvalidShape is returned when a tensor has an invalid shape
+	ErrInvalidShape = fmt.Errorf("invalid tensor shape")
 )
 
 // LayerNorm implements layer normalization for BitNet.
@@ -31,6 +41,10 @@ type LayerNorm struct {
 	epsilon float32
 	// Learnable scale parameter (gamma) [hidden_dim]
 	gamma *tensor.Tensor
+	// Mutex to protect concurrent access to gamma
+	mu sync.RWMutex
+	// Flag to track if the layer is closed
+	closed bool
 }
 
 // NewLayerNorm creates a new layer normalization instance.
@@ -75,6 +89,11 @@ func NewLayerNorm(hiddenDim int) *LayerNorm {
 // The implementation uses parallel processing with chunked computation
 // for better performance on multi-core systems.
 func (l *LayerNorm) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
+	// Check if layer is closed
+	if l.closed {
+		panic("layer is closed")
+	}
+
 	// Validate input shape
 	if err := ValidateShape(x, 2, 3); err != nil {
 		return nil, err
@@ -93,7 +112,7 @@ func (l *LayerNorm) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 		return nil, ErrHiddenDimMismatch
 	}
 
-	// Create output tensor with same shape as input
+	// Create output tensor with same shape as input (int8)
 	var output *tensor.Tensor
 	if len(x.Shape()) == 2 {
 		output = tensor.NewTensor(batchSize, hiddenDim)
@@ -149,10 +168,10 @@ func (l *LayerNorm) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 						diff := val - mean
 						sumSq += diff * diff
 					}
-					variance := sumSq/float32(hiddenDim) + l.epsilon
+					variance := sumSq / float32(hiddenDim)
 
 					// Normalize and scale
-					stdDev := float32(math.Sqrt(float64(variance)))
+					stdDev := float32(math.Sqrt(float64(variance + l.epsilon)))
 					for d := 0; d < hiddenDim; d++ {
 						var val float32
 						if len(x.Shape()) == 2 {
@@ -161,11 +180,14 @@ func (l *LayerNorm) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 							val = float32(x.Get(b, s, d))
 						}
 
-						// Normalize: (x - mean) / sqrt(variance)
+						// Normalize: (x - mean) / sqrt(variance + epsilon)
 						normalized := (val - mean) / stdDev
 
-						// Scale with gamma
-						scaled := normalized * float32(l.gamma.Get(d))
+						// Scale with gamma (with read lock)
+						l.mu.RLock()
+						gammaVal := l.gamma.Get(d)
+						l.mu.RUnlock()
+						scaled := normalized * float32(gammaVal)
 
 						// Clamp to int8 range
 						if scaled >= 127 {
@@ -174,7 +196,7 @@ func (l *LayerNorm) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 							scaled = -128
 						}
 
-						// Set output value
+						// Store as int8
 						if len(x.Shape()) == 2 {
 							output.Set(int8(scaled), b, d)
 						} else {
@@ -199,34 +221,46 @@ func (l *LayerNorm) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 	}
 }
 
-// SetGamma sets the learnable scale parameter.
-//
-// Parameters:
-//   - gamma: Scale parameter [hidden_dim]
-//
-// Returns an error if the gamma tensor has incorrect shape.
-// The gamma parameter must match the layer's hidden dimension.
+// SetGamma sets the gamma parameter for layer normalization.
 func (l *LayerNorm) SetGamma(gamma *tensor.Tensor) error {
-	if len(gamma.Shape()) != 1 || gamma.Shape()[0] != l.hiddenDim {
-		DebugLog("gamma shape %v does not match required shape [%d]", gamma.Shape(), l.hiddenDim)
-		return ErrInvalidGammaShape
+	// Check if layer is closed
+	if l.closed {
+		panic("layer is closed")
 	}
+
+	if gamma == nil {
+		return ErrNilTensor
+	}
+	if len(gamma.Shape()) != 1 || gamma.Shape()[0] != l.hiddenDim {
+		return ErrInvalidShape
+	}
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	l.gamma = gamma
 	return nil
 }
 
-// GetGamma returns the current scale parameter.
-//
-// Returns the gamma tensor with shape [hidden_dim].
-// This is the learnable parameter used for scaling the normalized values.
+// GetGamma returns the gamma parameter.
 func (l *LayerNorm) GetGamma() *tensor.Tensor {
+	// Check if layer is closed
+	if l.closed {
+		panic("layer is closed")
+	}
+
+	l.mu.RLock()
+	defer l.mu.RUnlock()
 	return l.gamma
 }
 
 // Close releases all resources associated with the layer normalization.
 // This includes closing all tensors and cleaning up memory.
 func (l *LayerNorm) Close() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
 	if l.gamma != nil {
 		l.gamma.Close()
 	}
+	l.closed = true
 }
