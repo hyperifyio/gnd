@@ -17,6 +17,9 @@ alwaysApply: false
 
 # Read current PR number:
 ./scripts/get-current-pr-number.sh
+
+# Read current implementation file changes
+./scripts/bitnet-get-current-implementation-changes.sh
 ``` 
 
 ## Steps
