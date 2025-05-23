@@ -1,6 +1,7 @@
 package math
 
 import (
+	"runtime"
 	"testing"
 )
 
@@ -34,6 +35,26 @@ func TestReLU2(t *testing.T) {
 			name:     "clamping test",
 			input:    []int8{12, 13, 14, 15},
 			expected: []int8{127, 127, 127, 127}, // 15² = 225 > 127, so clamped
+		},
+		{
+			name:     "single element",
+			input:    []int8{5},
+			expected: []int8{25},
+		},
+		{
+			name:     "zero values",
+			input:    []int8{0, 0, 0},
+			expected: []int8{0, 0, 0},
+		},
+		{
+			name:     "large input size for parallel processing",
+			input:    make([]int8, runtime.NumCPU()*2),
+			expected: make([]int8, runtime.NumCPU()*2),
+		},
+		{
+			name:     "boundary values",
+			input:    []int8{-128, 127, -127, 126},
+			expected: []int8{0, 127, 0, 127},
 		},
 	}
 
@@ -95,6 +116,69 @@ func TestReLU2Batch(t *testing.T) {
 			expected: [][]int8{
 				{127, 127},
 				{127, 127},
+			},
+		},
+		{
+			name: "empty vectors",
+			input: [][]int8{
+				{},
+				{},
+			},
+			expected: [][]int8{
+				{},
+				{},
+			},
+		},
+		{
+			name: "single element vectors",
+			input: [][]int8{
+				{5},
+				{-5},
+				{0},
+			},
+			expected: [][]int8{
+				{25},
+				{0},
+				{0},
+			},
+		},
+		{
+			name: "large batch size for parallel processing",
+			input: func() [][]int8 {
+				batch := make([][]int8, runtime.NumCPU()*2)
+				for i := range batch {
+					batch[i] = make([]int8, 10)
+					for j := range batch[i] {
+						batch[i][j] = int8(j - 5)
+					}
+				}
+				return batch
+			}(),
+			expected: func() [][]int8 {
+				batch := make([][]int8, runtime.NumCPU()*2)
+				for i := range batch {
+					batch[i] = make([]int8, 10)
+					for j := range batch[i] {
+						x := j - 5
+						if x < 0 {
+							batch[i][j] = 0
+						} else {
+							batch[i][j] = int8(x * x)
+						}
+					}
+				}
+				return batch
+			}(),
+		},
+		{
+			name: "boundary values",
+			input: [][]int8{
+				{-128, 127},
+				{-127, 126},
+			},
+			expected: [][]int8{
+				{0, 127},
+				{0, 127},
 			},
 		},
 	}
