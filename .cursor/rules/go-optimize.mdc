@@ -1,0 +1,81 @@
+---
+description: "Instrument and automatically optimize Go code by detecting and fixing allocation hotspots via line-level benchmarks."
+globs: *.go, pkg/**/*.go
+alwaysApply: false
+---
+
+# Automatic Line-Level Performance Optimization
+
+**Purpose:** Identify memory allocation hotspots in Go code at the source-line 
+level, automatically refactor to minimize allocations, and validate 
+improvements via benchmarks.
+
+## 1. Benchmark Instrumentation
+
+* **CPU Profile:** In each `BenchmarkXxx`, start and stop a CPU profile to capture line-level CPU usage.
+* **Heap Profile:** After benchmarking, trigger GC and write a heap profile to capture allocations.
+* Use standardized file names: `cpu_<Benchmark>.prof`, `mem_<Benchmark>.prof`.
+
+## 2. Profiling & Analysis
+
+After `go test -timeout 30s ./pkg/bitnet/... -bench=.<Benchmark> -cpuprofile=cpu_<Benchmark>.prof \
+  -benchmem -memprofile=mem_<Benchmark>.prof`, run:
+
+```bash
+# Line-level CPU hotspots
+go tool pprof -lines cpu_<Benchmark>.prof
+
+# Line-level allocation hotspots
+go tool pprof -lines mem_<Benchmark>.prof
+```
+
+Use the output to pinpoint lines with highest allocation counts and CPU sample 
+percentages.
+
+## 3. Automated Refactoring
+
+1. **Detect Hot Lines:** Parse pprof `-lines` output for the top allocation sites.
+2. **Minimize Allocations:** For each hot line, apply patterns such as:
+
+   * Replace `fmt.Sprintf` with `strings.Builder` or `bytes.Buffer`.
+   * Pre-allocate slices or reuse buffers.
+   * Use value receivers or inline computations to avoid temporary allocations.
+3. **Commit Each Fix:** For each refactoring:
+
+   ```bash
+   git add <file>
+   git commit -m "perf: reduce allocations in <Benchmark> (line <N>)"
+   ```
+
+## 4. Validation
+
+* Re-run benchmarks and profiles to confirm allocation reduction and stable CPU 
+  performance.
+
+  ```bash
+  go test -timeout 30s ./pkg/bitnet/... -bench=.<Benchmark> -benchmem
+  ```
+* Ensure allocations/op decrease (via `b.ReportAllocs()` output) and no 
+  regressions in CPU time.
+
+## 5. Continuous Baseline Tracking
+
+* Store baseline profiles in `profiles/baseline/`.
+* After optimizations, save updated profiles in `profiles/current/`.
+* Compare with `benchstat`:
+
+  ```bash
+  benchstat profiles/baseline/mem_<Benchmark>.prof profiles/current/mem_<Benchmark>.prof
+  ```
+
+* Commit profile updates and benchstat results:
+
+  ```bash
+  git add profiles/
+  git commit -m "perf: update profiles after allocation optimizations for <Benchmark>"
+  ```
+
+**Always** aim to minimize memory allocations as they often yield the greatest 
+CPU performance gains. This rule applies to all Go packages marked 
+performance-critical.
+

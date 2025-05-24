@@ -1,0 +1,60 @@
+---
+description: "Always write unit tests and benchmarks in Go; minimize memory allocations and CPU usage"
+globs: *.go, pkg/**/*.go
+alwaysApply: true
+---
+
+# Rule
+
+All Go code must be accompanied by:
+
+1. **Unit tests** for each public function or method.
+2. **Benchmarks** for performance-critical code.
+3. **Optimization efforts** to reduce memory allocations and unnecessary CPU operations.
+
+### [ OK ] Unit Testing
+
+- Write `TestXxx` functions using Go's standard `testing` package.
+- Cover edge cases and error paths.
+- Keep tests isolated and deterministic.
+- Use table-driven testing where appropriate.
+
+### [ OK ] Benchmarking
+
+- Write `BenchmarkXxx` functions for key functions.
+- Use `b.ReportAllocs()` to monitor memory usage.
+- Include at least one real-world usage scenario.
+
+### [ OK ] Optimization Guidelines
+
+- Avoid unnecessary memory allocations inside hot code paths.
+- Reuse buffers and structs when possible.
+- Use value receivers when no mutation is needed.
+- Avoid hidden allocations caused by interface conversions, slicing, or `append`.
+
+### [FAIL] Bad
+
+```go
+func Process(input string) string {
+    return fmt.Sprintf("value: %s", input) // [FAIL] causes allocation
+}
+````
+
+### [ OK ] Good
+
+```go
+func Process(input string) string {
+    var b strings.Builder
+    b.WriteString("value: ")
+    b.WriteString(input)
+    return b.String() // [ OK ] fewer allocations
+}
+```
+
+### [NOTE] Notes
+
+* Use `go test -timeout 30s ./pkg/bitnet/... -bench . -benchmem` to check allocations and performance.
+* Consider using `pprof` or `testing.AllocsPerRun` for deeper profiling.
+* If you see more than one allocation in a benchmark for a pure function, investigate why.
+
+Apply this rule to all Go packages under development, especially for new features or refactored code.

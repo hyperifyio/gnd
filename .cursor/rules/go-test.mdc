@@ -1,0 +1,52 @@
+---
+description: "Automatically run Go tests and resolve any test failures."
+globs: "**/*.go"
+alwaysApply: false
+---
+
+# Test and Repair Rule
+
+**Purpose:** Ensure all code changes maintain passing test status by running Go tests and fixing any issues before proceeding.
+
+## Identify untested files
+
+`./scripts/list-untested-bitnet.sh|cat`
+
+## Test Execution
+
+* Execute full test suite on demand or when files change:
+
+  ```bash
+  go test -timeout 30s ./pkg/bitnet/... -race
+  ```
+
+* Highlight any failures, panics, or unexpected behavior.
+
+## Failure Handling
+
+1. **Identify Failing Tests**
+
+   * Parse test output to locate failing test names and error messages.
+2. **Auto-Fix Approach**
+
+   * Generate or update code to satisfy failing assertions or correct logic errors.
+   * Add or update test stubs if necessary to align expected behavior.
+3. **Re-run Tests**
+
+   * Confirm all tests now pass, without introducing new failures.
+
+## Commit Test Fixes
+
+* Stage and commit repair changes with standardized message:
+
+  ```bash
+  git add .
+  git commit -m "fix(test): resolve failing Go tests"
+  ```
+
+## Best Practices
+
+* Keep tests deterministic and isolated.
+* Reference issue numbers in commit messages when applicable (e.g., `#123`).
+* Ensure new code coverage remains consistent or improves.
+

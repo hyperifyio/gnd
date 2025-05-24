@@ -1,0 +1,67 @@
+---
+description: "Guidance on interpreting benchmark results and tracking regressions in the BitNet project."
+globs: pkg/bitnet/**/*.go
+alwaysApply: false
+---
+
+# Benchmark Analysis
+
+**Purpose:** Provide a clear method for interpreting benchmark outputs and monitoring performance over time.
+
+## Key Metrics
+
+1. **Ops/sec** (`b.NsPerOp()`)
+
+   * Inverse of nanoseconds per operation.
+   * Higher is better; indicates throughput.
+
+2. **Bytes/op** (`b.AllocedBytesPerOp()`)
+
+   * Average memory allocated per operation.
+   * Lower is better; fewer allocations.
+
+3. **Allocs/op** (`b.AllocsPerOp()`)
+
+   * Number of memory allocations per operation.
+   * Lower is better; indicates allocation churn.
+
+## Reading `go test -timeout 30s ./pkg/bitnet/... -bench` Output
+
+Example:
+
+```text
+BenchmarkTensor_Get-8       10000000               200 ns/op             512 B/op          4 allocs/op
+```
+
+* `200 ns/op`: average time per operation
+* `512 B/op`: bytes allocated
+* `4 allocs/op`: number of allocations
+
+## Regression Detection
+
+1. **Baseline Tracking**
+
+   * Record baseline metrics in a file (e.g., `benchmarks_baseline.md`).
+2. **Automated Comparison**
+
+   * In CI, compare current benchmark against baseline.
+   * Fail build if deviations exceed threshold:
+
+     * Time regression > 10%
+     * Allocations increase > 1 alloc/op
+3. **Historical Trends**
+
+   * Store benchmark CSV outputs across commits.
+   * Generate trend graphs (e.g., via Python scripts).
+
+## Reporting
+
+* Document anomalies in GitHub issue or PR.
+* Include before/after metrics in PR description.
+* Use benchmarks to guide optimization efforts.
+
+## Continuous Monitoring
+
+* Integrate benchmark runs in nightly builds.
+* Alert on regressions via Slack or email.
+* Review trends weekly to catch slow drift.

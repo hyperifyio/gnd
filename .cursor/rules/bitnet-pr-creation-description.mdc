@@ -1,0 +1,46 @@
+---
+description: "Standardize Pull Request creation and description format for the BitNet project."
+globs: pkg/bitnet/**
+alwaysApply: true
+---
+
+# PR Creation & Description
+
+**Purpose:** Ensure PRs are consistently titled and documented for clarity and traceability.
+
+## Title Format
+
+```
+<type>(bitnet): <concise description>
+```
+
+* **type**: `feat`, `fix`, `test`, `perf`, `refactor`, `docs`
+* **Example:** `feat(bitnet): add tensor Get operation`
+
+## Description Template
+
+```markdown
+## Changes
+- List specific changes made
+- Reference file paths and line numbers
+- Link related issues (#171)
+
+## Test Coverage
+- Current coverage: XX.X%
+- Coverage delta: +X.X%
+- Untested areas (if any)
+
+## Performance Metrics (if applicable)
+- `ns/op`: YYYY
+- `B/op`: ZZZZ
+- `allocs/op`: N
+
+## Checklist
+- [ ] Tests added/updated
+- [ ] Benchmarks updated
+- [ ] Documentation updated
+
+## Related Issues
+- Parent: #170
+- Sub-issue: #171
+```

@@ -1,3 +1,20 @@
 bin
 .idea
 coverage.out
+
+# Generated files
+benchmark_results.txt
+pr_description.md
+tensor.test
+model.test
+
+# Profiles
+profiles/
+*.prof
+tensor.test
+
+# BitNet model files
+pkg/bitnet/internal/assets/models/
+
+math.test
+coverage.html

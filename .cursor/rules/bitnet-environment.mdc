@@ -1,0 +1,58 @@
+---
+description: "Define the required development environment and setup instructions for the BitNet project."
+globs: pkg/bitnet/**
+alwaysApply: true
+---
+
+# Development Environment Setup
+
+**Purpose:** Ensure all contributors use a consistent local setup for development and profiling.
+
+## System Requirements
+
+* **OS:** macOS (darwin)
+* **Shell:** Bash (`/bin/bash`) or Zsh
+* **Go Version:** 1.20 or later
+
+## Go Module Initialization
+
+```bash
+# Clone repository
+git clone https://github.com/hyperifyio/gnd.git
+cd gnd
+# Ensure you're on the bitnet branch
+git checkout bitnet
+# Download dependencies
+go mod download
+```
+
+## Environment Variables
+
+* `GOPATH`: Ensure your workspace is in `GOPATH` or use module mode (default).
+* `GO111MODULE=on`: Enable module-aware mode.
+
+## Profiling Ports
+
+* Avoid conflicts with macOS services on ports `8080`/`8081`:
+
+  ```bash
+  go tool pprof -http=:8082 cpu.prof
+  ```
+
+## Ignored Files
+
+Add to `.gitignore`:
+
+```
+*.prof
+profiles/
+```
+
+## Automation Scripts
+
+* **Benchmarks & Profiles:** `scripts/run_benchmarks.sh`
+* **Test Suite:** `make test` (if Makefile exists) or:
+
+  ```bash
+  go test ./pkg/bitnet/...
+  ```

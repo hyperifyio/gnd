@@ -1,0 +1,34 @@
+---
+description: "Provide a concise high-level overview of the BitNet project, its goals, and repository structure."
+globs: pkg/bitnet/**
+alwaysApply: true
+---
+
+# BitNet Project Overview
+
+**Purpose:** Quickly orient contributors to the BitNet codebase and its primary objectives.
+
+## Goals
+
+* **Pure Go Inference Engine**: Implement Microsoft's BitNet b1.58-2B-4T model using only Go.
+* **CPU Optimization**: High throughput and low memory usage on multi-core CPUs.
+* **Future GPU Support**: Architect for easy GPU acceleration.
+
+## Repository Structure
+
+```
+/                       # Root contains README, go.mod, CI configs
+pkg/bitnet/             # Core implementation packages
++- tensor/               # Tensor data structures and operations
+scripts/                # Automation scripts (benchmarks, profiles)
+docs/                   # Supporting documentation and design notes
+examples/               # Usage examples and demos
+```
+
+## Key Resources
+
+* **Model Weights & Specs:** HuggingFace: microsoft/BitNet-b1.58-2B-4T (already downloaded to `pkg/bitnet/internal/assets/models/BitNet-b1.58-2B-4T/`)
+* **Research Paper:** arXiv:2310.11453
+* **Parent Issue:** GitHub #170 (overall implementation roadmap)
+
+*For detailed workflows and rules, refer to the specific rule files in `.cursor/rules/`.*

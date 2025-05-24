@@ -1,0 +1,43 @@
+---
+description: "Enforce benchmark file organization and naming conventions for the BitNet project."
+globs: pkg/bitnet/**/*.go
+alwaysApply: false
+---
+# Benchmark Naming & File Layout
+
+**Purpose:** Keep benchmarks discoverable and consistent across packages.
+
+## File placement
+- Benchmarks live alongside unit tests in `*_test.go` files under the same package.
+
+```
+pkg/bitnet/
++- mycomponent.go
++- mycomponent_test.go   # must contain both unit and benchmark tests
+```
+
+## Benchmark function names
+- Must start with `Benchmark` followed by `<Type>_<Operation>`
+- Use `_` to separate semantic units; avoid camel-case after the prefix.
+
+```go
+func BenchmarkTensor_Create(b *testing.B) { ... }
+func BenchmarkTensor_Get(b *testing.B)    { ... }
+func BenchmarkTensor_Set(b *testing.B)    { ... }
+```
+
+## Sub-benchmarks
+
+When you need multiple scenarios in one function, use `b.Run`:
+
+```go
+func BenchmarkTensor_Create(b *testing.B) {
+  for _, size := range []int{100, 1_000, 10_000} {
+    b.Run(fmt.Sprintf("%d", size), func(b *testing.B) {
+      for i := 0; i < b.N; i++ {
+        NewTensor(size)
+      }
+    })
+  }
+}
+```

@@ -1,0 +1,64 @@
+---
+description: "Generate and maintain a multi-layered, rigorous test suite using proven best practices for reliability, robustness, and coverage."
+globs: **/*.go
+alwaysApply: false
+---
+
+# Comprehensive Testing Rule
+
+**Purpose:** Ensure Go packages employ a structured, exhaustive testing strategy--spanning unit, integration, stress, anomaly, fuzz, boundary, regression, and dynamic analysis--to catch defects early and maintain high reliability.
+
+## 1. Executive Testing Summary
+
+* **Independent Harnesses:** Separate unit, integration, stress, and anomaly test suites.
+* **Coverage Goals:** Aim for >90% statement and branch coverage; consider MC/DC or mutation testing for critical modules.
+* **Scale:** Maintain substantial test code relative to production code; thousands of distinct test cases, parameterized and automated.
+
+## 2. Test Harness Layers
+
+1. **Unit Tests:** Focus on single functions/types; use table-driven tests and `testing` package.
+2. **Integration Tests:** End-to-end scenarios combining multiple components with real configs or test fixtures.
+3. **Stress Tests:** High-load, concurrency, and soak tests to reveal race conditions and performance bottlenecks.
+4. **Anomaly Tests:** Simulate resource failures and verify graceful handling:
+
+   * **Out-of-Memory (OOM):** Inject allocator failures at increasing thresholds until code completes without crash.
+   * **I/O Errors:** Mock or wrap I/O layers to fail at specified operations; loop until clean run.
+   * **Crash Simulations:** Spawn child processes or use in-memory snapshots to simulate crashes or power loss; verify rollback or atomicity.
+   * **Compound Failures:** Combine OOM, I/O, and crash scenarios to test layered recovery logic.
+
+## 3. Fuzz and Boundary Testing
+
+* **Fuzz Testing:** Integrate Go fuzzers (built-in or libFuzzer) to mutate inputs (e.g., SQL, JSON, binary blobs). Retain and re-run inputs that traverse new code paths.
+* **Boundary Value Tests:** Exercise limits (e.g., max sizes, empty/oversized inputs) on both valid and invalid sides of each boundary.
+
+## 4. Regression and Mutation Testing
+
+* **Regression Suite:** Add tests for every bug fix; ensure they run on all future changes.
+* **Mutation Testing:** Optionally mutate code branches to no-ops or forced jumps and verify that tests detect the mutation (use tools like `go-mutesting`).
+
+## 5. Coverage and Meta-Testing
+
+* **Coverage Measurement:** Use Go coverage tooling for both statement and branch metrics.
+* **Meta-Coverage Runs:** Run tests under coverage-instrumented builds and then under production builds; compare outputs for consistency to detect undefined behavior.
+* **Use of Assertion Macros:** Embed assertions for pre/postconditions and invariants; enable in debug builds, disable in production.
+
+## 6. Resource Leak & Dynamic Analysis
+
+* **Race Detector:** Always run `go test -timeout 30s -race` to expose data races.
+* **Memory Leak Checks:** Employ built-in or pluggable allocators to detect leaks and buffer overruns.
+* **Valgrind/Memdebug:** (Optional) Run critical tests under external tools or lightweight wrappers to catch leaks and uninitialized memory.
+
+## 7. Disabled Optimization Validation
+
+* **Opt-Off Testing:** Provide a mode to disable performance optimizations or feature flags; verify functional equivalence with and without optimizations.
+
+## 8. Checklists & Automation
+
+* **Quick Subset:** Define a "veryquick" test group (unit + basic anomaly) for pre-commit or fast iteration.
+* **Full Suite:** Automate full runs (stress, fuzz, boundary) in CI nightly or on release.
+* **Artifact Archival:** Store coverage reports, profiles, fuzz inputs, and leak logs for trend analysis.
+
+## 9. Static Analysis
+
+* Compile with strict compiler flags (`-Wall -Wextra`) and use linters or analyzers (e.g., `golangci-lint`).
+* Treat warnings as actionable items, but prioritize exhaustive dynamic testing for correctness.

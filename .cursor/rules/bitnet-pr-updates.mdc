@@ -1,0 +1,186 @@
+---
+description: "This rule defines the standards and procedures for updating Pull Requests (PRs) in the BitNet project. It ensures that all PR updates are well-documented, reviewed, and follow the project's contribution guidelines."
+globs: pkg/bitnet/**
+alwaysApply: false
+---
+# BitNet PR Updates
+
+This rule defines the standards and procedures for updating Pull Requests (PRs) in the BitNet project. It ensures that all PR updates are well-documented, reviewed, and follow the project's contribution guidelines.
+
+## Committing Changes
+
+1. Commit Structure:
+   ```bash
+   # Stage specific files
+   git add <file1> <file2>
+   
+   # Stage all changes
+   git add .
+   
+   # Create commit with message
+   git commit -m "feat: update tensor implementation with interfaces"
+   ```
+
+2. Commit Messages:
+   - Use conventional commit format
+   - Reference issue/PR numbers
+   - Describe changes clearly
+   - Keep messages concise
+
+3. Commit Best Practices:
+   - Commit related changes together
+   - Keep commits focused
+   - Write clear messages
+   - Reference feedback addressed
+
+## Pushing Updates
+
+1. Basic Push:
+   ```bash
+   # Push to current branch
+   git push origin HEAD
+   
+   # Push with upstream tracking
+   git push -u origin <branch-name>
+   ```
+
+2. Force Push (if needed):
+   ```bash
+   # Force push after rebase
+   git push -f origin <branch-name>
+   
+   # Force push with lease
+   git push --force-with-lease origin <branch-name>
+   ```
+
+3. Push Best Practices:
+   - Verify changes before push
+   - Use force push carefully
+   - Keep branch up to date
+   - Document push reasons
+
+## PR Update Workflow
+
+1. Initial Setup:
+   ```bash
+   # Create feature branch
+   git checkout -b feature/tensor-interfaces
+   
+   # Set upstream
+   git push -u origin feature/tensor-interfaces
+   ```
+
+2. Making Updates:
+   ```bash
+   # Pull latest changes
+   git pull origin main
+   
+   # Make changes
+   # Stage changes
+   git add .
+   
+   # Commit changes
+   git commit -m "feat: add interface verification"
+   
+   # Push updates
+   git push origin HEAD
+   ```
+
+3. Handling Conflicts:
+   ```bash
+   # Pull with rebase
+   git pull --rebase origin main
+   
+   # Resolve conflicts
+   # Continue rebase
+   git rebase --continue
+   
+   # Push updates
+   git push -f origin HEAD
+   ```
+
+## Best Practices
+
+1. Commit Organization:
+   - Group related changes
+   - Keep commits atomic
+   - Write clear messages
+   - Reference issues/PRs
+
+2. Push Safety:
+   - Verify changes
+   - Test before push
+   - Use force push carefully
+   - Document push reasons
+
+3. PR Updates:
+   - Keep PR up to date
+   - Address feedback
+   - Document changes
+   - Request re-review
+
+## Common Scenarios
+
+1. Adding New Changes:
+   ```bash
+   # Make changes
+   git add .
+   git commit -m "feat: implement tensor operations"
+   git push origin HEAD
+   ```
+
+2. Updating Existing Changes:
+   ```bash
+   # Modify changes
+   git add .
+   git commit --amend
+   git push -f origin HEAD
+   ```
+
+3. Incorporating Feedback:
+   ```bash
+   # Make requested changes
+   git add .
+   git commit -m "fix: address review feedback"
+   git push origin HEAD
+   ```
+
+## Documentation
+
+1. Commit Messages:
+   - Use conventional format
+   - Reference issues/PRs
+   - Describe changes
+   - Keep messages clear
+
+2. PR Updates:
+   - Document changes made
+   - Reference feedback
+   - Explain decisions
+   - Note remaining issues
+
+3. Push Documentation:
+   - Document push reasons
+   - Note force pushes
+   - Track branch state
+   - Maintain history
+
+## Safety Checks
+
+1. Pre-Push Verification:
+   - Run tests
+   - Check formatting
+   - Verify changes
+   - Review commits
+
+2. Force Push Safety:
+   - Verify branch state
+   - Check for conflicts
+   - Document reason
+   - Notify team
+
+3. PR State:
+   - Check PR status
+   - Verify CI/CD
+   - Review changes
+   - Update documentation

@@ -1,0 +1,57 @@
+---
+description: "Analyze and report Go test coverage on a per-file basis using coverage profiles."
+globs: **/*.go
+alwaysApply: false
+---
+
+# Per-File Coverage Analysis Rule
+
+**Purpose:** Generate and inspect test coverage metrics for each Go source file in the module.
+
+## Steps
+
+1. **Generate Coverage Profile**
+
+   ```bash
+   go test -timeout 30s -coverprofile=coverage.out ./pkg/bitnet/...
+   ```
+
+   Runs all tests and produces `coverage.out` with detailed coverage data.
+
+2. **Print Coverage by Function**
+
+   ```bash
+   go tool cover -func=coverage.out
+   ```
+
+   Outputs coverage percentages per function and a total summary.
+
+3. **Compute Coverage by File**
+   To obtain an average coverage percentage per file, filter and aggregate:
+
+   ```bash
+   go tool cover -func=coverage.out \
+     | awk -F: '/.go:/ {split($2,a," "); file=$1; cov[file]+=a[2]; count[file]++} \
+                END {for (f in cov) printf "%s: %.1f%%\n", f, cov[f]/count[f]}' \
+     | sort
+   ```
+
+   * Aggregates function-level data into file-level averages.
+   * Sorts results for easy review.
+
+4. **Inspect Line-Level Coverage**  
+
+- To list all lines without coverage, use:
+  ```bash
+  go tool cover -func=coverage.out | \
+    grep ': 0.0%' | cut -d: -f1,2 | sort
+  ```
+
+## Best Practices
+
+* **Regular Checks:** Integrate per-file coverage analysis into CI to catch gaps early.
+* **Thresholds:** Define minimum coverage requirements per file (e.g., 80%).
+* **Targeted Tests:** Add tests for files or functions below threshold.
+* **Documentation:** Commit `coverage.out` or summary reports as artifacts.
+
+*Apply this rule when you need detailed insights into coverage distribution across source files.*

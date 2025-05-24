@@ -1,0 +1,71 @@
+---
+description: "Define categories of benchmarks for the BitNet project to ensure focused and comparable measurements."
+globs: pkg/bitnet/**/*.go
+alwaysApply: false
+---
+
+# Benchmark Categories
+
+**Purpose:** Classify benchmarks by their semantic focus so teams can compare like with like.
+
+## 1. Creation Benchmarks
+
+Measure cost of allocating or initializing a component.
+
+```go
+func BenchmarkTensor_Create(b *testing.B) {
+  for i := 0; i < b.N; i++ {
+    NewTensor(100)
+  }
+}
+```
+
+## 2. Operation Benchmarks
+
+Measure runtime of core operations on an existing instance.
+
+```go
+func BenchmarkTensor_Get(b *testing.B) {
+  tensor := NewTensor(1000)
+  b.ResetTimer()
+  for i := 0; i < b.N; i++ {
+    tensor.Get(i % 1000)
+  }
+}
+```
+
+## 3. Composite / Sub-operation Benchmarks
+
+Combine multiple operations or simulate realistic sequences.
+
+```go
+func BenchmarkTensor_Sequential(b *testing.B) {
+  tensor := NewTensor(1000)
+  b.Run("GetSet", func(b *testing.B) {
+    for i := 0; i < b.N; i++ {
+      tensor.Set(1.23, i%1000)
+      tensor.Get(i%1000)
+    }
+  })
+}
+```
+
+## 4. Memory & Allocation Benchmarks
+
+Measure allocations and memory footprint per operation.
+
+```go
+func BenchmarkAlloc_1024(b *testing.B) {
+  b.ReportAllocs()
+  for i := 0; i < b.N; i++ {
+    _ = make([]byte, 1024)
+  }
+}
+```
+
+## Best Practices
+
+* Single semantic focus per benchmark.
+* Use realistic sizes and patterns.
+* Report allocations with `b.ReportAllocs()`.
+* Reset timers after setup (`b.ResetTimer()`).

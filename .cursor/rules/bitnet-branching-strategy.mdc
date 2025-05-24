@@ -1,0 +1,48 @@
+---
+description: "Define branch creation and naming conventions for the BitNet project to ensure consistent workflows."
+globs: pkg/bitnet/**
+alwaysApply: true
+---
+
+# Branching Strategy
+
+**Purpose:** Standardize branch creation to link code to issues and maintain clarity.
+
+## Base Branch
+
+* All feature branches originate from `bitnet`.
+
+## Creating a Branch
+
+* Use GitHub CLI for consistency:
+
+  ```bash
+  gh issue develop <ISSUE_NUMBER> \
+    --base bitnet \
+    --name feat/bitnet-<ISSUE_NUMBER>-<short-description> \
+    --checkout
+  ```
+
+## Naming Convention
+
+* Prefix with `feat/bitnet-` for features, `fix/bitnet-` for bug fixes.
+* Format: `{type}/bitnet-{issue_number}-{short-description}`
+
+  * Example: `feat/bitnet-173-add-tokenizer`
+
+## Listing Branches
+
+* To list branches tied to an issue:
+
+  ```bash
+  gh issue develop --list <ISSUE_NUMBER>
+  ```
+
+## Deleting After Merge
+
+* Once merged, delete local and remote branches:
+
+  ```bash
+  git branch -d feat/bitnet-173-add-tokenizer
+  gh pr close <PR_NUMBER>
+  ```

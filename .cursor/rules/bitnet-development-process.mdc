@@ -1,0 +1,87 @@
+---
+description: "This rule describes the overall development process for the BitNet project, including coding standards, workflows, and best practices for contributors."
+globs: pkg/bitnet/**
+alwaysApply: false
+---
+# BitNet Development Process Rule
+
+This rule describes the overall development process for the BitNet project, including coding standards, workflows, and best practices for contributors.
+
+# Development Process Guidelines
+
+## Code Changes Process
+1. **Test-First Development**
+   - Write unit tests before implementation
+   - Include benchmarks for performance-critical code
+   - Document test cases and expected results
+   - Follow TDD practices
+
+2. **Testing Requirements**
+   - Run all tests in `pkg/bitnet/*`
+   - Ensure 100% test coverage for new code
+   - Verify existing tests still pass
+   - Include edge cases and error conditions
+
+3. **Performance Testing**
+   - Run benchmarks for all changes
+   - Check memory allocations
+   - Monitor CPU usage
+   - Compare against performance thresholds
+
+4. **Code Quality**
+   - Fix all linter errors
+   - Address memory allocation issues
+   - Optimize CPU-heavy operations
+   - Document optimizations
+
+## Git Workflow
+1. **Commit Guidelines**
+   - Make small, focused commits
+   - Use semantic commit messages
+   - Reference related issues/PRs
+   - Keep commits atomic
+
+2. **PR Management**
+   - Create draft PRs for work in progress
+   - Mark PRs as ready when complete
+   - Include test results in PR description
+   - Link related issues
+
+3. **Review Process**
+   - Address review comments promptly
+   - Update tests if needed
+   - Rerun benchmarks after changes
+   - Keep PR up to date
+
+## Automation
+1. **Test Automation**
+   ```bash
+   # Run all tests
+   go test -timeout 30s ./pkg/bitnet/... -v
+   
+   # Run benchmarks
+   ./scripts/run_benchmarks.sh
+   
+   # Check coverage
+   go test -timeout 30s ./pkg/bitnet/... -coverprofile=coverage.out
+   ```
+
+2. **Performance Checks**
+   ```bash
+   # Run memory profiling
+   go test -timeout 30s -bench=. -benchmem -memprofile=mem.prof ./pkg/bitnet/...
+   
+   # Run CPU profiling
+   go test -timeout 30s -bench=. -cpuprofile=cpu.prof ./pkg/bitnet/...
+   ```
+
+## Related Files
+- [scripts/run_benchmarks.sh](mdc:scripts/run_benchmarks.sh): Benchmark automation
+- [pkg/bitnet/tensor/tensor_test.go](mdc:pkg/bitnet/tensor/tensor_test.go): Test examples
+- [.cursor/rules/bitnet-tdd.mdc](mdc:.cursor/rules/bitnet-tdd.mdc): TDD practices
+
+## Related Rules
+- [bitnet-tdd.mdc](mdc:.cursor/rules/bitnet-tdd.mdc): Test-Driven Development
+- [bitnet-performance.mdc](mdc:.cursor/rules/bitnet-performance.mdc): Performance requirements
+- [bitnet-benchmarks.mdc](mdc:.cursor/rules/bitnet-benchmarks.mdc): Benchmarking guidelines
+- [bitnet-pr-updates.mdc](mdc:.cursor/rules/bitnet-pr-updates.mdc): PR update process
