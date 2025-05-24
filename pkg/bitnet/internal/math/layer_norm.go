@@ -5,10 +5,10 @@
 package math
 
 import (
-	"fmt"
 	"math"
 
-	"github.com/hyperifyio/gnd/pkg/bitnet/errors"
+	bitneterrors "github.com/hyperifyio/gnd/pkg/bitnet/errors"
+	"github.com/hyperifyio/gnd/pkg/bitnet/logging"
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
 )
 
@@ -24,7 +24,8 @@ type LayerNorm struct {
 // NewLayerNorm creates a new layer normalization component.
 func NewLayerNorm(hiddenDim int) (*LayerNorm, error) {
 	if hiddenDim <= 0 {
-		return nil, fmt.Errorf("layer_norm: invalid hidden dimension %d", hiddenDim)
+		logging.DebugLogf("layer_norm: invalid hidden dimension %d", hiddenDim)
+		return nil, bitneterrors.ErrInvalidHiddenDim
 	}
 	return &LayerNorm{
 		hiddenDim: hiddenDim,
@@ -36,13 +37,17 @@ func NewLayerNorm(hiddenDim int) (*LayerNorm, error) {
 // Returns a normalized tensor with the same shape as input.
 func (l *LayerNorm) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 	if l.closed {
-		return nil, errors.ErrLayerClosed
+		return nil, bitneterrors.ErrLayerClosed
 	}
 
 	// Validate input shape
-	shape := x.Shape()
+	shape, err := x.Shape()
+	if err != nil {
+		logging.DebugLogf("failed to get input shape: %v", err)
+		return nil, bitneterrors.ErrInvalidShape
+	}
 	if len(shape) < 2 {
-		return nil, errors.ErrInvalidShape
+		return nil, bitneterrors.ErrInvalidShape
 	}
 
 	// Get input dimensions
@@ -56,11 +61,16 @@ func (l *LayerNorm) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 	// Validate hidden dimension
 	hiddenDim := shape[len(shape)-1]
 	if hiddenDim != l.hiddenDim {
-		return nil, fmt.Errorf("tensor: invalid hidden dimension, got %d, want %d", hiddenDim, l.hiddenDim)
+		logging.DebugLogf("tensor: invalid hidden dimension, got %d, want %d", hiddenDim, l.hiddenDim)
+		return nil, bitneterrors.ErrInvalidHiddenDim
 	}
 
 	// Create output tensor
-	output := tensor.NewTensor(batchSize, seqLen, l.hiddenDim)
+	output, err := tensor.NewTensor(batchSize, seqLen, l.hiddenDim)
+	if err != nil {
+		logging.DebugLogf("failed to create output tensor: %v", err)
+		return nil, err
+	}
 
 	// Apply layer normalization
 	for b := 0; b < batchSize; b++ {
@@ -69,10 +79,15 @@ func (l *LayerNorm) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 			var sum float32
 			for d := 0; d < l.hiddenDim; d++ {
 				var val int8
+				var err error
 				if len(shape) == 2 {
-					val = x.Get(b, d)
+					val, err = x.Get(b, d)
 				} else {
-					val = x.Get(b, s, d)
+					val, err = x.Get(b, s, d)
+				}
+				if err != nil {
+					logging.DebugLogf("failed to get input value: %v", err)
+					return nil, err
 				}
 				sum += float32(val)
 			}
@@ -82,10 +97,15 @@ func (l *LayerNorm) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 			var variance float32
 			for d := 0; d < l.hiddenDim; d++ {
 				var val int8
+				var err error
 				if len(shape) == 2 {
-					val = x.Get(b, d)
+					val, err = x.Get(b, d)
 				} else {
-					val = x.Get(b, s, d)
+					val, err = x.Get(b, s, d)
+				}
+				if err != nil {
+					logging.DebugLogf("failed to get input value: %v", err)
+					return nil, err
 				}
 				diff := float32(val) - mean
 				variance += diff * diff
@@ -95,21 +115,40 @@ func (l *LayerNorm) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 			// Normalize and scale
 			for d := 0; d < l.hiddenDim; d++ {
 				var val int8
+				var err error
 				if len(shape) == 2 {
-					val = x.Get(b, d)
+					val, err = x.Get(b, d)
 				} else {
-					val = x.Get(b, s, d)
+					val, err = x.Get(b, s, d)
+				}
+				if err != nil {
+					logging.DebugLogf("failed to get input value: %v", err)
+					return nil, err
 				}
 				normalized := (float32(val) - mean) / float32(math.Sqrt(float64(variance+l.epsilon)))
 				if l.gamma != nil {
-					normalized *= float32(l.gamma.Get(d))
+					gammaVal, err := l.gamma.Get(d)
+					if err != nil {
+						logging.DebugLogf("failed to get gamma value: %v", err)
+						return nil, err
+					}
+					normalized *= float32(gammaVal)
 				}
 				if normalized > 127 {
-					output.Set(127, b, s, d)
+					if err := output.Set(127, b, s, d); err != nil {
+						logging.DebugLogf("failed to set output value: %v", err)
+						return nil, err
+					}
 				} else if normalized < -128 {
-					output.Set(-128, b, s, d)
+					if err := output.Set(-128, b, s, d); err != nil {
+						logging.DebugLogf("failed to set output value: %v", err)
+						return nil, err
+					}
 				} else {
-					output.Set(int8(normalized), b, s, d)
+					if err := output.Set(int8(normalized), b, s, d); err != nil {
+						logging.DebugLogf("failed to set output value: %v", err)
+						return nil, err
+					}
 				}
 			}
 		}
@@ -123,21 +162,29 @@ func (l *LayerNorm) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 // The caller must not close the tensor after passing it to SetGamma.
 func (l *LayerNorm) SetGamma(gamma *tensor.Tensor) error {
 	if l.closed {
-		return errors.ErrLayerClosed
+		return bitneterrors.ErrLayerClosed
 	}
 
 	if gamma == nil {
-		return errors.ErrNilTensor
+		return bitneterrors.ErrNilTensor
 	}
 
 	// Validate shape
-	shape := gamma.Shape()
+	shape, err := gamma.Shape()
+	if err != nil {
+		logging.DebugLogf("failed to get gamma shape: %v", err)
+		return bitneterrors.ErrInvalidShape
+	}
 	if len(shape) != 1 || shape[0] != l.hiddenDim {
-		return fmt.Errorf("tensor: invalid gamma shape, got %v, want [%d]", shape, l.hiddenDim)
+		logging.DebugLogf("tensor: invalid gamma shape, got %v, want [%d]", shape, l.hiddenDim)
+		return ErrInvalidGammaShape
 	}
 
 	if l.gamma != nil {
-		l.gamma.Close()
+		if err := l.gamma.Close(); err != nil {
+			logging.DebugLogf("failed to close existing gamma tensor: %v", err)
+			return err
+		}
 	}
 	l.gamma = gamma
 	return nil
@@ -147,7 +194,7 @@ func (l *LayerNorm) SetGamma(gamma *tensor.Tensor) error {
 // The returned tensor is owned by LayerNorm and should not be closed by the caller.
 func (l *LayerNorm) GetGamma() (*tensor.Tensor, error) {
 	if l.closed {
-		return nil, errors.ErrLayerClosed
+		return nil, bitneterrors.ErrLayerClosed
 	}
 	return l.gamma, nil
 }
@@ -158,6 +205,7 @@ func (l *LayerNorm) Close() error {
 	if !l.closed {
 		if l.gamma != nil {
 			if err := l.gamma.Close(); err != nil {
+				logging.DebugLogf("failed to close gamma tensor: %v", err)
 				return err
 			}
 		}

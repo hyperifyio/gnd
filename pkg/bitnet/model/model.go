@@ -7,7 +7,6 @@ package model
 import (
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"io/fs"
 	"math"
@@ -16,6 +15,7 @@ import (
 
 	bitnetmath "github.com/hyperifyio/gnd/pkg/bitnet/internal/math"
 	"github.com/hyperifyio/gnd/pkg/bitnet/internal/model"
+	"github.com/hyperifyio/gnd/pkg/bitnet/logging"
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
 	"github.com/hyperifyio/gnd/pkg/loggers"
 )
@@ -47,6 +47,32 @@ var (
 	ErrFinalNormForward        = errors.New("bitnet: final norm forward pass failed")
 	ErrFSNotSet                = errors.New("bitnet: fs not set")
 	ErrPathEmpty               = errors.New("bitnet: path is empty")
+	ErrCreateFinalNorm         = errors.New("bitnet: failed to create final norm")
+	ErrCreateHiddenStates      = errors.New("bitnet: failed to create hidden states tensor")
+	ErrGetHiddenStatesShape    = errors.New("bitnet: failed to get hidden states shape")
+	ErrGetAttentionShape       = errors.New("bitnet: failed to get attention output shape")
+	ErrGetFFNShape             = errors.New("bitnet: failed to get FFN output shape")
+	ErrGetFinalNormShape       = errors.New("bitnet: failed to get final norm output shape")
+	ErrGetLastHiddenState      = errors.New("bitnet: failed to get last hidden state")
+	ErrCreateQTensor           = errors.New("bitnet: failed to create Q tensor")
+	ErrCreateKTensor           = errors.New("bitnet: failed to create K tensor")
+	ErrCreateVTensor           = errors.New("bitnet: failed to create V tensor")
+	ErrCreateOutputTensor      = errors.New("bitnet: failed to create output tensor")
+	ErrSetQTensorValue         = errors.New("bitnet: failed to set Q tensor value")
+	ErrSetKTensorValue         = errors.New("bitnet: failed to set K tensor value")
+	ErrSetVTensorValue         = errors.New("bitnet: failed to set V tensor value")
+	ErrSetOutputTensorValue    = errors.New("bitnet: failed to set output tensor value")
+	ErrCreateAttentionGamma    = errors.New("bitnet: failed to create attention gamma tensor")
+	ErrSetAttentionGamma       = errors.New("bitnet: failed to set attention gamma value")
+	ErrCreateFFNUpTensor       = errors.New("bitnet: failed to create FFN up tensor")
+	ErrCreateFFNDownTensor     = errors.New("bitnet: failed to create FFN down tensor")
+	ErrSetFFNUpTensorValue     = errors.New("bitnet: failed to set FFN up tensor value")
+	ErrSetFFNDownTensorValue   = errors.New("bitnet: failed to set FFN down tensor value")
+	ErrCreateFinalNormTensor   = errors.New("bitnet: failed to create final norm tensor")
+	ErrSetFinalNormValue       = errors.New("bitnet: failed to set final norm value")
+	ErrCreateFinalNormGamma    = errors.New("bitnet: failed to create final norm gamma tensor")
+	ErrGetFinalNormData        = errors.New("bitnet: failed to get final norm data")
+	ErrSetFinalNormGammaValue  = errors.New("bitnet: failed to set final norm gamma value")
 )
 
 // Model represents a BitNet model instance. It manages the model's configuration,
@@ -282,7 +308,11 @@ func (m *Model) LoadWeights(path string) error {
 	// Initialize reusable sublayers
 	m.attnSublayers = make([]*bitnetmath.AttentionSublayer, m.config.NumLayers)
 	m.ffnSublayers = make([]*bitnetmath.FFNSublayer, m.config.NumLayers)
-	m.finalNorm = bitnetmath.NewLayerNorm(m.config.HiddenSize)
+	m.finalNorm, err = bitnetmath.NewLayerNorm(m.config.HiddenSize)
+	if err != nil {
+		loggers.Printf(loggers.Debug, "create final norm: %v", err)
+		return ErrCreateFinalNorm
+	}
 
 	// Create and initialize attention sublayers
 	for i := 0; i < m.config.NumLayers; i++ {
@@ -375,16 +405,26 @@ func (m *Model) forward(tokens []int) ([]float32, error) {
 	// Reshape and copy hidden states to tensor
 	hiddenStatesTensor := m.tensorOps.ReshapeAndCopy(hiddenStates, 1, len(tokens), m.config.HiddenSize)
 	if hiddenStatesTensor == nil {
-		return nil, fmt.Errorf("failed to create hidden states tensor")
+		return nil, ErrCreateHiddenStates
 	}
-	fmt.Printf("[DEBUG] hiddenStatesTensor created with shape: %v\n", hiddenStatesTensor.Shape())
+	shape, err := hiddenStatesTensor.Shape()
+	if err != nil {
+		logging.DebugLogf("failed to get tensor shape: %v", err)
+		return nil, err
+	}
+	logging.DebugLogf("hiddenStatesTensor created with shape: %v", shape)
 
 	// Keep track of tensors to close
 	var tensorsToClose []*tensor.Tensor
 	defer func() {
 		for _, t := range tensorsToClose {
 			if t != nil {
-				fmt.Printf("[DEBUG] closing tensor with shape: %v\n", t.Shape())
+				shape, err := t.Shape()
+				if err != nil {
+					logging.DebugLogf("failed to get tensor shape: %v", err)
+				} else {
+					logging.DebugLogf("closing tensor with shape: %v", shape)
+				}
 				t.Close()
 			}
 		}
@@ -394,37 +434,61 @@ func (m *Model) forward(tokens []int) ([]float32, error) {
 
 	// Process through transformer blocks
 	for i := 0; i < m.config.NumLayers; i++ {
-		fmt.Printf("[DEBUG] Processing transformer block %d\n", i)
+		logging.DebugLogf("Processing transformer block %d", i)
 		nextTensor, err := m.attnSublayers[i].Forward(currentTensor)
 		if err != nil {
-			return nil, fmt.Errorf("attention forward pass failed: %w", err)
+			shape, _ := currentTensor.Shape()
+			logging.DebugLogf("closing tensor with shape: %v", shape)
+			currentTensor.Close()
+			return nil, err
 		}
 		if currentTensor != hiddenStatesTensor {
 			tensorsToClose = append(tensorsToClose, currentTensor)
 		}
 		currentTensor = nextTensor
-		fmt.Printf("[DEBUG] After attention, currentTensor shape: %v\n", currentTensor.Shape())
+		shape, err = currentTensor.Shape()
+		if err != nil {
+			logging.DebugLogf("failed to get attention output shape: %v", err)
+			return nil, err
+		}
+		logging.DebugLogf("After attention, currentTensor shape: %v", shape)
 
 		nextTensor, err = m.ffnSublayers[i].Forward(currentTensor)
 		if err != nil {
-			return nil, fmt.Errorf("ffn forward pass failed: %w", err)
+			shape, _ := currentTensor.Shape()
+			logging.DebugLogf("closing tensor with shape: %v", shape)
+			currentTensor.Close()
+			return nil, err
 		}
 		if currentTensor != hiddenStatesTensor {
 			tensorsToClose = append(tensorsToClose, currentTensor)
 		}
 		currentTensor = nextTensor
-		fmt.Printf("[DEBUG] After FFN, currentTensor shape: %v\n", currentTensor.Shape())
+		shape, err = currentTensor.Shape()
+		if err != nil {
+			logging.DebugLogf("failed to get FFN output shape: %v", err)
+			return nil, err
+		}
+		logging.DebugLogf("After FFN, currentTensor shape: %v", shape)
 	}
 
 	nextTensor, err := m.finalNorm.Forward(currentTensor)
 	if err != nil {
-		return nil, fmt.Errorf("final norm forward pass failed: %w", err)
+		shape, _ := currentTensor.Shape()
+		logging.DebugLogf("closing tensor with shape: %v", shape)
+		currentTensor.Close()
+		return nil, err
 	}
 	if currentTensor != hiddenStatesTensor {
 		tensorsToClose = append(tensorsToClose, currentTensor)
 	}
 	currentTensor = nextTensor
-	fmt.Printf("[DEBUG] After final norm, currentTensor shape: %v\n", currentTensor.Shape())
+	shape, err = currentTensor.Shape()
+	if err != nil {
+		logging.DebugLogf("failed to get final norm output shape: %v", err)
+		return nil, err
+	}
+	logging.DebugLogf("After final norm, currentTensor shape: %v", shape)
 
 	// Get logits from pool
 	logits := m.logitsPool.Get().([]float32)
@@ -433,7 +497,7 @@ func (m *Model) forward(tokens []int) ([]float32, error) {
 	// Get last hidden state and project to vocabulary size
 	lastHiddenState := m.tensorOps.GetLastHiddenState(currentTensor, len(tokens), m.config.HiddenSize)
 	if lastHiddenState == nil {
-		return nil, fmt.Errorf("failed to get last hidden state")
+		return nil, ErrGetLastHiddenState
 	}
 	copy(logits, lastHiddenState)
 
@@ -443,7 +507,12 @@ func (m *Model) forward(tokens []int) ([]float32, error) {
 
 	// Close hiddenStatesTensor after all operations are complete
 	if hiddenStatesTensor != nil {
-		fmt.Printf("[DEBUG] closing hiddenStatesTensor with shape: %v\n", hiddenStatesTensor.Shape())
+		shape, err := hiddenStatesTensor.Shape()
+		if err != nil {
+			logging.DebugLogf("failed to get hidden states tensor shape: %v", err)
+		} else {
+			logging.DebugLogf("closing hiddenStatesTensor with shape: %v", shape)
+		}
 		hiddenStatesTensor.Close()
 	}
 
@@ -744,26 +813,54 @@ func convertInt8ToFloat32(values []int8) []float32 {
 func (m *Model) setAttentionWeights(attn *bitnetmath.AttentionSublayer, block *TransformerBlock) error {
 	// Convert weights to tensors
 	h := m.config.HiddenSize
-	qTensor := tensor.NewTensor(h, h)
+	qTensor, err := tensor.NewTensor(h, h)
+	if err != nil {
+		loggers.Printf(loggers.Debug, "create Q tensor: %v", err)
+		return ErrCreateQTensor
+	}
 	defer qTensor.Close()
-	kTensor := tensor.NewTensor(h, h)
+	kTensor, err := tensor.NewTensor(h, h)
+	if err != nil {
+		loggers.Printf(loggers.Debug, "create K tensor: %v", err)
+		return ErrCreateKTensor
+	}
 	defer kTensor.Close()
-	vTensor := tensor.NewTensor(h, h)
+	vTensor, err := tensor.NewTensor(h, h)
+	if err != nil {
+		loggers.Printf(loggers.Debug, "create V tensor: %v", err)
+		return ErrCreateVTensor
+	}
 	defer vTensor.Close()
-	outTensor := tensor.NewTensor(h, h)
+	outTensor, err := tensor.NewTensor(h, h)
+	if err != nil {
+		loggers.Printf(loggers.Debug, "create output tensor: %v", err)
+		return ErrCreateOutputTensor
+	}
 	defer outTensor.Close()
 
 	// Copy weights into projection matrices
 	for i := 0; i < h; i++ {
 		for j := 0; j < h; j++ {
 			// Q projection
-			qTensor.Set(block.QKVProj[i*h+j], i, j)
+			if err := qTensor.Set(block.QKVProj[i*h+j], i, j); err != nil {
+				loggers.Printf(loggers.Debug, "set Q tensor value: %v", err)
+				return ErrSetQTensorValue
+			}
 			// K projection
-			kTensor.Set(block.QKVProj[h*h+i*h+j], i, j)
+			if err := kTensor.Set(block.QKVProj[h*h+i*h+j], i, j); err != nil {
+				loggers.Printf(loggers.Debug, "set K tensor value: %v", err)
+				return ErrSetKTensorValue
+			}
 			// V projection
-			vTensor.Set(block.QKVProj[2*h*h+i*h+j], i, j)
+			if err := vTensor.Set(block.QKVProj[2*h*h+i*h+j], i, j); err != nil {
+				loggers.Printf(loggers.Debug, "set V tensor value: %v", err)
+				return ErrSetVTensorValue
+			}
 			// Output projection
-			outTensor.Set(block.OutProj[i*h+j], i, j)
+			if err := outTensor.Set(block.OutProj[i*h+j], i, j); err != nil {
+				loggers.Printf(loggers.Debug, "set output tensor value: %v", err)
+				return ErrSetOutputTensorValue
+			}
 		}
 	}
 
@@ -773,9 +870,16 @@ func (m *Model) setAttentionWeights(attn *bitnetmath.AttentionSublayer, block *T
 	}
 
 	// Convert attention norm to float32 and create tensor
-	attnGammaTensor := tensor.NewTensor(h)
+	attnGammaTensor, err := tensor.NewTensor(h)
+	if err != nil {
+		loggers.Printf(loggers.Debug, "create attention gamma tensor: %v", err)
+		return ErrCreateAttentionGamma
+	}
 	for i := 0; i < h; i++ {
-		attnGammaTensor.Set(block.AttnNorm[i], i)
+		if err := attnGammaTensor.Set(block.AttnNorm[i], i); err != nil {
+			loggers.Printf(loggers.Debug, "set attention gamma value: %v", err)
+			return ErrSetAttentionGamma
+		}
 	}
 	if err := attn.SetGamma(attnGammaTensor); err != nil {
 		return ErrAttentionGamma
@@ -787,20 +891,34 @@ func (m *Model) setAttentionWeights(attn *bitnetmath.AttentionSublayer, block *T
 // setFFNWeights sets the FFN weights for a transformer block
 func (m *Model) setFFNWeights(ffn *bitnetmath.FFNSublayer, block *TransformerBlock) error {
 	// Convert FFN weights to tensors
-	ffnUpTensor := tensor.NewTensor(m.config.IntermediateSize, m.config.HiddenSize)
+	ffnUpTensor, err := tensor.NewTensor(m.config.IntermediateSize, m.config.HiddenSize)
+	if err != nil {
+		loggers.Printf(loggers.Debug, "create FFN up tensor: %v", err)
+		return ErrCreateFFNUpTensor
+	}
 	defer ffnUpTensor.Close()
-	ffnDownTensor := tensor.NewTensor(m.config.HiddenSize, m.config.IntermediateSize)
+	ffnDownTensor, err := tensor.NewTensor(m.config.HiddenSize, m.config.IntermediateSize)
+	if err != nil {
+		loggers.Printf(loggers.Debug, "create FFN down tensor: %v", err)
+		return ErrCreateFFNDownTensor
+	}
 	defer ffnDownTensor.Close()
 
 	// Copy FFN weights
 	for i := 0; i < m.config.IntermediateSize; i++ {
 		for j := 0; j < m.config.HiddenSize; j++ {
-			ffnUpTensor.Set(block.FFNUp[i*m.config.HiddenSize+j], i, j)
+			if err := ffnUpTensor.Set(block.FFNUp[i*m.config.HiddenSize+j], i, j); err != nil {
+				loggers.Printf(loggers.Debug, "set FFN up tensor value: %v", err)
+				return ErrSetFFNUpTensorValue
+			}
 		}
 	}
 	for i := 0; i < m.config.HiddenSize; i++ {
 		for j := 0; j < m.config.IntermediateSize; j++ {
-			ffnDownTensor.Set(block.FFNDown[i*m.config.IntermediateSize+j], i, j)
+			if err := ffnDownTensor.Set(block.FFNDown[i*m.config.IntermediateSize+j], i, j); err != nil {
+				loggers.Printf(loggers.Debug, "set FFN down tensor value: %v", err)
+				return ErrSetFFNDownTensorValue
+			}
 		}
 	}
 
@@ -820,17 +938,36 @@ func (m *Model) setFFNWeights(ffn *bitnetmath.FFNSublayer, block *TransformerBlo
 // setFinalNormWeights sets the final normalization weights
 func (m *Model) setFinalNormWeights(norm *bitnetmath.LayerNorm) error {
 	// Convert final norm weights to tensor
-	finalNormTensor := tensor.NewTensor(m.config.HiddenSize)
+	finalNormTensor, err := tensor.NewTensor(m.config.HiddenSize)
+	if err != nil {
+		loggers.Printf(loggers.Debug, "create final norm tensor: %v", err)
+		return ErrCreateFinalNormTensor
+	}
 	defer finalNormTensor.Close()
 	for i := 0; i < m.config.HiddenSize; i++ {
-		finalNormTensor.Set(m.weights.FinalNorm[i], i)
+		if err := finalNormTensor.Set(m.weights.FinalNorm[i], i); err != nil {
+			loggers.Printf(loggers.Debug, "set final norm value: %v", err)
+			return ErrSetFinalNormValue
+		}
 	}
 
 	// Set final norm gamma
-	finalNormGammaTensor := tensor.NewTensor(m.config.HiddenSize)
-	finalNormGammaData := convertInt8ToFloat32(finalNormTensor.Data())
+	finalNormGammaTensor, err := tensor.NewTensor(m.config.HiddenSize)
+	if err != nil {
+		loggers.Printf(loggers.Debug, "create final norm gamma tensor: %v", err)
+		return ErrCreateFinalNormGamma
+	}
+	data, err := finalNormTensor.Data()
+	if err != nil {
+		loggers.Printf(loggers.Debug, "get final norm data: %v", err)
+		return ErrGetFinalNormData
+	}
+	finalNormGammaData := convertInt8ToFloat32(data)
 	for i := 0; i < m.config.HiddenSize; i++ {
-		finalNormGammaTensor.Set(int8(finalNormGammaData[i]), i)
+		if err := finalNormGammaTensor.Set(int8(finalNormGammaData[i]), i); err != nil {
+			loggers.Printf(loggers.Debug, "set final norm gamma value: %v", err)
+			return ErrSetFinalNormGammaValue
+		}
 	}
 	if err := norm.SetGamma(finalNormGammaTensor); err != nil {
 		return ErrFinalNormGamma

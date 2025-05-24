@@ -5,11 +5,58 @@
 package math
 
 import (
+	"errors"
 	"fmt"
 	"math"
 
-	"github.com/hyperifyio/gnd/pkg/bitnet/errors"
+	bitneterrors "github.com/hyperifyio/gnd/pkg/bitnet/errors"
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
+	"github.com/hyperifyio/gnd/pkg/loggers"
+)
+
+// Common errors returned by attention sublayer operations
+var (
+	ErrOutputProjectionCreate = errors.New("attention: failed to create output projection")
+	ErrInputShape             = errors.New("attention: failed to get input shape")
+	ErrInvalidHiddenDim       = errors.New("attention: invalid hidden dimension")
+	ErrPreNormForward         = errors.New("attention: pre-norm forward failed")
+	ErrCloseNormed            = errors.New("attention: failed to close normed tensor")
+	ErrQProjection            = errors.New("attention: q projection failed")
+	ErrCloseQMat              = errors.New("attention: failed to close qMat tensor")
+	ErrKProjection            = errors.New("attention: k projection failed")
+	ErrCloseKMat              = errors.New("attention: failed to close kMat tensor")
+	ErrVProjection            = errors.New("attention: v projection failed")
+	ErrGetQShape              = errors.New("attention: failed to get Q shape")
+	ErrGetKShape              = errors.New("attention: failed to get K shape")
+	ErrGetVShape              = errors.New("attention: failed to get V shape")
+	ErrTransposeQ             = errors.New("attention: failed to transpose Q")
+	ErrTransposeK             = errors.New("attention: failed to transpose K")
+	ErrTransposeV             = errors.New("attention: failed to transpose V")
+	ErrAttentionScores        = errors.New("attention: failed to compute attention scores")
+	ErrGetScoresShape         = errors.New("attention: failed to get scores shape")
+	ErrCloseScores            = errors.New("attention: failed to close scores tensor")
+	ErrScale                  = errors.New("attention: failed to scale scores")
+	ErrCloseScaled            = errors.New("attention: failed to close scaled tensor")
+	ErrSoftmax                = errors.New("attention: failed to apply softmax")
+	ErrGetProbsShape          = errors.New("attention: failed to get probs shape")
+	ErrCloseProbs             = errors.New("attention: failed to close probs tensor")
+	ErrCloseVMat              = errors.New("attention: failed to close vMat tensor")
+	ErrAttentionOutput        = errors.New("attention: failed to compute attention output")
+	ErrGetAttnShape           = errors.New("attention: failed to get attention shape")
+	ErrCloseAttn              = errors.New("attention: failed to close attention tensor")
+	ErrTransposeBack          = errors.New("attention: failed to transpose back")
+	ErrOutputProjection       = errors.New("attention: output projection failed")
+	ErrCloseOutput            = errors.New("attention: failed to close output tensor")
+	ErrAddResidual            = errors.New("attention: failed to add residual connection")
+	ErrGetQueryWeightsShape   = errors.New("attention: failed to get query weights shape")
+	ErrGetKeyWeightsShape     = errors.New("attention: failed to get key weights shape")
+	ErrGetValueWeightsShape   = errors.New("attention: failed to get value weights shape")
+	ErrGetOutputWeightsShape  = errors.New("attention: failed to get output weights shape")
+	ErrGetTensorShape         = errors.New("attention: failed to get tensor shape")
+	ErrReshapeTensor          = errors.New("attention: failed to reshape tensor")
+	ErrReshapeFailed          = errors.New("attention: reshape operation failed")
+	ErrCloseKTransposed       = errors.New("attention: failed to close kTransposed tensor")
+	ErrCloseAttnTensor        = errors.New("attention: failed to close attention tensor")
 )
 
 // AttentionSublayer implements the attention sublayer of a transformer block.
@@ -53,16 +100,16 @@ type AttentionSublayer struct {
 // - Output projection
 func NewAttentionSublayer(hiddenDim, numHeads, numKVHeads int) (*AttentionSublayer, error) {
 	if hiddenDim <= 0 {
-		return nil, errors.ErrInvalidHiddenDim
+		return nil, bitneterrors.ErrInvalidHiddenDim
 	}
 	if numHeads <= 0 {
-		return nil, errors.ErrInvalidNumHeads
+		return nil, bitneterrors.ErrInvalidNumHeads
 	}
 	if numKVHeads <= 0 || numKVHeads > numHeads {
-		return nil, errors.ErrInvalidNumKVHeads
+		return nil, bitneterrors.ErrInvalidNumKVHeads
 	}
 	if hiddenDim%numHeads != 0 {
-		return nil, errors.ErrInvalidHeadDim
+		return nil, bitneterrors.ErrInvalidHeadDim
 	}
 
 	headDim := hiddenDim / numHeads
@@ -75,7 +122,11 @@ func NewAttentionSublayer(hiddenDim, numHeads, numKVHeads int) (*AttentionSublay
 	qProj := NewLinear(hiddenDim, numHeads*headDim)
 	kProj := NewLinear(hiddenDim, numKVHeads*kvHeadDim)
 	vProj := NewLinear(hiddenDim, numKVHeads*kvHeadDim)
-	oProj := NewAttentionOutputProjection(hiddenDim, numHeads)
+	oProj, err := NewAttentionOutputProjection(hiddenDim, numHeads)
+	if err != nil {
+		loggers.Printf(loggers.Debug, "create output projection: %v", err)
+		return nil, ErrOutputProjectionCreate
+	}
 
 	return &AttentionSublayer{
 		hiddenDim:  hiddenDim,
@@ -106,94 +157,112 @@ func NewAttentionSublayer(hiddenDim, numHeads, numKVHeads int) (*AttentionSublay
 // Returns a tensor with the same shape as the input and an error if any step fails.
 func (a *AttentionSublayer) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 	if a.closed {
-		return nil, errors.ErrLayerClosed
+		return nil, bitneterrors.ErrLayerClosed
 	}
 	if x == nil {
-		return nil, errors.ErrNilTensor
+		return nil, bitneterrors.ErrNilTensor
 	}
 
 	// Get input shape
 	shape, err := x.Shape()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get input shape: %w", err)
+		loggers.Printf(loggers.Debug, "failed to get input shape: %v", err)
+		return nil, ErrInputShape
 	}
 	if len(shape) < 2 {
-		return nil, errors.ErrInvalidShape
+		return nil, bitneterrors.ErrInvalidShape
 	}
 
 	hiddenDim := shape[len(shape)-1]
 
 	// Validate hidden dimension
 	if hiddenDim != a.hiddenDim {
-		return nil, fmt.Errorf("tensor: invalid hidden dimension, got %d, want %d", hiddenDim, a.hiddenDim)
+		loggers.Printf(loggers.Debug, "tensor: invalid hidden dimension, got %d, want %d", hiddenDim, a.hiddenDim)
+		return nil, ErrInvalidHiddenDim
 	}
 
 	// Pre-norm layer normalization
 	normed, err := a.preNorm.Forward(x)
 	if err != nil {
-		return nil, fmt.Errorf("pre-norm forward: %w", err)
+		loggers.Printf(loggers.Debug, "pre-norm forward: %v", err)
+		return nil, ErrPreNormForward
 	}
 
 	// Project to Q, K, V (do not close normed until all projections are done)
 	qMat, err := a.qProj.Forward(normed)
 	if err != nil {
 		if err := normed.Close(); err != nil {
-			return nil, fmt.Errorf("close normed: %w", err)
+			loggers.Printf(loggers.Debug, "close normed: %v", err)
+			return nil, ErrCloseNormed
 		}
-		return nil, fmt.Errorf("q projection: %w", err)
+		loggers.Printf(loggers.Debug, "q projection: %v", err)
+		return nil, ErrQProjection
 	}
 	kMat, err := a.kProj.Forward(normed)
 	if err != nil {
 		if err := normed.Close(); err != nil {
-			return nil, fmt.Errorf("close normed: %w", err)
+			loggers.Printf(loggers.Debug, "close normed: %v", err)
+			return nil, ErrCloseNormed
 		}
 		if err := qMat.Close(); err != nil {
-			return nil, fmt.Errorf("close qMat: %w", err)
+			loggers.Printf(loggers.Debug, "close qMat: %v", err)
+			return nil, ErrCloseQMat
 		}
-		return nil, fmt.Errorf("k projection: %w", err)
+		loggers.Printf(loggers.Debug, "k projection: %v", err)
+		return nil, ErrKProjection
 	}
 	vMat, err := a.vProj.Forward(normed)
 	if err := normed.Close(); err != nil { // Now safe to close
-		return nil, fmt.Errorf("close normed: %w", err)
+		loggers.Printf(loggers.Debug, "close normed: %v", err)
+		return nil, ErrCloseNormed
 	}
 	if err != nil {
 		if err := qMat.Close(); err != nil {
-			return nil, fmt.Errorf("close qMat: %w", err)
+			loggers.Printf(loggers.Debug, "close qMat: %v", err)
+			return nil, ErrCloseQMat
 		}
 		if err := kMat.Close(); err != nil {
-			return nil, fmt.Errorf("close kMat: %w", err)
+			loggers.Printf(loggers.Debug, "close kMat: %v", err)
+			return nil, ErrCloseKMat
 		}
-		return nil, fmt.Errorf("v projection: %w", err)
+		loggers.Printf(loggers.Debug, "v projection: %v", err)
+		return nil, ErrVProjection
 	}
 
 	// Debug: print shapes after projection
 	qShape, err := qMat.Shape()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get Q shape: %w", err)
+		loggers.Printf(loggers.Debug, "failed to get Q shape: %v", err)
+		return nil, ErrGetQShape
 	}
 	kShape, err := kMat.Shape()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get K shape: %w", err)
+		loggers.Printf(loggers.Debug, "failed to get K shape: %v", err)
+		return nil, ErrGetKShape
 	}
 	vShape, err := vMat.Shape()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get V shape: %w", err)
+		loggers.Printf(loggers.Debug, "failed to get V shape: %v", err)
+		return nil, ErrGetVShape
 	}
-	fmt.Printf("[DEBUG] Q shape: %v\n", qShape)
-	fmt.Printf("[DEBUG] K shape: %v\n", kShape)
-	fmt.Printf("[DEBUG] V shape: %v\n", vShape)
+	loggers.Printf(loggers.Debug, "Q shape: %v", qShape)
+	loggers.Printf(loggers.Debug, "K shape: %v", kShape)
+	loggers.Printf(loggers.Debug, "V shape: %v", vShape)
 
 	// Reshape for attention
 	qMatOp, err := transposeForAttention(qMat)
 	if err != nil {
 		if err := qMat.Close(); err != nil {
-			return nil, fmt.Errorf("close qMat: %w", err)
+			loggers.Printf(loggers.Debug, "close qMat: %v", err)
+			return nil, ErrTransposeQ
 		}
 		if err := kMat.Close(); err != nil {
-			return nil, fmt.Errorf("close kMat: %w", err)
+			loggers.Printf(loggers.Debug, "close kMat: %v", err)
+			return nil, ErrTransposeK
 		}
 		if err := vMat.Close(); err != nil {
-			return nil, fmt.Errorf("close vMat: %w", err)
+			loggers.Printf(loggers.Debug, "close vMat: %v", err)
+			return nil, ErrTransposeV
 		}
 		return nil, fmt.Errorf("transpose q: %w", err)
 	}
@@ -202,13 +271,16 @@ func (a *AttentionSublayer) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 	kMatOp, err := transposeForAttention(kMat)
 	if err != nil {
 		if err := qMat.Close(); err != nil {
-			return nil, fmt.Errorf("close qMat: %w", err)
+			loggers.Printf(loggers.Debug, "close qMat: %v", err)
+			return nil, ErrTransposeQ
 		}
 		if err := kMat.Close(); err != nil {
-			return nil, fmt.Errorf("close kMat: %w", err)
+			loggers.Printf(loggers.Debug, "close kMat: %v", err)
+			return nil, ErrTransposeK
 		}
 		if err := vMat.Close(); err != nil {
-			return nil, fmt.Errorf("close vMat: %w", err)
+			loggers.Printf(loggers.Debug, "close vMat: %v", err)
+			return nil, ErrTransposeV
 		}
 		return nil, fmt.Errorf("transpose k: %w", err)
 	}
@@ -217,120 +289,202 @@ func (a *AttentionSublayer) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 	vMatOp, err := transposeForAttention(vMat)
 	if err != nil {
 		if err := qMat.Close(); err != nil {
-			return nil, fmt.Errorf("close qMat: %w", err)
+			loggers.Printf(loggers.Debug, "close qMat: %v", err)
+			return nil, ErrTransposeQ
 		}
 		if err := kMat.Close(); err != nil {
-			return nil, fmt.Errorf("close kMat: %w", err)
+			loggers.Printf(loggers.Debug, "close kMat: %v", err)
+			return nil, ErrTransposeK
 		}
 		if err := vMat.Close(); err != nil {
-			return nil, fmt.Errorf("close vMat: %w", err)
+			loggers.Printf(loggers.Debug, "close vMat: %v", err)
+			return nil, ErrTransposeV
 		}
 		return nil, fmt.Errorf("transpose v: %w", err)
 	}
 	vMat = vMatOp
 
-	fmt.Printf("[DEBUG] Q reshaped: %v\n", qMat.Shape())
-	fmt.Printf("[DEBUG] K reshaped: %v\n", kMat.Shape())
-	fmt.Printf("[DEBUG] V reshaped: %v\n", vMat.Shape())
+	// Debug: print shapes after reshaping
+	qShape, err = qMat.Shape()
+	if err != nil {
+		loggers.Printf(loggers.Debug, "failed to get Q shape: %v", err)
+		return nil, ErrGetQShape
+	}
+	kShape, err = kMat.Shape()
+	if err != nil {
+		loggers.Printf(loggers.Debug, "failed to get K shape: %v", err)
+		return nil, ErrGetKShape
+	}
+	vShape, err = vMat.Shape()
+	if err != nil {
+		loggers.Printf(loggers.Debug, "failed to get V shape: %v", err)
+		return nil, ErrGetVShape
+	}
+	loggers.Printf(loggers.Debug, "Q reshaped: %v", qShape)
+	loggers.Printf(loggers.Debug, "K reshaped: %v", kShape)
+	loggers.Printf(loggers.Debug, "V reshaped: %v", vShape)
 
 	// Compute attention scores
 	kTransposedOp, err := transposeForAttentionK(kMat)
 	if err := kMat.Close(); err != nil { // kMat is not used after this point
+		loggers.Printf(loggers.Debug, "close kMat: %v", err)
 		return nil, fmt.Errorf("close kMat: %w", err)
 	}
 	if err != nil {
 		if err := qMat.Close(); err != nil {
-			return nil, fmt.Errorf("close qMat: %w", err)
+			loggers.Printf(loggers.Debug, "close qMat: %v", err)
+			return nil, ErrTransposeQ
 		}
 		if err := vMat.Close(); err != nil {
-			return nil, fmt.Errorf("close vMat: %w", err)
+			loggers.Printf(loggers.Debug, "close vMat: %v", err)
+			return nil, ErrTransposeV
 		}
 		return nil, fmt.Errorf("transpose k: %w", err)
 	}
 	kTransposed := kTransposedOp
 
 	// Add debug output before MatMul
-	fmt.Printf("[DEBUG] MatMul: qMat shape: %v, kTransposed shape: %v\n", qMat.Shape(), kTransposed.Shape())
+	qShape, err = qMat.Shape()
+	if err != nil {
+		loggers.Printf(loggers.Debug, "failed to get Q shape: %v", err)
+		return nil, ErrGetQShape
+	}
+	kShape, err = kTransposed.Shape()
+	if err != nil {
+		loggers.Printf(loggers.Debug, "failed to get K shape: %v", err)
+		return nil, ErrGetKShape
+	}
+	loggers.Printf(loggers.Debug, "MatMul: qMat shape: %v, kTransposed shape: %v", qShape, kShape)
 	scores, err := qMat.MatMul(kTransposed)
 	if err := qMat.Close(); err != nil { // qMat is not used after this point
-		return nil, fmt.Errorf("close qMat: %w", err)
+		loggers.Printf(loggers.Debug, "close qMat: %v", err)
+		return nil, ErrCloseQMat
 	}
 	if err := kTransposed.Close(); err != nil { // kTransposed is not used after this point
+		loggers.Printf(loggers.Debug, "close kTransposed: %v", err)
 		return nil, fmt.Errorf("close kTransposed: %w", err)
 	}
 	if err != nil {
 		if err := vMat.Close(); err != nil {
-			return nil, fmt.Errorf("close vMat: %w", err)
+			loggers.Printf(loggers.Debug, "close vMat: %v", err)
+			return nil, ErrCloseVMat
 		}
-		return nil, fmt.Errorf("attention scores: %w", err)
+		loggers.Printf(loggers.Debug, "attention scores: %v", err)
+		return nil, ErrAttentionScores
 	}
 
 	// Debug: print shape after matmul
-	fmt.Printf("[DEBUG] scores shape: %v\n", scores.Shape())
+	scoresShape, err := scores.Shape()
+	if err != nil {
+		loggers.Printf(loggers.Debug, "failed to get scores shape: %v", err)
+		return nil, ErrGetScoresShape
+	}
+	loggers.Printf(loggers.Debug, "scores shape: %v", scoresShape)
 
 	// Scale scores
 	scale := float32(1.0 / math.Sqrt(float64(a.headDim)))
 	scaled, err := scores.Scale(scale)
 	if err != nil {
 		if err := scores.Close(); err != nil {
-			return nil, fmt.Errorf("close scores: %w", err)
+			loggers.Printf(loggers.Debug, "close scores: %v", err)
+			return nil, ErrCloseScores
 		}
-		return nil, fmt.Errorf("scale: %w", err)
+		loggers.Printf(loggers.Debug, "scale: %v", err)
+		return nil, ErrScale
 	}
 
 	// Apply softmax
 	probs, err := scaled.Softmax(-1)
 	if err := scaled.Close(); err != nil { // scaled is not used after this point
-		return nil, fmt.Errorf("close scaled: %w", err)
+		loggers.Printf(loggers.Debug, "close scaled: %v", err)
+		return nil, ErrCloseScaled
 	}
 	if err != nil {
 		if err := vMat.Close(); err != nil {
-			return nil, fmt.Errorf("close vMat: %w", err)
+			loggers.Printf(loggers.Debug, "close vMat: %v", err)
+			return nil, ErrCloseVMat
 		}
-		return nil, fmt.Errorf("softmax: %w", err)
+		loggers.Printf(loggers.Debug, "softmax: %v", err)
+		return nil, ErrSoftmax
 	}
 
 	// Add debug output before MatMul
-	fmt.Printf("[DEBUG] MatMul: probs shape: %v, vMat shape: %v\n", probs.Shape(), vMat.Shape())
+	probsShape, err := probs.Shape()
+	if err != nil {
+		loggers.Printf(loggers.Debug, "failed to get probs shape: %v", err)
+		return nil, ErrGetProbsShape
+	}
+	vShape, err = vMat.Shape()
+	if err != nil {
+		loggers.Printf(loggers.Debug, "failed to get V shape: %v", err)
+		return nil, ErrGetVShape
+	}
+	loggers.Printf(loggers.Debug, "MatMul: probs shape: %v, vMat shape: %v", probsShape, vShape)
 	// Apply attention to values
 	attn, err := probs.MatMul(vMat)
 	if err := probs.Close(); err != nil { // probs is not used after this point
-		return nil, fmt.Errorf("close probs: %w", err)
+		loggers.Printf(loggers.Debug, "close probs: %v", err)
+		return nil, ErrCloseProbs
 	}
 	if err := vMat.Close(); err != nil { // vMat is not used after this point
-		return nil, fmt.Errorf("close vMat: %w", err)
+		loggers.Printf(loggers.Debug, "close vMat: %v", err)
+		return nil, ErrCloseVMat
 	}
 	if err != nil {
-		return nil, fmt.Errorf("attention output: %w", err)
+		loggers.Printf(loggers.Debug, "attention output: %v", err)
+		return nil, ErrAttentionOutput
 	}
 
 	// Debug: print shape after attention matmul
-	fmt.Printf("[DEBUG] attn shape: %v\n", attn.Shape())
+	attnShape, err := attn.Shape()
+	if err != nil {
+		loggers.Printf(loggers.Debug, "failed to get attn shape: %v", err)
+		return nil, ErrGetAttnShape
+	}
+	loggers.Printf(loggers.Debug, "attn shape: %v", attnShape)
 
 	// Transpose back
 	attnOp, err := transposeBack(attn)
 	if err != nil {
 		if err := attn.Close(); err != nil {
-			return nil, fmt.Errorf("close attn: %w", err)
+			loggers.Printf(loggers.Debug, "close attn: %v", err)
+			return nil, ErrCloseAttn
 		}
-		return nil, fmt.Errorf("transpose back: %w", err)
+		loggers.Printf(loggers.Debug, "transpose back: %v", err)
+		return nil, ErrTransposeBack
 	}
 	attn = attnOp
-	fmt.Printf("[DEBUG] attn transposed back: %v\n", attn.Shape())
+	attnShape, err = attn.Shape()
+	if err != nil {
+		loggers.Printf(loggers.Debug, "failed to get attn shape: %v", err)
+		return nil, ErrGetAttnShape
+	}
+	loggers.Printf(loggers.Debug, "attn transposed back: %v", attnShape)
 
 	// Project to output dimension
 	output, err := a.oProj.Project(attn)
 	if err := attn.Close(); err != nil { // attn is not used after this point
+		loggers.Printf(loggers.Debug, "close attn: %v", err)
 		return nil, fmt.Errorf("close attn: %w", err)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("output projection: %w", err)
+		loggers.Printf(loggers.Debug, "output projection: %v", err)
+		return nil, ErrOutputProjection
 	}
 
 	// Add residual connection
-	result := output.Add(x)
+	result, err := output.Add(x)
+	if err != nil {
+		if err := output.Close(); err != nil {
+			loggers.Printf(loggers.Debug, "close output: %v", err)
+			return nil, ErrCloseOutput
+		}
+		loggers.Printf(loggers.Debug, "add residual: %v", err)
+		return nil, ErrAddResidual
+	}
 	if err := output.Close(); err != nil { // output is not used after this point
-		return nil, fmt.Errorf("close output: %w", err)
+		loggers.Printf(loggers.Debug, "close output: %v", err)
+		return nil, ErrCloseOutput
 	}
 
 	return result, nil
@@ -348,48 +502,60 @@ func (a *AttentionSublayer) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 func (a *AttentionSublayer) SetWeights(queryWeights, keyWeights, valueWeights, outWeights *tensor.Tensor) error {
 	// Check for nil weights
 	if queryWeights == nil {
-		return errors.ErrSetQueryWeights
+		return bitneterrors.ErrSetQueryWeights
 	}
 	if keyWeights == nil {
-		return errors.ErrSetKeyWeights
+		return bitneterrors.ErrSetKeyWeights
 	}
 	if valueWeights == nil {
-		return errors.ErrSetValueWeights
+		return bitneterrors.ErrSetValueWeights
 	}
 	if outWeights == nil {
-		return errors.ErrSetOutputWeights
+		return bitneterrors.ErrSetOutputWeights
 	}
 
 	// Check shapes
-	queryShape := queryWeights.Shape()
+	queryShape, err := queryWeights.Shape()
+	if err != nil {
+		return fmt.Errorf("get query weights shape: %w", err)
+	}
 	if len(queryShape) != 2 || queryShape[0] != a.hiddenDim || queryShape[1] != a.numHeads*a.headDim {
-		return errors.ErrSetQueryWeights
+		return bitneterrors.ErrSetQueryWeights
 	}
-	keyShape := keyWeights.Shape()
+	keyShape, err := keyWeights.Shape()
+	if err != nil {
+		return fmt.Errorf("get key weights shape: %w", err)
+	}
 	if len(keyShape) != 2 || keyShape[0] != a.hiddenDim || keyShape[1] != a.hiddenDim {
-		return errors.ErrSetKeyWeights
+		return bitneterrors.ErrSetKeyWeights
 	}
-	valueShape := valueWeights.Shape()
+	valueShape, err := valueWeights.Shape()
+	if err != nil {
+		return fmt.Errorf("get value weights shape: %w", err)
+	}
 	if len(valueShape) != 2 || valueShape[0] != a.hiddenDim || valueShape[1] != a.hiddenDim {
-		return errors.ErrSetValueWeights
+		return bitneterrors.ErrSetValueWeights
 	}
-	outShape := outWeights.Shape()
+	outShape, err := outWeights.Shape()
+	if err != nil {
+		return fmt.Errorf("get output weights shape: %w", err)
+	}
 	if len(outShape) != 2 || outShape[0] != a.numHeads*a.headDim || outShape[1] != a.hiddenDim {
-		return errors.ErrSetOutputWeights
+		return bitneterrors.ErrSetOutputWeights
 	}
 
 	// Set weights
 	if err := a.qProj.SetWeights(queryWeights); err != nil {
-		return errors.ErrSetQueryWeights
+		return bitneterrors.ErrSetQueryWeights
 	}
 	if err := a.kProj.SetWeights(keyWeights); err != nil {
-		return errors.ErrSetKeyWeights
+		return bitneterrors.ErrSetKeyWeights
 	}
 	if err := a.vProj.SetWeights(valueWeights); err != nil {
-		return errors.ErrSetValueWeights
+		return bitneterrors.ErrSetValueWeights
 	}
 	if err := a.oProj.SetWeights(outWeights); err != nil {
-		return errors.ErrSetOutputWeights
+		return bitneterrors.ErrSetOutputWeights
 	}
 	return nil
 }
@@ -402,7 +568,7 @@ func (a *AttentionSublayer) SetWeights(queryWeights, keyWeights, valueWeights, o
 // Returns an error if the gamma tensor is invalid.
 func (a *AttentionSublayer) SetGamma(gamma *tensor.Tensor) error {
 	if gamma == nil {
-		return errors.ErrSetGamma
+		return bitneterrors.ErrSetGamma
 	}
 	return a.preNorm.SetGamma(gamma)
 }
@@ -435,24 +601,37 @@ func (a *AttentionSublayer) Close() error {
 // transposeForAttention reshapes a tensor for attention computation.
 func transposeForAttention(t *tensor.Tensor) (*tensor.Tensor, error) {
 	if t == nil {
-		return nil, fmt.Errorf("nil tensor")
+		return nil, bitneterrors.ErrNilTensor
 	}
 
-	shape := t.Shape()
+	shape, err := t.Shape()
+	if err != nil {
+		loggers.Printf(loggers.Debug, "get tensor shape: %v", err)
+		return nil, ErrGetTensorShape
+	}
 	if len(shape) != 3 {
-		return nil, fmt.Errorf("invalid input shape: expected 3 dimensions, got %d", len(shape))
+		loggers.Printf(loggers.Debug, "invalid input shape: expected 3 dimensions, got %d", len(shape))
+		return nil, bitneterrors.ErrInvalidShape
 	}
 
 	// Reshape to [batch_size, 1, seq_len]
-	reshaped1 := t.Reshape(shape[0], 1, shape[1])
+	reshaped1, err := t.Reshape(shape[0], 1, shape[1])
+	if err != nil {
+		loggers.Printf(loggers.Debug, "reshape tensor: %v", err)
+		return nil, ErrReshapeTensor
+	}
 	if reshaped1 == nil {
-		return nil, fmt.Errorf("failed to reshape tensor")
+		return nil, ErrReshapeFailed
 	}
 
 	// Reshape to [batch_size, seq_len, head_dim, 64]
-	reshaped2 := reshaped1.Reshape(shape[0], shape[1], shape[2]/64, 64)
+	reshaped2, err := reshaped1.Reshape(shape[0], shape[1], shape[2]/64, 64)
+	if err != nil {
+		loggers.Printf(loggers.Debug, "reshape tensor: %v", err)
+		return nil, ErrReshapeTensor
+	}
 	if reshaped2 == nil {
-		return nil, fmt.Errorf("failed to reshape tensor")
+		return nil, ErrReshapeFailed
 	}
 
 	return reshaped2, nil
@@ -461,24 +640,37 @@ func transposeForAttention(t *tensor.Tensor) (*tensor.Tensor, error) {
 // transposeForAttentionK reshapes a tensor for key attention computation.
 func transposeForAttentionK(t *tensor.Tensor) (*tensor.Tensor, error) {
 	if t == nil {
-		return nil, fmt.Errorf("nil tensor")
+		return nil, bitneterrors.ErrNilTensor
 	}
 
-	shape := t.Shape()
+	shape, err := t.Shape()
+	if err != nil {
+		loggers.Printf(loggers.Debug, "get tensor shape: %v", err)
+		return nil, ErrGetTensorShape
+	}
 	if len(shape) != 3 {
-		return nil, fmt.Errorf("invalid input shape: expected 3 dimensions, got %d", len(shape))
+		loggers.Printf(loggers.Debug, "invalid input shape: expected 3 dimensions, got %d", len(shape))
+		return nil, bitneterrors.ErrInvalidShape
 	}
 
 	// Reshape to [batch_size, 1, seq_len]
-	reshaped1 := t.Reshape(shape[0], 1, shape[1])
+	reshaped1, err := t.Reshape(shape[0], 1, shape[1])
+	if err != nil {
+		loggers.Printf(loggers.Debug, "reshape tensor: %v", err)
+		return nil, ErrReshapeTensor
+	}
 	if reshaped1 == nil {
-		return nil, fmt.Errorf("failed to reshape tensor")
+		return nil, ErrReshapeFailed
 	}
 
 	// Reshape to [batch_size, seq_len, head_dim, 64]
-	reshaped2 := reshaped1.Reshape(shape[0], shape[1], shape[2]/64, 64)
+	reshaped2, err := reshaped1.Reshape(shape[0], shape[1], shape[2]/64, 64)
+	if err != nil {
+		loggers.Printf(loggers.Debug, "reshape tensor: %v", err)
+		return nil, ErrReshapeTensor
+	}
 	if reshaped2 == nil {
-		return nil, fmt.Errorf("failed to reshape tensor")
+		return nil, ErrReshapeFailed
 	}
 
 	return reshaped2, nil
@@ -487,37 +679,64 @@ func transposeForAttentionK(t *tensor.Tensor) (*tensor.Tensor, error) {
 // transposeForAttentionV reshapes a tensor for value attention computation.
 func transposeForAttentionV(t *tensor.Tensor) (*tensor.Tensor, error) {
 	if t == nil {
-		return nil, fmt.Errorf("nil tensor")
+		return nil, bitneterrors.ErrNilTensor
 	}
 
-	shape := t.Shape()
+	shape, err := t.Shape()
+	if err != nil {
+		loggers.Printf(loggers.Debug, "get tensor shape: %v", err)
+		return nil, ErrGetTensorShape
+	}
 	if len(shape) != 4 {
-		return nil, fmt.Errorf("invalid input shape: expected 4 dimensions, got %d", len(shape))
+		loggers.Printf(loggers.Debug, "invalid input shape: expected 4 dimensions, got %d", len(shape))
+		return nil, bitneterrors.ErrInvalidShape
 	}
 
 	// Reshape to [batch_size, seq_len * head_dim]
-	reshaped1 := t.Reshape(shape[0], shape[1]*shape[2])
+	reshaped1, err := t.Reshape(shape[0], shape[1]*shape[2])
+	if err != nil {
+		loggers.Printf(loggers.Debug, "reshape tensor: %v", err)
+		return nil, ErrReshapeTensor
+	}
 	if reshaped1 == nil {
-		return nil, fmt.Errorf("failed to reshape tensor")
+		return nil, ErrReshapeFailed
 	}
 
 	// Reshape to [batch_size, seq_len, head_dim]
-	reshaped2 := reshaped1.Reshape(shape[0], shape[1], shape[2]*shape[3])
+	reshaped2, err := reshaped1.Reshape(shape[0], shape[1], shape[2]*shape[3])
+	if err != nil {
+		loggers.Printf(loggers.Debug, "reshape tensor: %v", err)
+		return nil, ErrReshapeTensor
+	}
 	if reshaped2 == nil {
-		return nil, fmt.Errorf("failed to reshape tensor")
+		return nil, ErrReshapeFailed
 	}
 
 	return reshaped2, nil
 }
 
 func transposeBack(t *tensor.Tensor) (*tensor.Tensor, error) {
-	shape := t.Shape()
+	shape, err := t.Shape()
+	if err != nil {
+		loggers.Printf(loggers.Debug, "get tensor shape: %v", err)
+		return nil, ErrGetTensorShape
+	}
 	switch len(shape) {
 	case 3:
-		return t.Reshape(shape[0], shape[1]*shape[2]), nil
+		result, err := t.Reshape(shape[0], shape[1]*shape[2])
+		if err != nil {
+			loggers.Printf(loggers.Debug, "reshape tensor: %v", err)
+			return nil, ErrReshapeTensor
+		}
+		return result, nil
 	case 4:
-		return t.Reshape(shape[0], shape[1], shape[2]*shape[3]), nil
+		result, err := t.Reshape(shape[0], shape[1], shape[2]*shape[3])
+		if err != nil {
+			loggers.Printf(loggers.Debug, "reshape tensor: %v", err)
+			return nil, ErrReshapeTensor
+		}
+		return result, nil
 	default:
-		return nil, errors.ErrInvalidShape
+		return nil, bitneterrors.ErrInvalidShape
 	}
 }

@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"sync"
 	"testing"
+
+	"github.com/hyperifyio/gnd/pkg/bitnet/logging"
 )
 
 // TestNewTensor tests tensor creation with various shapes
@@ -538,6 +540,18 @@ func TestTensor_Reshape(t *testing.T) {
 					t.Errorf("Data[%d] = %v, want %v", i, reshapedData[i], originalData[i])
 				}
 			}
+
+			// Debug output
+			reshapedData, err = reshaped.Data()
+			if err != nil {
+				t.Errorf("failed to get data: %v", err)
+			}
+			reshapedShape, err := reshaped.Shape()
+			if err != nil {
+				t.Errorf("failed to get shape: %v", err)
+			}
+			logging.DebugLogf("Reshaped tensor data: %v", reshapedData)
+			logging.DebugLogf("Reshaped tensor shape: %v", reshapedShape)
 		})
 	}
 }
@@ -664,8 +678,8 @@ func TestTensorReshapeEdgeCase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Tensor.Data() failed: %v", err)
 	}
-	fmt.Printf("Reshaped tensor data: %v\n", data)
-	fmt.Printf("Reshaped tensor shape: %v\n", shape)
+	logging.DebugLogf("Reshaped tensor data: %v", data)
+	logging.DebugLogf("Reshaped tensor shape: %v", shape)
 	// Check data integrity
 	for i := 0; i < 4; i++ {
 		got, err := reshaped.Get(0, 0, i)

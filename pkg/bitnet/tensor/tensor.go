@@ -7,14 +7,14 @@ package tensor
 
 import (
 	"errors"
-	"fmt"
 	"math"
 	"runtime"
 	"sync"
 	"sync/atomic"
 
 	bitneterrors "github.com/hyperifyio/gnd/pkg/bitnet/errors"
-	"github.com/hyperifyio/gnd/pkg/loggers"
+	"github.com/hyperifyio/gnd/pkg/bitnet/internal/math/utils"
+	"github.com/hyperifyio/gnd/pkg/bitnet/logging"
 )
 
 var (
@@ -31,8 +31,9 @@ var (
 )
 
 // DebugLog logs debug information to stderr using the configured logger.
+// Deprecated: Use logging.DebugLogf instead.
 func DebugLog(format string, args ...interface{}) {
-	loggers.Printf(loggers.Debug, format, args...)
+	logging.DebugLogf(format, args...)
 }
 
 // Tensor represents a multi-dimensional array of ternary values (-1, 0, +1).
@@ -65,7 +66,7 @@ func NewTensor(shape ...int) (*Tensor, error) {
 	}
 	for _, dim := range shape {
 		if dim <= 0 {
-			loggers.Printf(loggers.Debug, "Invalid shape dimension encountered: %v", shape)
+			logging.DebugLogf("Invalid shape dimension encountered: %v", shape)
 			return nil, ErrTensorInvalidShape
 		}
 	}
@@ -257,7 +258,7 @@ func (t *Tensor) Close() error {
 		// Store shape for debug logging before clearing fields
 		shape := make([]int, len(t.shape))
 		copy(shape, t.shape)
-		fmt.Printf("[DEBUG] Closing tensor with shape: %v\n", shape)
+		logging.DebugLogf("Closing tensor with shape: %v", shape)
 
 		// Clear fields
 		t.data = nil
@@ -597,7 +598,7 @@ func (t *Tensor) MatMul(other *Tensor) (*Tensor, error) {
 	}
 
 	// Add debug output for shape and stride
-	fmt.Printf("[DEBUG] MatMul: t shape: %v, t stride: %v, other shape: %v, other stride: %v\n", tShape, t.stride, oShape, other.stride)
+	logging.DebugLogf("MatMul: t shape: %v, t stride: %v, other shape: %v, other stride: %v", tShape, t.stride, oShape, other.stride)
 
 	// Validate shapes
 	if len(tShape) < 2 || len(oShape) < 2 {
@@ -608,7 +609,7 @@ func (t *Tensor) MatMul(other *Tensor) (*Tensor, error) {
 	}
 
 	// Compute broadcasted batch shape
-	batchShape := broadcastShapes(tShape[:len(tShape)-2], oShape[:len(oShape)-2])
+	batchShape := utils.BroadcastShapes(tShape[:len(tShape)-2], oShape[:len(oShape)-2])
 	if batchShape == nil {
 		return nil, bitneterrors.ErrInvalidShape
 	}
@@ -641,7 +642,7 @@ func (t *Tensor) MatMul(other *Tensor) (*Tensor, error) {
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("[DEBUG] MatMul: result shape: %v\n", resultShape)
+	logging.DebugLogf("MatMul: result shape: %v", resultShape)
 
 	// Perform matrix multiplication in parallel
 	numWorkers := runtime.NumCPU()
@@ -675,7 +676,7 @@ func (t *Tensor) MatMul(other *Tensor) (*Tensor, error) {
 
 				// Add debug output for indices and offsets
 				if j == start {
-					fmt.Printf("[DEBUG] MatMul: indices=%v, tBatchOffset=%d, oBatchOffset=%d\n", indices, tBatchOffset, oBatchOffset)
+					logging.DebugLogf("MatMul: indices=%v, tBatchOffset=%d, oBatchOffset=%d", indices, tBatchOffset, oBatchOffset)
 				}
 
 				// Perform matrix multiplication for this batch
@@ -683,7 +684,7 @@ func (t *Tensor) MatMul(other *Tensor) (*Tensor, error) {
 					tIdx := tBatchOffset + indices[len(batchShape)]*tShape[len(tShape)-1] + k
 					oIdx := oBatchOffset + k*oShape[len(oShape)-1] + indices[len(batchShape)+1]
 					if tIdx < 0 || tIdx >= len(t.data) || oIdx < 0 || oIdx >= len(other.data) {
-						fmt.Printf("[ERROR] MatMul: tIdx=%d, oIdx=%d, t.data len=%d, other.data len=%d\n", tIdx, oIdx, len(t.data), len(other.data))
+						logging.DebugLogf("MatMul: tIdx=%d, oIdx=%d, t.data len=%d, other.data len=%d", tIdx, oIdx, len(t.data), len(other.data))
 						continue
 					}
 					sum += int32(t.data[tIdx]) * int32(other.data[oIdx])
@@ -703,42 +704,6 @@ func (t *Tensor) MatMul(other *Tensor) (*Tensor, error) {
 	wg.Wait()
 
 	return result, nil
-}
-
-// broadcastShapes computes the broadcasted shape for two input shapes, or returns nil if not broadcastable.
-func broadcastShapes(a, b []int) []int {
-	// Right-align shapes
-	n := maxInt(len(a), len(b))
-	out := make([]int, n)
-	for i := 0; i < n; i++ {
-		var ad, bd int
-		if i < len(a) {
-			ad = a[len(a)-1-i]
-		} else {
-			ad = 1
-		}
-		if i < len(b) {
-			bd = b[len(b)-1-i]
-		} else {
-			bd = 1
-		}
-		if ad != bd && ad != 1 && bd != 1 {
-			return nil
-		}
-		if ad > bd {
-			out[n-1-i] = ad
-		} else {
-			out[n-1-i] = bd
-		}
-	}
-	return out
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 // Softmax applies the softmax function along the specified axis.

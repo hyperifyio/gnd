@@ -6,16 +6,26 @@ package math
 
 import (
 	"errors"
-	"fmt"
 
+	bitneterrors "github.com/hyperifyio/gnd/pkg/bitnet/errors"
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
+	"github.com/hyperifyio/gnd/pkg/loggers"
 )
 
 // Error definitions
 var (
-	ErrNilTensor    = errors.New("nil tensor")
-	ErrClosed       = errors.New("operation on closed tensor")
-	ErrInvalidShape = errors.New("invalid tensor shape")
+	ErrNilTensor        = errors.New("attention: nil tensor")
+	ErrClosed           = errors.New("attention: operation on closed tensor")
+	ErrGetInputShape    = errors.New("attention: failed to get input shape")
+	ErrReshapeInput     = errors.New("attention: failed to reshape input tensor")
+	ErrCreateHeadOutput = errors.New("attention: failed to create head output tensor")
+	ErrGetReshapedValue = errors.New("attention: failed to get value from reshaped tensor")
+	ErrSetHeadOutput    = errors.New("attention: failed to set value in head output tensor")
+	ErrCreateCombined   = errors.New("attention: failed to create combined output tensor")
+	ErrGetHeadOutput    = errors.New("attention: failed to get value from head output tensor")
+	ErrSetCombined      = errors.New("attention: failed to set value in combined tensor")
+	ErrReshapeCombined  = errors.New("attention: failed to reshape combined tensor")
+	ErrGetWeightsShape  = errors.New("attention: failed to get weights shape")
 )
 
 // AttentionOutputProjection represents the output projection layer for multi-head attention.
@@ -65,16 +75,18 @@ func NewAttentionOutputProjection(hiddenDim, numHeads int) (*AttentionOutputProj
 // Project applies the attention output projection to the input tensor.
 func (out *AttentionOutputProjection) Project(input *tensor.Tensor) (*tensor.Tensor, error) {
 	if input == nil {
-		return nil, fmt.Errorf("nil tensor")
+		return nil, ErrNilTensor
 	}
 
 	// Get input shape
 	shape, err := input.Shape()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get input shape: %w", err)
+		loggers.Printf(loggers.Debug, "failed to get input shape: %v", err)
+		return nil, ErrGetInputShape
 	}
 	if len(shape) != 3 {
-		return nil, fmt.Errorf("invalid input shape: expected 3 dimensions, got %d", len(shape))
+		loggers.Printf(loggers.Debug, "invalid input shape: expected 3 dimensions, got %d", len(shape))
+		return nil, bitneterrors.ErrInvalidShape
 	}
 
 	batchSize := shape[0]
@@ -85,7 +97,8 @@ func (out *AttentionOutputProjection) Project(input *tensor.Tensor) (*tensor.Ten
 	flatSize := batchSize * seqLen
 	reshaped, err := input.Reshape(flatSize, out.numHeads*headDim)
 	if err != nil {
-		return nil, fmt.Errorf("failed to reshape input tensor: %w", err)
+		loggers.Printf(loggers.Debug, "failed to reshape input tensor: %v", err)
+		return nil, ErrReshapeInput
 	}
 
 	// Process each head
@@ -94,7 +107,8 @@ func (out *AttentionOutputProjection) Project(input *tensor.Tensor) (*tensor.Ten
 		// Create a new tensor for this head
 		headOutput, err := tensor.NewTensor(flatSize, headDim)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create head output tensor: %w", err)
+			loggers.Printf(loggers.Debug, "failed to create head output tensor: %v", err)
+			return nil, ErrCreateHeadOutput
 		}
 
 		// Process this head
@@ -103,10 +117,12 @@ func (out *AttentionOutputProjection) Project(input *tensor.Tensor) (*tensor.Ten
 			for k := 0; k < headDim; k++ {
 				val, err := reshaped.Get(j, headStart+k)
 				if err != nil {
-					return nil, fmt.Errorf("failed to get value from reshaped tensor: %w", err)
+					loggers.Printf(loggers.Debug, "failed to get value from reshaped tensor: %v", err)
+					return nil, ErrGetReshapedValue
 				}
 				if err := headOutput.Set(val, j, k); err != nil {
-					return nil, fmt.Errorf("failed to set value in head output tensor: %w", err)
+					loggers.Printf(loggers.Debug, "failed to set value in head output tensor: %v", err)
+					return nil, ErrSetHeadOutput
 				}
 			}
 		}
@@ -116,7 +132,8 @@ func (out *AttentionOutputProjection) Project(input *tensor.Tensor) (*tensor.Ten
 	// Combine head outputs
 	combined, err := tensor.NewTensor(flatSize, out.hiddenDim)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create combined output tensor: %w", err)
+		loggers.Printf(loggers.Debug, "failed to create combined output tensor: %v", err)
+		return nil, ErrCreateCombined
 	}
 
 	for i := 0; i < out.numHeads; i++ {
@@ -125,10 +142,12 @@ func (out *AttentionOutputProjection) Project(input *tensor.Tensor) (*tensor.Ten
 			for k := 0; k < headDim; k++ {
 				val, err := outputs[i].Get(j, k)
 				if err != nil {
-					return nil, fmt.Errorf("failed to get value from head output tensor: %w", err)
+					loggers.Printf(loggers.Debug, "failed to get value from head output tensor: %v", err)
+					return nil, ErrGetHeadOutput
 				}
 				if err := combined.Set(val, j, headStart+k); err != nil {
-					return nil, fmt.Errorf("failed to set value in combined tensor: %w", err)
+					loggers.Printf(loggers.Debug, "failed to set value in combined tensor: %v", err)
+					return nil, ErrSetCombined
 				}
 			}
 		}
@@ -137,7 +156,8 @@ func (out *AttentionOutputProjection) Project(input *tensor.Tensor) (*tensor.Ten
 	// Reshape back to original dimensions
 	result, err := combined.Reshape(batchSize, seqLen, out.hiddenDim)
 	if err != nil {
-		return nil, fmt.Errorf("failed to reshape combined tensor: %w", err)
+		loggers.Printf(loggers.Debug, "failed to reshape combined tensor: %v", err)
+		return nil, ErrReshapeCombined
 	}
 	return result, nil
 }
@@ -154,10 +174,11 @@ func (out *AttentionOutputProjection) SetWeights(weights *tensor.Tensor) error {
 	}
 	shape, err := weights.Shape()
 	if err != nil {
-		return fmt.Errorf("failed to get weights shape: %w", err)
+		loggers.Printf(loggers.Debug, "failed to get weights shape: %v", err)
+		return ErrGetWeightsShape
 	}
 	if len(shape) != 2 || shape[0] != out.hiddenDim || shape[1] != out.hiddenDim {
-		return ErrInvalidShape
+		return bitneterrors.ErrInvalidShape
 	}
 	if out.outProj != nil {
 		if err := out.outProj.Close(); err != nil {
@@ -207,27 +228,28 @@ func NewAttentionOutput(hiddenDim, numHeads int) *AttentionOutput {
 
 // Forward performs the forward pass of the attention output layer
 func (out *AttentionOutput) Forward(input *tensor.Tensor) (*tensor.Tensor, error) {
-	// Validate input shape
 	if input == nil {
 		return nil, ErrNilTensor
 	}
 	shape, err := input.Shape()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get input shape: %w", err)
+		loggers.Printf(loggers.Debug, "failed to get input shape: %v", err)
+		return nil, ErrGetInputShape
 	}
 	if len(shape) != 3 {
-		return nil, ErrInvalidInputShape
+		return nil, bitneterrors.ErrInvalidShape
 	}
 	batchSize, seqLen, hiddenDim := shape[0], shape[1], shape[2]
 	if hiddenDim != out.hiddenDim {
-		return nil, ErrInvalidShape
+		return nil, bitneterrors.ErrInvalidShape
 	}
 
 	// Reshape input for processing
 	flatSize := batchSize * seqLen
 	reshaped, err := input.Reshape(flatSize, out.hiddenDim)
 	if err != nil {
-		return nil, fmt.Errorf("failed to reshape input tensor: %w", err)
+		loggers.Printf(loggers.Debug, "failed to reshape input tensor: %v", err)
+		return nil, ErrReshapeInput
 	}
 
 	// Process each head
@@ -236,7 +258,8 @@ func (out *AttentionOutput) Forward(input *tensor.Tensor) (*tensor.Tensor, error
 		// Create a new tensor for this head
 		headOutput, err := tensor.NewTensor(flatSize, out.headDim)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create head output tensor: %w", err)
+			loggers.Printf(loggers.Debug, "failed to create head output tensor: %v", err)
+			return nil, ErrCreateHeadOutput
 		}
 
 		// Process this head
@@ -245,10 +268,12 @@ func (out *AttentionOutput) Forward(input *tensor.Tensor) (*tensor.Tensor, error
 			for k := 0; k < out.headDim; k++ {
 				val, err := reshaped.Get(j, headStart+k)
 				if err != nil {
-					return nil, fmt.Errorf("failed to get value from reshaped tensor: %w", err)
+					loggers.Printf(loggers.Debug, "failed to get value from reshaped tensor: %v", err)
+					return nil, ErrGetReshapedValue
 				}
 				if err := headOutput.Set(val, j, k); err != nil {
-					return nil, fmt.Errorf("failed to set value in head output tensor: %w", err)
+					loggers.Printf(loggers.Debug, "failed to set value in head output tensor: %v", err)
+					return nil, ErrSetHeadOutput
 				}
 			}
 		}
@@ -258,7 +283,8 @@ func (out *AttentionOutput) Forward(input *tensor.Tensor) (*tensor.Tensor, error
 	// Combine head outputs
 	combined, err := tensor.NewTensor(batchSize, seqLen, out.hiddenDim)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create combined output tensor: %w", err)
+		loggers.Printf(loggers.Debug, "failed to create combined output tensor: %v", err)
+		return nil, ErrCreateCombined
 	}
 
 	for i := 0; i < out.numHeads; i++ {
@@ -267,10 +293,12 @@ func (out *AttentionOutput) Forward(input *tensor.Tensor) (*tensor.Tensor, error
 			for k := 0; k < out.headDim; k++ {
 				val, err := outputs[i].Get(j, k)
 				if err != nil {
-					return nil, fmt.Errorf("failed to get value from head output tensor: %w", err)
+					loggers.Printf(loggers.Debug, "failed to get value from head output tensor: %v", err)
+					return nil, ErrGetHeadOutput
 				}
 				if err := combined.Set(val, j, headStart+k); err != nil {
-					return nil, fmt.Errorf("failed to set value in combined tensor: %w", err)
+					loggers.Printf(loggers.Debug, "failed to set value in combined tensor: %v", err)
+					return nil, ErrSetCombined
 				}
 			}
 		}
