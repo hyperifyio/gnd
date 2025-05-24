@@ -5,6 +5,8 @@
 package math
 
 import (
+	"errors"
+
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
 	"github.com/hyperifyio/gnd/pkg/loggers"
 )
@@ -28,11 +30,9 @@ type QKVProjection struct {
 	headDim int
 	// Hidden dimension
 	hiddenDim int
-	// Query projection weights [hidden_dim, num_heads * head_dim]
+	// Projection matrices for query, key, and value
 	qProj *tensor.Tensor
-	// Key projection weights [hidden_dim, num_kv_heads * head_dim]
 	kProj *tensor.Tensor
-	// Value projection weights [hidden_dim, num_kv_heads * head_dim]
 	vProj *tensor.Tensor
 }
 
@@ -89,20 +89,21 @@ func (p *QKVProjection) Project(input *tensor.Tensor) (*tensor.Tensor, *tensor.T
 
 	// Get input dimensions
 	var batchSize, seqLen, hiddenDim int
-	if len(input.Shape()) == 2 {
-		batchSize, hiddenDim = input.Shape()[0], input.Shape()[1]
+	shape := input.Shape()
+	if len(shape) == 2 {
+		batchSize, hiddenDim = shape[0], shape[1]
 		seqLen = 1
-	} else if len(input.Shape()) == 3 {
-		batchSize, seqLen, hiddenDim = input.Shape()[0], input.Shape()[1], input.Shape()[2]
+	} else if len(shape) == 3 {
+		batchSize, seqLen, hiddenDim = shape[0], shape[1], shape[2]
 	} else {
-		loggers.Printf(loggers.Debug, "invalid input shape: %v", input.Shape())
-		panic("invalid input shape")
+		loggers.Printf(loggers.Debug, "invalid input shape: %v", shape)
+		return nil, nil, nil, errors.New("qkv: invalid input shape")
 	}
 
 	// Check hidden dimension
 	if hiddenDim != p.hiddenDim {
 		loggers.Printf(loggers.Debug, "input hidden dimension %d does not match projection hidden dimension %d", hiddenDim, p.hiddenDim)
-		panic("input hidden dimension does not match projection hidden dimension")
+		return nil, nil, nil, errors.New("qkv: input hidden dimension does not match projection hidden dimension")
 	}
 
 	// Create 2D view of input tensor for matrix multiplication
@@ -111,7 +112,7 @@ func (p *QKVProjection) Project(input *tensor.Tensor) (*tensor.Tensor, *tensor.T
 		for s := 0; s < seqLen; s++ {
 			for d := 0; d < hiddenDim; d++ {
 				var val int8
-				if len(input.Shape()) == 2 {
+				if len(shape) == 2 {
 					val = input.Get(b, d)
 				} else {
 					val = input.Get(b, s, d)
@@ -223,30 +224,24 @@ func (p *QKVProjection) Project(input *tensor.Tensor) (*tensor.Tensor, *tensor.T
 //
 // Panics if any weight matrix has incorrect dimensions.
 // The weights must match the projection's hidden and head dimensions.
-func (p *QKVProjection) SetWeights(qWeights, kWeights, vWeights *tensor.Tensor) {
-	// Debug output for weight shapes
-	loggers.Printf(loggers.Debug, "Q weights shape: %v", qWeights.Shape())
-	loggers.Printf(loggers.Debug, "K weights shape: %v", kWeights.Shape())
-	loggers.Printf(loggers.Debug, "V weights shape: %v", vWeights.Shape())
-	loggers.Printf(loggers.Debug, "Expected Q shape: [%d, %d]", p.hiddenDim, p.numHeads*p.headDim)
-	loggers.Printf(loggers.Debug, "Expected K shape: [%d, %d]", p.hiddenDim, p.numKVHeads*(p.hiddenDim/p.numKVHeads))
-	loggers.Printf(loggers.Debug, "Expected V shape: [%d, %d]", p.hiddenDim, p.numKVHeads*(p.hiddenDim/p.numKVHeads))
-
-	// Check tensor shapes
-	if qWeights.Shape()[0] != p.hiddenDim || qWeights.Shape()[1] != p.numHeads*p.headDim {
-		loggers.Printf(loggers.Debug, "invalid Q weights shape: got %v, want [%d, %d]", qWeights.Shape(), p.hiddenDim, p.numHeads*p.headDim)
-		panic("invalid Q weights shape")
+func (p *QKVProjection) SetWeights(qWeights, kWeights, vWeights *tensor.Tensor) error {
+	if qWeights == nil || kWeights == nil || vWeights == nil {
+		return errors.New("qkv: weights cannot be nil")
 	}
-	if kWeights.Shape()[0] != p.hiddenDim || kWeights.Shape()[1] != p.numKVHeads*(p.hiddenDim/p.numKVHeads) {
-		loggers.Printf(loggers.Debug, "invalid K weights shape: got %v, want [%d, %d]", kWeights.Shape(), p.hiddenDim, p.numKVHeads*(p.hiddenDim/p.numKVHeads))
-		panic("invalid K weights shape")
+	qShape := qWeights.Shape()
+	kShape := kWeights.Shape()
+	vShape := vWeights.Shape()
+	if len(qShape) != 2 || qShape[0] != p.hiddenDim || qShape[1] != p.numHeads*p.headDim {
+		return errors.New("qkv: invalid Q weights shape")
 	}
-	if vWeights.Shape()[0] != p.hiddenDim || vWeights.Shape()[1] != p.numKVHeads*(p.hiddenDim/p.numKVHeads) {
-		loggers.Printf(loggers.Debug, "invalid V weights shape: got %v, want [%d, %d]", vWeights.Shape(), p.hiddenDim, p.numKVHeads*(p.hiddenDim/p.numKVHeads))
-		panic("invalid V weights shape")
+	if len(kShape) != 2 || kShape[0] != p.hiddenDim || kShape[1] != p.numKVHeads*(p.hiddenDim/p.numKVHeads) {
+		return errors.New("qkv: invalid K weights shape")
 	}
-
+	if len(vShape) != 2 || vShape[0] != p.hiddenDim || vShape[1] != p.numKVHeads*(p.hiddenDim/p.numKVHeads) {
+		return errors.New("qkv: invalid V weights shape")
+	}
 	p.qProj = qWeights
 	p.kProj = kWeights
 	p.vProj = vWeights
+	return nil
 }

@@ -5,63 +5,40 @@
 package math
 
 import (
+	"errors"
+
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
 )
 
+var (
+	ErrLinearClosed = errors.New("linear: operation called on closed layer")
+)
+
 // Linear represents a linear transformation layer.
-// It performs the operation: output = input * weights
-//
-// The layer supports both 2D [batch_size, in_dim] and 3D [batch_size, seq_len, in_dim]
-// inputs, automatically handling the reshaping required for efficient matrix multiplication.
-// The implementation uses BitLinear for efficient computation with ternary weights.
+// It applies a weight matrix to the input tensor.
 type Linear struct {
-	// Input dimension of the layer
-	inDim int
-	// Output dimension of the layer
-	outDim int
-	// Weight matrix [out_dim, in_dim]
+	inDim   int
+	outDim  int
 	weights *tensor.Tensor
-	// Flag indicating if the layer has been closed
-	closed bool
+	closed  bool
 }
 
-// NewLinear creates a new linear transformation layer.
-//
-// Parameters:
-//   - inDim: Size of the input dimension
-//   - outDim: Size of the output dimension
-//
-// The layer is initialized with a weight matrix of shape [out_dim, in_dim].
-// The weights are used for the linear transformation: output = input * weights.
+// NewLinear creates a new linear layer with the given input and output dimensions.
 func NewLinear(inDim, outDim int) *Linear {
-	// Create weight matrix
-	weights := tensor.NewTensor(outDim, inDim)
-
 	return &Linear{
-		inDim:   inDim,
-		outDim:  outDim,
-		weights: weights,
+		inDim:  inDim,
+		outDim: outDim,
 	}
 }
 
-// Forward performs the linear transformation on the input tensor.
-//
-// Input tensor can be either:
-//   - 2D [batch_size, in_dim] for single-token inputs
-//   - 3D [batch_size, seq_len, in_dim] for multi-token inputs
-//
-// The function:
-// 1. Validates input shape and dimensions
-// 2. Reshapes input to 2D for efficient matrix multiplication
-// 3. Performs linear transformation using BitLinear
-// 4. Reshapes output back to match input dimensions
-//
+// Forward applies the linear transformation to the input tensor.
 // Returns a tensor with the same shape as input but with out_dim as the last dimension.
 // The implementation handles both single-token and multi-token cases efficiently.
 func (l *Linear) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 	if l.closed {
-		panic("Linear layer has been closed")
+		return nil, ErrLinearClosed
 	}
+
 	// Validate input shape
 	if err := ValidateShape(x, 2, 3); err != nil {
 		tensor.DebugLog("input shape validation failed: %v", err)
@@ -139,15 +116,11 @@ func (l *Linear) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 }
 
 // SetWeights sets the weight matrix for the linear transformation.
-//
-// Parameters:
-//   - weights: Weight matrix [out_dim, in_dim]
-//
-// Returns an error if the weights tensor has incorrect shape.
-// The weights must match the layer's input and output dimensions.
+// Linear takes ownership of the weights tensor and will close it when Linear is closed.
+// The caller must not close the tensor after passing it to SetWeights.
 func (l *Linear) SetWeights(weights *tensor.Tensor) error {
 	if l.closed {
-		panic("Linear layer has been closed")
+		return ErrLinearClosed
 	}
 	if weights == nil {
 		return ErrLinearWeightsShape
@@ -155,6 +128,9 @@ func (l *Linear) SetWeights(weights *tensor.Tensor) error {
 	if len(weights.Shape()) != 2 || weights.Shape()[0] != l.outDim || weights.Shape()[1] != l.inDim {
 		tensor.DebugLog("weights must be 2D tensor with shape [%d, %d], got %v", l.outDim, l.inDim, weights.Shape())
 		return ErrLinearWeightsShape
+	}
+	if l.weights != nil {
+		l.weights.Close()
 	}
 	l.weights = weights
 	return nil
@@ -164,20 +140,23 @@ func (l *Linear) SetWeights(weights *tensor.Tensor) error {
 //
 // Returns the weight tensor with shape [out_dim, in_dim].
 // This is the matrix used for the linear transformation.
-func (l *Linear) GetWeights() *tensor.Tensor {
+func (l *Linear) GetWeights() (*tensor.Tensor, error) {
 	if l.closed {
-		panic("Linear layer has been closed")
+		return nil, ErrLinearClosed
 	}
-	return l.weights
+	return l.weights, nil
 }
 
 // Close releases all resources associated with the linear layer.
 // This includes closing all tensors and cleaning up memory.
-func (l *Linear) Close() {
+func (l *Linear) Close() error {
 	if !l.closed {
 		if l.weights != nil {
-			l.weights.Close()
+			if err := l.weights.Close(); err != nil {
+				return err
+			}
 		}
 		l.closed = true
 	}
+	return nil
 }

@@ -5,262 +5,211 @@
 package math
 
 import (
-	"errors"
 	"math"
-	"runtime"
-	"sync"
 
+	bitneterrors "github.com/hyperifyio/gnd/pkg/bitnet/errors"
+	"github.com/hyperifyio/gnd/pkg/bitnet/logging"
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
 )
 
-var (
-	// ErrInvalidHiddenDim is returned when the hidden dimension is invalid
-	ErrInvalidHiddenDim = errors.New("invalid hidden dimension")
-	// ErrNilTensor is returned when a nil tensor is provided
-	ErrNilTensor = errors.New("nil tensor provided")
-	// ErrInvalidShape is returned when a tensor has an invalid shape
-	ErrInvalidShape = errors.New("invalid tensor shape")
-)
-
-// LayerNorm implements layer normalization for BitNet.
-// It normalizes each token's hidden state across the feature dimension
-// and scales with a learnable parameter gamma (no bias).
-//
-// The normalization process:
-// 1. Calculates mean and variance across the feature dimension
-// 2. Normalizes using: (x - mean) / sqrt(variance + epsilon)
-// 3. Scales with learnable parameter gamma
-//
-// The implementation supports both 2D [batch_size, hidden_dim] and
-// 3D [batch_size, seq_len, hidden_dim] inputs, with parallel processing
-// for efficient computation on multi-core systems.
+// LayerNorm represents a layer normalization component.
+// It normalizes the input tensor along the last dimension.
 type LayerNorm struct {
-	// Hidden dimension of the model
 	hiddenDim int
-	// Epsilon for numerical stability (default: 1e-5)
-	epsilon float32
-	// Learnable scale parameter (gamma) [hidden_dim]
-	gamma *tensor.Tensor
-	// Mutex to protect concurrent access to gamma
-	mu sync.RWMutex
-	// Flag to track if the layer is closed
-	closed bool
+	gamma     *tensor.Tensor
+	closed    bool
+	epsilon   float32
 }
 
-// NewLayerNorm creates a new layer normalization instance.
-//
-// Parameters:
-//   - hiddenDim: Size of the hidden dimension
-//
-// The layer is initialized with:
-// - gamma: Vector of ones [hidden_dim]
-// - epsilon: 1e-5 for numerical stability
-//
-// The layer supports both single-token and multi-token inputs,
-// with automatic shape detection and appropriate processing.
-func NewLayerNorm(hiddenDim int) *LayerNorm {
-	// Initialize gamma with ones
-	gamma := tensor.NewTensor(hiddenDim)
-	for i := 0; i < hiddenDim; i++ {
-		gamma.Set(1, i)
+// NewLayerNorm creates a new layer normalization component.
+func NewLayerNorm(hiddenDim int) (*LayerNorm, error) {
+	if hiddenDim <= 0 {
+		logging.DebugLogf("layer_norm: invalid hidden dimension %d", hiddenDim)
+		return nil, bitneterrors.ErrInvalidHiddenDim
 	}
-
 	return &LayerNorm{
 		hiddenDim: hiddenDim,
 		epsilon:   1e-5,
-		gamma:     gamma,
-	}
+	}, nil
 }
 
-// Forward performs layer normalization on the input tensor.
-//
-// Input tensor can be either:
-//   - 2D [batch_size, hidden_dim] for single-token inputs
-//   - 3D [batch_size, seq_len, hidden_dim] for multi-token inputs
-//
-// The function:
-// 1. Validates input shape and dimensions
-// 2. Calculates mean and variance for each token
-// 3. Normalizes using (x - mean) / sqrt(variance + epsilon)
-// 4. Scales with gamma parameter
-// 5. Clamps values to int8 range
-//
-// Returns a tensor with the same shape as the input.
-// The implementation uses parallel processing with chunked computation
-// for better performance on multi-core systems.
+// Forward applies layer normalization to the input tensor.
+// Returns a normalized tensor with the same shape as input.
 func (l *LayerNorm) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
-	// Check if layer is closed
 	if l.closed {
-		panic("layer is closed")
+		return nil, bitneterrors.ErrLayerClosed
 	}
 
 	// Validate input shape
-	if err := ValidateShape(x, 2, 3); err != nil {
-		return nil, err
+	shape, err := x.Shape()
+	if err != nil {
+		logging.DebugLogf("failed to get input shape: %v", err)
+		return nil, bitneterrors.ErrInvalidShape
+	}
+	if len(shape) < 2 {
+		return nil, bitneterrors.ErrInvalidShape
 	}
 
 	// Get input dimensions
-	var batchSize, seqLen, hiddenDim int
-	if len(x.Shape()) == 2 {
-		batchSize, hiddenDim = x.Shape()[0], x.Shape()[1]
-		seqLen = 1
+	var batchSize, seqLen int
+	if len(shape) == 2 {
+		batchSize, seqLen = shape[0], 1
 	} else {
-		batchSize, seqLen, hiddenDim = x.Shape()[0], x.Shape()[1], x.Shape()[2]
+		batchSize, seqLen = shape[0], shape[1]
 	}
 
+	// Validate hidden dimension
+	hiddenDim := shape[len(shape)-1]
 	if hiddenDim != l.hiddenDim {
-		return nil, ErrHiddenDimMismatch
+		logging.DebugLogf("tensor: invalid hidden dimension, got %d, want %d", hiddenDim, l.hiddenDim)
+		return nil, bitneterrors.ErrInvalidHiddenDim
 	}
 
-	// Create output tensor with same shape as input (int8)
-	var output *tensor.Tensor
-	if len(x.Shape()) == 2 {
-		output = tensor.NewTensor(batchSize, hiddenDim)
-	} else {
-		output = tensor.NewTensor(batchSize, seqLen, hiddenDim)
+	// Create output tensor
+	output, err := tensor.NewTensor(batchSize, seqLen, l.hiddenDim)
+	if err != nil {
+		logging.DebugLogf("failed to create output tensor: %v", err)
+		return nil, err
 	}
 
-	// Process in parallel chunks with a reasonable chunk size
-	var wg sync.WaitGroup
-	numCPU := runtime.NumCPU()
-	chunkSize := (batchSize + numCPU - 1) / numCPU
-	if chunkSize < 1 {
-		chunkSize = 1
-	}
-
-	// Create a channel to collect errors
-	errChan := make(chan error, numCPU)
-
-	for i := 0; i < batchSize; i += chunkSize {
-		wg.Add(1)
-		go func(start int) {
-			defer wg.Done()
-			end := start + chunkSize
-			if end > batchSize {
-				end = batchSize
+	// Apply layer normalization
+	for b := 0; b < batchSize; b++ {
+		for s := 0; s < seqLen; s++ {
+			// Calculate mean
+			var sum float32
+			for d := 0; d < l.hiddenDim; d++ {
+				var val int8
+				var err error
+				if len(shape) == 2 {
+					val, err = x.Get(b, d)
+				} else {
+					val, err = x.Get(b, s, d)
+				}
+				if err != nil {
+					logging.DebugLogf("failed to get input value: %v", err)
+					return nil, err
+				}
+				sum += float32(val)
 			}
+			mean := sum / float32(l.hiddenDim)
 
-			// Process each batch element
-			for b := start; b < end; b++ {
-				for s := 0; s < seqLen; s++ {
-					// Calculate mean
-					var sum float32
-					for d := 0; d < hiddenDim; d++ {
-						var val float32
-						if len(x.Shape()) == 2 {
-							val = float32(x.Get(b, d))
-						} else {
-							val = float32(x.Get(b, s, d))
-						}
-						sum += val
+			// Calculate variance
+			var variance float32
+			for d := 0; d < l.hiddenDim; d++ {
+				var val int8
+				var err error
+				if len(shape) == 2 {
+					val, err = x.Get(b, d)
+				} else {
+					val, err = x.Get(b, s, d)
+				}
+				if err != nil {
+					logging.DebugLogf("failed to get input value: %v", err)
+					return nil, err
+				}
+				diff := float32(val) - mean
+				variance += diff * diff
+			}
+			variance /= float32(l.hiddenDim)
+
+			// Normalize and scale
+			for d := 0; d < l.hiddenDim; d++ {
+				var val int8
+				var err error
+				if len(shape) == 2 {
+					val, err = x.Get(b, d)
+				} else {
+					val, err = x.Get(b, s, d)
+				}
+				if err != nil {
+					logging.DebugLogf("failed to get input value: %v", err)
+					return nil, err
+				}
+				normalized := (float32(val) - mean) / float32(math.Sqrt(float64(variance+l.epsilon)))
+				if l.gamma != nil {
+					gammaVal, err := l.gamma.Get(d)
+					if err != nil {
+						logging.DebugLogf("failed to get gamma value: %v", err)
+						return nil, err
 					}
-					mean := sum / float32(hiddenDim)
-
-					// Calculate variance
-					var sumSq float32
-					for d := 0; d < hiddenDim; d++ {
-						var val float32
-						if len(x.Shape()) == 2 {
-							val = float32(x.Get(b, d))
-						} else {
-							val = float32(x.Get(b, s, d))
-						}
-						diff := val - mean
-						sumSq += diff * diff
+					normalized *= float32(gammaVal)
+				}
+				if normalized > 127 {
+					if err := output.Set(127, b, s, d); err != nil {
+						logging.DebugLogf("failed to set output value: %v", err)
+						return nil, err
 					}
-					variance := sumSq / float32(hiddenDim)
-
-					// Normalize and scale
-					stdDev := float32(math.Sqrt(float64(variance + l.epsilon)))
-					for d := 0; d < hiddenDim; d++ {
-						var val float32
-						if len(x.Shape()) == 2 {
-							val = float32(x.Get(b, d))
-						} else {
-							val = float32(x.Get(b, s, d))
-						}
-
-						// Normalize: (x - mean) / sqrt(variance + epsilon)
-						normalized := (val - mean) / stdDev
-
-						// Scale with gamma (with read lock)
-						l.mu.RLock()
-						gammaVal := l.gamma.Get(d)
-						l.mu.RUnlock()
-						scaled := normalized * float32(gammaVal)
-
-						// Clamp to int8 range
-						if scaled >= 127 {
-							scaled = 127
-						} else if scaled <= -128 {
-							scaled = -128
-						}
-
-						// Store as int8
-						if len(x.Shape()) == 2 {
-							output.Set(int8(scaled), b, d)
-						} else {
-							output.Set(int8(scaled), b, s, d)
-						}
+				} else if normalized < -128 {
+					if err := output.Set(-128, b, s, d); err != nil {
+						logging.DebugLogf("failed to set output value: %v", err)
+						return nil, err
+					}
+				} else {
+					if err := output.Set(int8(normalized), b, s, d); err != nil {
+						logging.DebugLogf("failed to set output value: %v", err)
+						return nil, err
 					}
 				}
 			}
-		}(i)
+		}
 	}
 
-	// Wait for all goroutines to complete
-	wg.Wait()
-
-	// Check for errors
-	select {
-	case err := <-errChan:
-		output.Close()
-		return nil, err
-	default:
-		return output, nil
-	}
+	return output, nil
 }
 
-// SetGamma sets the gamma parameter for layer normalization.
+// SetGamma sets the scale parameter for layer normalization.
+// LayerNorm takes ownership of the gamma tensor and will close it when LayerNorm is closed.
+// The caller must not close the tensor after passing it to SetGamma.
 func (l *LayerNorm) SetGamma(gamma *tensor.Tensor) error {
-	// Check if layer is closed
 	if l.closed {
-		panic("layer is closed")
+		return bitneterrors.ErrLayerClosed
 	}
 
 	if gamma == nil {
-		return ErrNilTensor
-	}
-	if len(gamma.Shape()) != 1 || gamma.Shape()[0] != l.hiddenDim {
-		return ErrInvalidShape
+		return bitneterrors.ErrNilTensor
 	}
 
-	l.mu.Lock()
-	defer l.mu.Unlock()
+	// Validate shape
+	shape, err := gamma.Shape()
+	if err != nil {
+		logging.DebugLogf("failed to get gamma shape: %v", err)
+		return bitneterrors.ErrInvalidShape
+	}
+	if len(shape) != 1 || shape[0] != l.hiddenDim {
+		logging.DebugLogf("tensor: invalid gamma shape, got %v, want [%d]", shape, l.hiddenDim)
+		return ErrInvalidGammaShape
+	}
+
+	if l.gamma != nil {
+		if err := l.gamma.Close(); err != nil {
+			logging.DebugLogf("failed to close existing gamma tensor: %v", err)
+			return err
+		}
+	}
 	l.gamma = gamma
 	return nil
 }
 
 // GetGamma returns the gamma parameter.
-func (l *LayerNorm) GetGamma() *tensor.Tensor {
-	// Check if layer is closed
+// The returned tensor is owned by LayerNorm and should not be closed by the caller.
+func (l *LayerNorm) GetGamma() (*tensor.Tensor, error) {
 	if l.closed {
-		panic("layer is closed")
+		return nil, bitneterrors.ErrLayerClosed
 	}
-
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	return l.gamma
+	return l.gamma, nil
 }
 
 // Close releases all resources associated with the layer normalization.
 // This includes closing all tensors and cleaning up memory.
-func (l *LayerNorm) Close() {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	if l.gamma != nil {
-		l.gamma.Close()
+func (l *LayerNorm) Close() error {
+	if !l.closed {
+		if l.gamma != nil {
+			if err := l.gamma.Close(); err != nil {
+				logging.DebugLogf("failed to close gamma tensor: %v", err)
+				return err
+			}
+		}
+		l.closed = true
 	}
-	l.closed = true
+	return nil
 }

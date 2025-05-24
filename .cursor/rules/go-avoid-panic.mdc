@@ -1,0 +1,75 @@
+---
+description: "Eliminate `panic()` calls by converting them into error returns with static error values."
+globs: *.go, pkg/**/*.go
+alwaysApply: true
+---
+
+# Panic-to-Error Refactoring Rule
+
+**Problem:** Uncontrolled `panic()` calls crash applications and bypass usual error handling. We need to replace panics with returned errors to allow graceful handling.
+
+## Rule
+
+1. **Static Error Declarations**
+
+   * Define all error values in a shared `var` block, using `errors.New(...)` with a clear, unique message.
+   * Prefix error strings with the package or function name for clarity.
+
+   ```go
+   var (
+       ParseConfigError    = errors.New("config: parse error")
+       InvalidInputError   = errors.New("input: invalid parameter")
+   )
+   ```
+
+2. **Convert `panic()` to Error Return**
+
+   * Remove `panic(err)` or `panic("message")` calls.
+   * Insert a `DebugLog` (or equivalent logger) statement to record dynamic details.
+   * Change the function signature to return `error` (or add `error` to returns).
+   * Return the appropriate static error after logging.
+
+## Examples
+
+### \[FAIL] Panic Usage
+
+```go
+func LoadConfig(path string) *Config {
+    data, err := os.ReadFile(path)
+    if err != nil {
+        panic(err)
+    }
+    // ... parse data ...
+    if missingField {
+        panic("missing required field: name")
+    }
+    return cfg
+}
+```
+
+### \[OK] Error Return
+
+```go
+func LoadConfig(path string) (*Config, error) {
+    data, err := os.ReadFile(path)
+    if err != nil {
+        i.DebugLog("LoadConfig: failed to read file %s: %v", path, err)
+        return nil, ParseConfigError
+    }
+    // ... parse data ...
+    if missingField {
+        i.DebugLog("LoadConfig: missing required field 'name'")
+        return nil, InvalidInputError
+    }
+    return cfg, nil
+}
+```
+
+## Notes
+
+* **Preserve dynamic details** in logs, not in error strings.
+* **Always return** errors instead of panicking.
+* **Update callers** to handle the new `error` return value.
+* **Function signatures** must include `error` if they currently do not.
+
+*Apply this rule to all Go packages to ensure predictable error handling and avoid unexpected panics.*

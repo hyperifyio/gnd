@@ -331,8 +331,6 @@ func TestModelEmbedTokens(t *testing.T) {
 	for _, tt := range tests {
 		tt := tt // capture range variable
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel() // Run subtests in parallel
-
 			// Create a new model instance for each subtest
 			m := model.NewModel(config, mockFS)
 
@@ -340,6 +338,12 @@ func TestModelEmbedTokens(t *testing.T) {
 			err := m.LoadWeights("test_weights.bin")
 			if err != nil {
 				t.Fatalf("LoadWeights() error = %v", err)
+			}
+
+			// Initialize tokenizer
+			err = m.InitTokenizer("tokenizer")
+			if err != nil {
+				t.Fatalf("InitTokenizer() error = %v", err)
 			}
 
 			got, err := m.Infer(tt.tokens)
@@ -351,7 +355,7 @@ func TestModelEmbedTokens(t *testing.T) {
 				t.Errorf("Infer() returned %d tokens, want %d", len(got), len(tt.tokens))
 			}
 
-			// Clean up
+			// Only close after all checks
 			m.Close()
 		})
 	}

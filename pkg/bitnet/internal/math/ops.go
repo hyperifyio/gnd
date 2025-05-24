@@ -1,5 +1,13 @@
 package math
 
+import "errors"
+
+var (
+	ErrMatrixDimensionMismatch      = errors.New("matrix: dimensions must match")
+	ErrMatrixIncompatibleDimensions = errors.New("matrix: dimensions incompatible for multiplication")
+	ErrVectorLengthMismatch         = errors.New("vector: lengths must match")
+)
+
 // Matrix represents a 2D matrix of ternary values (-1, 0, +1)
 type Matrix struct {
 	Data   []int8
@@ -29,9 +37,9 @@ func (m *Matrix) Set(row, col int, value int8) {
 }
 
 // Add performs matrix addition with ternary values
-func Add(a, b *Matrix) *Matrix {
+func Add(a, b *Matrix) (*Matrix, error) {
 	if a.Rows != b.Rows || a.Cols != b.Cols {
-		panic("matrix dimensions must match")
+		return nil, ErrMatrixDimensionMismatch
 	}
 
 	result := NewMatrix(a.Rows, a.Cols)
@@ -45,13 +53,13 @@ func Add(a, b *Matrix) *Matrix {
 		}
 		result.Data[i] = sum
 	}
-	return result
+	return result, nil
 }
 
 // Mul performs matrix multiplication with ternary values
-func Mul(a, b *Matrix) *Matrix {
+func Mul(a, b *Matrix) (*Matrix, error) {
 	if a.Cols != b.Rows {
-		panic("matrix dimensions incompatible for multiplication")
+		return nil, ErrMatrixIncompatibleDimensions
 	}
 
 	result := NewMatrix(a.Rows, b.Cols)
@@ -70,7 +78,7 @@ func Mul(a, b *Matrix) *Matrix {
 			result.Set(i, j, int8(sum))
 		}
 	}
-	return result
+	return result, nil
 }
 
 // Vector represents a 1D vector of ternary values (-1, 0, +1)
@@ -86,9 +94,9 @@ func NewVector(length int) *Vector {
 }
 
 // DotProduct computes the dot product of two vectors with ternary values
-func DotProduct(a, b *Vector) int8 {
+func DotProduct(a, b *Vector) (int8, error) {
 	if len(a.Data) != len(b.Data) {
-		panic("vector lengths must match")
+		return 0, ErrVectorLengthMismatch
 	}
 
 	var sum int32
@@ -101,5 +109,5 @@ func DotProduct(a, b *Vector) int8 {
 	} else if sum < -1 {
 		sum = -1
 	}
-	return int8(sum)
+	return int8(sum), nil
 }

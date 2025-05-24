@@ -5,8 +5,27 @@
 package math
 
 import (
+	"errors"
+
+	bitneterrors "github.com/hyperifyio/gnd/pkg/bitnet/errors"
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
 	"github.com/hyperifyio/gnd/pkg/loggers"
+)
+
+// Error definitions
+var (
+	ErrNilTensor        = errors.New("attention: nil tensor")
+	ErrClosed           = errors.New("attention: operation on closed tensor")
+	ErrGetInputShape    = errors.New("attention: failed to get input shape")
+	ErrReshapeInput     = errors.New("attention: failed to reshape input tensor")
+	ErrCreateHeadOutput = errors.New("attention: failed to create head output tensor")
+	ErrGetReshapedValue = errors.New("attention: failed to get value from reshaped tensor")
+	ErrSetHeadOutput    = errors.New("attention: failed to set value in head output tensor")
+	ErrCreateCombined   = errors.New("attention: failed to create combined output tensor")
+	ErrGetHeadOutput    = errors.New("attention: failed to get value from head output tensor")
+	ErrSetCombined      = errors.New("attention: failed to set value in combined tensor")
+	ErrReshapeCombined  = errors.New("attention: failed to reshape combined tensor")
+	ErrGetWeightsShape  = errors.New("attention: failed to get weights shape")
 )
 
 // AttentionOutputProjection represents the output projection layer for multi-head attention.
@@ -40,102 +59,131 @@ type AttentionOutputProjection struct {
 // The projection matrix is initialized as a [hidden_dim, hidden_dim] tensor.
 // The layer is optimized for efficient computation with both single-token
 // and multi-token inputs.
-func NewAttentionOutputProjection(hiddenDim, numHeads int) *AttentionOutputProjection {
-	// Create output projection matrix
-	outProj := tensor.NewTensor(hiddenDim, hiddenDim)
-
+func NewAttentionOutputProjection(hiddenDim, numHeads int) (*AttentionOutputProjection, error) {
+	outProj, err := tensor.NewTensor(hiddenDim, hiddenDim)
+	if err != nil {
+		tensor.DebugLog("NewAttentionOutputProjection: failed to create outProj: %v", err)
+		return nil, err
+	}
 	return &AttentionOutputProjection{
 		hiddenDim: hiddenDim,
 		numHeads:  numHeads,
 		outProj:   outProj,
-	}
+	}, nil
 }
 
-// Project performs the output projection on the concatenated attention contexts.
-//
-// Input tensor must be 3D with shape [batch_size, seq_len, num_heads * head_dim].
-// The function:
-//  1. Reshapes input if needed for efficient computation
-//  2. Applies linear projection
-//  3. Reshapes output to [batch_size, seq_len, hidden_dim]
-//
-// Returns a 3D tensor with shape [batch_size, seq_len, hidden_dim].
-//
-// The function includes special optimizations for single-token inputs
-// (batch_size=1, seq_len=1) to avoid unnecessary reshaping operations.
-// For multi-token inputs, it uses efficient reshaping and linear projection.
+// Project applies the attention output projection to the input tensor.
 func (out *AttentionOutputProjection) Project(input *tensor.Tensor) (*tensor.Tensor, error) {
-	if len(input.Shape()) != 3 {
-		return nil, ErrInvalidInputShape
+	if input == nil {
+		return nil, ErrNilTensor
 	}
 
-	batchSize := input.Shape()[0]
-	seqLen := input.Shape()[1]
-	hiddenIn := input.Shape()[2]
-	headDim := hiddenIn / out.numHeads
-
-	loggers.Printf(loggers.Debug, "AttentionOutputProjection input shape: %v", input.Shape())
-
-	flatSize := batchSize * seqLen
-	if flatSize*out.numHeads*headDim != len(input.Data()) {
-		return nil, ErrInvalidInputShape
-	}
-
-	var flatInput *tensor.Tensor
-	if batchSize == 1 && seqLen == 1 {
-		// Single-token case: manually flatten
-		data := input.Data()
-		flatInput = tensor.NewTensor(1, out.numHeads*headDim)
-		defer flatInput.Close()
-		for i := 0; i < out.numHeads*headDim; i++ {
-			flatInput.Set(data[i], 0, i)
-		}
-	} else {
-		flatInput = input.Reshape(flatSize, out.numHeads*headDim)
-		defer flatInput.Close()
-	}
-
-	loggers.Printf(loggers.Debug, "AttentionOutputProjection flat input shape: %v", flatInput.Shape())
-
-	// Apply linear transformation
-	output, err := tensor.BitLinear(flatInput, out.outProj)
+	// Get input shape
+	shape, err := input.Shape()
 	if err != nil {
-		return nil, err
+		loggers.Printf(loggers.Debug, "failed to get input shape: %v", err)
+		return nil, ErrGetInputShape
 	}
-	defer output.Close()
+	if len(shape) != 3 {
+		loggers.Printf(loggers.Debug, "invalid input shape: expected 3 dimensions, got %d", len(shape))
+		return nil, bitneterrors.ErrInvalidShape
+	}
 
-	if batchSize == 1 && seqLen == 1 {
-		// Single-token case: manually reshape
-		reshaped := tensor.NewTensor(1, 1, out.hiddenDim)
-		outData := output.Data()
-		for i := 0; i < out.hiddenDim; i++ {
-			reshaped.Set(outData[i], 0, 0, i)
+	batchSize := shape[0]
+	seqLen := shape[1]
+	headDim := shape[2]
+
+	// Reshape input for processing
+	flatSize := batchSize * seqLen
+	reshaped, err := input.Reshape(flatSize, out.numHeads*headDim)
+	if err != nil {
+		loggers.Printf(loggers.Debug, "failed to reshape input tensor: %v", err)
+		return nil, ErrReshapeInput
+	}
+
+	// Process each head
+	outputs := make([]*tensor.Tensor, out.numHeads)
+	for i := 0; i < out.numHeads; i++ {
+		// Create a new tensor for this head
+		headOutput, err := tensor.NewTensor(flatSize, headDim)
+		if err != nil {
+			loggers.Printf(loggers.Debug, "failed to create head output tensor: %v", err)
+			return nil, ErrCreateHeadOutput
 		}
-		loggers.Printf(loggers.Debug, "AttentionOutputProjection output shape: %v", reshaped.Shape())
-		return reshaped, nil
+
+		// Process this head
+		headStart := i * headDim
+		for j := 0; j < flatSize; j++ {
+			for k := 0; k < headDim; k++ {
+				val, err := reshaped.Get(j, headStart+k)
+				if err != nil {
+					loggers.Printf(loggers.Debug, "failed to get value from reshaped tensor: %v", err)
+					return nil, ErrGetReshapedValue
+				}
+				if err := headOutput.Set(val, j, k); err != nil {
+					loggers.Printf(loggers.Debug, "failed to set value in head output tensor: %v", err)
+					return nil, ErrSetHeadOutput
+				}
+			}
+		}
+		outputs[i] = headOutput
 	}
 
-	reshaped := output.Reshape(batchSize, seqLen, out.hiddenDim)
-	loggers.Printf(loggers.Debug, "AttentionOutputProjection output shape: %v", reshaped.Shape())
-	return reshaped, nil
+	// Combine head outputs
+	combined, err := tensor.NewTensor(flatSize, out.hiddenDim)
+	if err != nil {
+		loggers.Printf(loggers.Debug, "failed to create combined output tensor: %v", err)
+		return nil, ErrCreateCombined
+	}
+
+	for i := 0; i < out.numHeads; i++ {
+		headStart := i * headDim
+		for j := 0; j < flatSize; j++ {
+			for k := 0; k < headDim; k++ {
+				val, err := outputs[i].Get(j, k)
+				if err != nil {
+					loggers.Printf(loggers.Debug, "failed to get value from head output tensor: %v", err)
+					return nil, ErrGetHeadOutput
+				}
+				if err := combined.Set(val, j, headStart+k); err != nil {
+					loggers.Printf(loggers.Debug, "failed to set value in combined tensor: %v", err)
+					return nil, ErrSetCombined
+				}
+			}
+		}
+	}
+
+	// Reshape back to original dimensions
+	result, err := combined.Reshape(batchSize, seqLen, out.hiddenDim)
+	if err != nil {
+		loggers.Printf(loggers.Debug, "failed to reshape combined tensor: %v", err)
+		return nil, ErrReshapeCombined
+	}
+	return result, nil
 }
 
 // SetWeights sets the output projection weights.
-//
-// Parameters:
-//   - weights: Output projection weights [hidden_dim, hidden_dim]
-//
-// Returns an error if the weights tensor has incorrect dimensions.
-// The weights must match the layer's hidden dimension for both input and output.
+// AttentionOutputProjection takes ownership of the weights tensor.
+// The caller must not use the weights tensor after passing it to SetWeights.
 func (out *AttentionOutputProjection) SetWeights(weights *tensor.Tensor) error {
 	if out.outProj == nil {
-		panic("projection is closed")
+		return ErrClosed
 	}
 	if weights == nil {
-		panic("weights cannot be nil")
+		return ErrNilTensor
 	}
-	if len(weights.Shape()) != 2 || weights.Shape()[0] != out.hiddenDim || weights.Shape()[1] != out.hiddenDim {
-		panic("invalid weights shape")
+	shape, err := weights.Shape()
+	if err != nil {
+		loggers.Printf(loggers.Debug, "failed to get weights shape: %v", err)
+		return ErrGetWeightsShape
+	}
+	if len(shape) != 2 || shape[0] != out.hiddenDim || shape[1] != out.hiddenDim {
+		return bitneterrors.ErrInvalidShape
+	}
+	if out.outProj != nil {
+		if err := out.outProj.Close(); err != nil {
+			return err
+		}
 	}
 	out.outProj = weights
 	return nil
@@ -143,9 +191,148 @@ func (out *AttentionOutputProjection) SetWeights(weights *tensor.Tensor) error {
 
 // Close releases all resources associated with the attention output projection.
 // This includes closing all tensors and cleaning up memory.
-func (out *AttentionOutputProjection) Close() {
+func (out *AttentionOutputProjection) Close() error {
 	if out.outProj != nil {
-		out.outProj.Close()
+		if err := out.outProj.Close(); err != nil {
+			return err
+		}
 		out.outProj = nil
 	}
+	return nil
+}
+
+// AttentionOutput represents the output layer for multi-head attention.
+// This layer processes the attention outputs from all heads and combines them
+// into a single output tensor.
+type AttentionOutput struct {
+	// Hidden dimension of the model
+	hiddenDim int
+	// Number of attention heads
+	numHeads int
+	// Dimension of each attention head
+	headDim int
+	// Output tensors for each head
+	outputs []*tensor.Tensor
+}
+
+// NewAttentionOutput creates a new attention output layer.
+func NewAttentionOutput(hiddenDim, numHeads int) *AttentionOutput {
+	headDim := hiddenDim / numHeads
+	return &AttentionOutput{
+		hiddenDim: hiddenDim,
+		numHeads:  numHeads,
+		headDim:   headDim,
+		outputs:   make([]*tensor.Tensor, numHeads),
+	}
+}
+
+// Forward performs the forward pass of the attention output layer
+func (out *AttentionOutput) Forward(input *tensor.Tensor) (*tensor.Tensor, error) {
+	if input == nil {
+		return nil, ErrNilTensor
+	}
+	shape, err := input.Shape()
+	if err != nil {
+		loggers.Printf(loggers.Debug, "failed to get input shape: %v", err)
+		return nil, ErrGetInputShape
+	}
+	if len(shape) != 3 {
+		return nil, bitneterrors.ErrInvalidShape
+	}
+	batchSize, seqLen, hiddenDim := shape[0], shape[1], shape[2]
+	if hiddenDim != out.hiddenDim {
+		return nil, bitneterrors.ErrInvalidShape
+	}
+
+	// Reshape input for processing
+	flatSize := batchSize * seqLen
+	reshaped, err := input.Reshape(flatSize, out.hiddenDim)
+	if err != nil {
+		loggers.Printf(loggers.Debug, "failed to reshape input tensor: %v", err)
+		return nil, ErrReshapeInput
+	}
+
+	// Process each head
+	outputs := make([]*tensor.Tensor, out.numHeads)
+	for i := 0; i < out.numHeads; i++ {
+		// Create a new tensor for this head
+		headOutput, err := tensor.NewTensor(flatSize, out.headDim)
+		if err != nil {
+			loggers.Printf(loggers.Debug, "failed to create head output tensor: %v", err)
+			return nil, ErrCreateHeadOutput
+		}
+
+		// Process this head
+		headStart := i * out.headDim
+		for j := 0; j < flatSize; j++ {
+			for k := 0; k < out.headDim; k++ {
+				val, err := reshaped.Get(j, headStart+k)
+				if err != nil {
+					loggers.Printf(loggers.Debug, "failed to get value from reshaped tensor: %v", err)
+					return nil, ErrGetReshapedValue
+				}
+				if err := headOutput.Set(val, j, k); err != nil {
+					loggers.Printf(loggers.Debug, "failed to set value in head output tensor: %v", err)
+					return nil, ErrSetHeadOutput
+				}
+			}
+		}
+		outputs[i] = headOutput
+	}
+
+	// Combine head outputs
+	combined, err := tensor.NewTensor(batchSize, seqLen, out.hiddenDim)
+	if err != nil {
+		loggers.Printf(loggers.Debug, "failed to create combined output tensor: %v", err)
+		return nil, ErrCreateCombined
+	}
+
+	for i := 0; i < out.numHeads; i++ {
+		headStart := i * out.headDim
+		for j := 0; j < flatSize; j++ {
+			for k := 0; k < out.headDim; k++ {
+				val, err := outputs[i].Get(j, k)
+				if err != nil {
+					loggers.Printf(loggers.Debug, "failed to get value from head output tensor: %v", err)
+					return nil, ErrGetHeadOutput
+				}
+				if err := combined.Set(val, j, headStart+k); err != nil {
+					loggers.Printf(loggers.Debug, "failed to set value in combined tensor: %v", err)
+					return nil, ErrSetCombined
+				}
+			}
+		}
+	}
+
+	return combined, nil
+}
+
+// processHead processes a single attention head's output
+func (out *AttentionOutput) processHead(headSlice *tensor.Tensor) (*tensor.Tensor, error) {
+	// TODO: Implement head-specific processing
+	return headSlice, nil
+}
+
+// combineHeads combines the outputs from all attention heads
+func (out *AttentionOutput) combineHeads(batchSize, seqLen int) (*tensor.Tensor, error) {
+	// TODO: Implement head combination
+	result, err := tensor.NewTensor(batchSize, seqLen, out.hiddenDim)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// Close releases all resources associated with the attention output layer
+func (out *AttentionOutput) Close() error {
+	var lastErr error
+	for _, t := range out.outputs {
+		if t != nil {
+			if err := t.Close(); err != nil {
+				lastErr = err
+			}
+		}
+	}
+	out.outputs = nil
+	return lastErr
 }
