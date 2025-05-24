@@ -88,11 +88,16 @@ func (f *FFN) Forward(input *tensor.Tensor) (*tensor.Tensor, error) {
 	defer flatInput.Close()
 
 	// Apply first linear transformation
-	intermediate, err := tensor.BitLinear(flatInput, f.upProj)
+	intermediateIface, err := tensor.BitLinear(flatInput, f.upProj)
 	if err != nil {
 		return nil, err
 	}
-	defer intermediate.Close()
+	defer intermediateIface.Close()
+
+	intermediate, ok := intermediateIface.(*tensor.Tensor)
+	if !ok {
+		panic("expected *tensor.Tensor from Forward for intermediate")
+	}
 
 	// Apply ReLU² activation
 	activated, err := f.applyReLU2(intermediate)
@@ -109,7 +114,11 @@ func (f *FFN) Forward(input *tensor.Tensor) (*tensor.Tensor, error) {
 	defer output.Close()
 
 	// Reshape back to [batch_size, seq_len, hidden_dim]
-	reshaped := output.Reshape(batchSize, seqLen, f.hiddenDim)
+	reshapedIface := output.Reshape(batchSize, seqLen, f.hiddenDim)
+	reshaped, ok := reshapedIface.(*tensor.Tensor)
+	if !ok {
+		panic("expected *tensor.Tensor from Reshape for output")
+	}
 	return reshaped, nil
 }
 
@@ -203,13 +212,8 @@ func (f *FFN) applyReLU2(input *tensor.Tensor) (*tensor.Tensor, error) {
 }
 
 // SetWeights sets the feed-forward network weights.
-//
-// Parameters:
-//   - upWeights: Up-projection weights [intermediate_dim, hidden_dim]
-//   - downWeights: Down-projection weights [hidden_dim, intermediate_dim]
-//
-// Panics if either weight matrix has incorrect dimensions or if the FFN has been closed.
-// The weights must match the network's hidden and intermediate dimensions.
+// FFN takes ownership of the tensors and will close them when FFN is closed.
+// The caller must not close the tensors after passing them to SetWeights.
 func (f *FFN) SetWeights(upWeights, downWeights *tensor.Tensor) {
 	if f.closed {
 		panic("FFN has been closed")

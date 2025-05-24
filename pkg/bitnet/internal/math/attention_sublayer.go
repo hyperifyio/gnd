@@ -5,96 +5,64 @@
 package math
 
 import (
-	"errors"
+	"fmt"
+	"math"
 
+	"github.com/hyperifyio/gnd/pkg/bitnet/errors"
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
 )
 
-var (
-	// ErrInvalidHeadDimensions is returned when the head dimensions are invalid for attention.
-	ErrInvalidHeadDimensions = errors.New("attention: invalid head dimensions")
-	// ErrInvalidKVHeads is returned when numKVHeads > numHeads.
-	ErrInvalidKVHeads = errors.New("attention: numKVHeads must be <= numHeads")
-	// ErrNonDivisibleHeads is returned when numHeads is not divisible by numKVHeads.
-	ErrNonDivisibleHeads = errors.New("attention: numHeads must be divisible by numKVHeads")
-	// ErrPreNormForward is returned when the pre-norm layer normalization fails.
-	ErrPreNormForward = errors.New("attention: pre-norm forward pass failed")
-	// ErrQueryProjection is returned when the query projection fails.
-	ErrQueryProjection = errors.New("attention: query projection failed")
-	// ErrKeyProjection is returned when the key projection fails.
-	ErrKeyProjection = errors.New("attention: key projection failed")
-	// ErrValueProjection is returned when the value projection fails.
-	ErrValueProjection = errors.New("attention: value projection failed")
-	// ErrScaledDotProduct is returned when the scaled dot-product attention fails.
-	ErrScaledDotProduct = errors.New("attention: scaled dot-product attention failed")
-	// ErrSetQueryWeights is returned when setting query weights fails.
-	ErrSetQueryWeights = errors.New("attention: failed to set query weights")
-	// ErrSetKeyWeights is returned when setting key weights fails.
-	ErrSetKeyWeights = errors.New("attention: failed to set key weights")
-	// ErrSetValueWeights is returned when setting value weights fails.
-	ErrSetValueWeights = errors.New("attention: failed to set value weights")
-	// ErrSetOutputWeights is returned when setting output weights fails.
-	ErrSetOutputWeights = errors.New("attention: failed to set output weights")
-	// ErrSetGamma is returned when setting the scale parameter fails.
-	ErrSetGamma = errors.New("attention: failed to set gamma")
-)
-
-// AttentionSublayer implements the attention sublayer with pre-norm and residual connection
-// as described in "Attention Is All You Need" (https://arxiv.org/abs/1706.03762).
-//
-// The sublayer consists of:
-//   - Pre-norm layer normalization
-//   - Multi-head attention with QKV projections
-//   - Output projection
-//   - Residual connection
-//
-// The sublayer supports both standard multi-head attention and grouped-query attention
-// through the numKVHeads parameter. When numKVHeads < numHeads, it implements
-// grouped-query attention where multiple query heads share the same key and value heads.
+// AttentionSublayer implements the attention sublayer of a transformer block.
+// It consists of:
+// 1. Pre-norm layer normalization
+// 2. Multi-head attention
+// 3. Residual connection
 type AttentionSublayer struct {
-	hiddenDim  int                        // Hidden dimension of the model
-	numHeads   int                        // Number of attention heads
-	numKVHeads int                        // Number of key/value heads (for grouped-query attention)
-	preNorm    *LayerNorm                 // Pre-norm layer normalization
-	qProj      *Linear                    // Query projection layer
-	kProj      *Linear                    // Key projection layer
-	vProj      *Linear                    // Value projection layer
-	outProj    *AttentionOutputProjection // Output projection layer
+	// Hidden dimension of the model
+	hiddenDim int
+	// Number of attention heads
+	numHeads int
+	// Number of key-value heads (for grouped-query attention)
+	numKVHeads int
+	// Dimension of each attention head
+	headDim int
+	// Pre-norm layer normalization
+	preNorm *LayerNorm
+	// Query projection layer
+	qProj *Linear
+	// Key projection layer
+	kProj *Linear
+	// Value projection layer
+	vProj *Linear
+	// Output projection layer
+	oProj *AttentionOutputProjection
+	// Flag to track if the layer is closed
+	closed bool
 }
 
 // NewAttentionSublayer creates a new attention sublayer.
 //
 // Parameters:
-//   - hiddenDim: Dimension of the hidden state
+//   - hiddenDim: Size of the hidden dimension
 //   - numHeads: Number of attention heads
-//   - numKVHeads: Number of key/value heads (for grouped-query attention)
+//   - numKVHeads: Number of key-value heads (for grouped-query attention)
 //
-// The function initializes:
-//   - Pre-norm layer normalization
-//   - QKV projection matrices
-//   - Output projection
-//
-// Returns a pointer to the AttentionSublayer and an error if validation fails.
+// The layer is initialized with:
+// - Pre-norm layer normalization
+// - Query, key, value projections
+// - Output projection
 func NewAttentionSublayer(hiddenDim, numHeads, numKVHeads int) (*AttentionSublayer, error) {
+	if hiddenDim <= 0 {
+		return nil, errors.ErrInvalidHiddenDim
+	}
 	if numHeads <= 0 {
-		return nil, ErrInvalidHeadDimensions
+		return nil, errors.ErrInvalidNumHeads
 	}
-	if numKVHeads <= 0 {
-		return nil, ErrInvalidKVHeads
+	if numKVHeads <= 0 || numKVHeads > numHeads {
+		return nil, errors.ErrInvalidNumKVHeads
 	}
-
-	if err := ValidateHeadDimensions(hiddenDim, numHeads, hiddenDim/numHeads); err != nil {
-		return nil, ErrInvalidHeadDimensions
-	}
-
-	if numKVHeads > numHeads {
-		DebugLog("numKVHeads (%d) must be <= numHeads (%d)", numKVHeads, numHeads)
-		return nil, ErrInvalidKVHeads
-	}
-
-	if numHeads%numKVHeads != 0 {
-		DebugLog("numHeads (%d) must be divisible by numKVHeads (%d)", numHeads, numKVHeads)
-		return nil, ErrNonDivisibleHeads
+	if hiddenDim%numHeads != 0 {
+		return nil, errors.ErrInvalidHeadDim
 	}
 
 	headDim := hiddenDim / numHeads
@@ -104,11 +72,12 @@ func NewAttentionSublayer(hiddenDim, numHeads, numKVHeads int) (*AttentionSublay
 		hiddenDim:  hiddenDim,
 		numHeads:   numHeads,
 		numKVHeads: numKVHeads,
+		headDim:    headDim,
 		preNorm:    NewLayerNorm(hiddenDim),
 		qProj:      NewLinear(hiddenDim, numHeads*headDim),
 		kProj:      NewLinear(hiddenDim, numKVHeads*kvHeadDim),
 		vProj:      NewLinear(hiddenDim, numKVHeads*kvHeadDim),
-		outProj:    NewAttentionOutputProjection(hiddenDim, numHeads),
+		oProj:      NewAttentionOutputProjection(hiddenDim, numHeads),
 	}, nil
 }
 
@@ -127,141 +96,126 @@ func NewAttentionSublayer(hiddenDim, numHeads, numKVHeads int) (*AttentionSublay
 //
 // Returns a tensor with the same shape as the input and an error if any step fails.
 func (a *AttentionSublayer) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
-	if x == nil {
-		return nil, ErrInvalidInputShape
+	if a.closed {
+		return nil, errors.ErrLayerClosed
 	}
 
-	// Validate input shape
-	if err := ValidateShape(x, 2, 3); err != nil {
-		return nil, ErrInvalidInputShape
+	// Get input shape
+	shape := x.Shape()
+	if len(shape) < 2 {
+		return nil, errors.ErrInvalidShape
 	}
 
-	// Handle 2D input by adding sequence dimension
-	var input *tensor.Tensor
-	if len(x.Shape()) == 2 {
-		hiddenDim := x.Shape()[1]
-		if hiddenDim != a.hiddenDim {
-			DebugLog("input hidden dimension (%d) must match sublayer hidden dimension (%d)", hiddenDim, a.hiddenDim)
-			return nil, ErrHiddenDimMismatch
-		}
-		input = tensor.NewTensor(x.Shape()[0], 1, hiddenDim)
-		defer input.Close()
-		for b := 0; b < x.Shape()[0]; b++ {
-			for d := 0; d < hiddenDim; d++ {
-				input.Set(x.Get(b, d), b, 0, d)
-			}
-		}
-	} else {
-		hiddenDim := x.Shape()[2]
-		if hiddenDim != a.hiddenDim {
-			DebugLog("input hidden dimension (%d) must match sublayer hidden dimension (%d)", hiddenDim, a.hiddenDim)
-			return nil, ErrHiddenDimMismatch
-		}
-		input = x
+	hiddenDim := shape[len(shape)-1]
+
+	// Validate hidden dimension
+	if hiddenDim != a.hiddenDim {
+		return nil, fmt.Errorf("tensor: invalid hidden dimension, got %d, want %d", hiddenDim, a.hiddenDim)
 	}
 
 	// Pre-norm layer normalization
-	normed, err := a.preNorm.Forward(input)
+	normed, err := a.preNorm.Forward(x)
 	if err != nil {
-		return nil, ErrPreNormForward
+		return nil, fmt.Errorf("pre-norm forward: %w", err)
 	}
-	defer normed.Close()
 
-	// Project to Q, K, V
-	q, err := a.qProj.Forward(normed)
+	// Project to Q, K, V (do not close normed until all projections are done)
+	qMat, err := a.qProj.Forward(normed)
 	if err != nil {
-		return nil, ErrQueryProjection
+		normed.Close()
+		return nil, fmt.Errorf("q projection: %w", err)
 	}
-	defer q.Close()
+	kMat, err := a.kProj.Forward(normed)
+	if err != nil {
+		normed.Close()
+		qMat.Close()
+		return nil, fmt.Errorf("k projection: %w", err)
+	}
+	vMat, err := a.vProj.Forward(normed)
+	normed.Close() // Now safe to close
+	if err != nil {
+		qMat.Close()
+		kMat.Close()
+		return nil, fmt.Errorf("v projection: %w", err)
+	}
 
-	k, err := a.kProj.Forward(normed)
-	if err != nil {
-		return nil, ErrKeyProjection
-	}
-	defer k.Close()
-
-	v, err := a.vProj.Forward(normed)
-	if err != nil {
-		return nil, ErrValueProjection
-	}
-	defer v.Close()
+	// Debug: print shapes after projection
+	fmt.Printf("[DEBUG] Q shape: %v\n", qMat.Shape())
+	fmt.Printf("[DEBUG] K shape: %v\n", kMat.Shape())
+	fmt.Printf("[DEBUG] V shape: %v\n", vMat.Shape())
 
 	// Reshape for attention
-	headDim := a.hiddenDim / a.numHeads
-	kvHeadDim := a.hiddenDim / a.numKVHeads
+	qMat = transposeForAttention(qMat)
+	kMat = transposeForAttention(kMat)
+	vMat = transposeForAttention(vMat)
+	fmt.Printf("[DEBUG] Q reshaped: %v\n", qMat.Shape())
+	fmt.Printf("[DEBUG] K reshaped: %v\n", kMat.Shape())
+	fmt.Printf("[DEBUG] V reshaped: %v\n", vMat.Shape())
 
-	// Reshape and transpose Q, K, V
-	q = q.Reshape(input.Shape()[0], input.Shape()[1], a.numHeads, headDim).Transpose(0, 2, 1, 3)
-	defer q.Close()
+	// Compute attention scores
+	kTransposed := transposeForAttentionK(kMat)
+	// kMat is not used after this point, safe to close
+	kMat.Close() // Close kMat after transpose
 
-	k = k.Reshape(input.Shape()[0], input.Shape()[1], a.numKVHeads, kvHeadDim).Transpose(0, 2, 1, 3)
-	defer k.Close()
-
-	v = v.Reshape(input.Shape()[0], input.Shape()[1], a.numKVHeads, kvHeadDim).Transpose(0, 2, 1, 3)
-	defer v.Close()
-
-	// For grouped-query attention, repeat K and V heads
-	if a.numKVHeads < a.numHeads {
-		repeats := a.numHeads / a.numKVHeads
-		k = k.Repeat(1, repeats)
-		defer k.Close()
-		v = v.Repeat(1, repeats)
-		defer v.Close()
-	}
-
-	// Compute attention
-	attn, err := ScaledDotProductAttention(q, k, v)
+	// Add debug output before MatMul
+	fmt.Printf("[DEBUG] MatMul: qMat shape: %v, kTransposed shape: %v\n", qMat.Shape(), kTransposed.Shape())
+	scores, err := qMat.MatMul(kTransposed)
+	// qMat and kTransposed are not used after this point, safe to close
+	qMat.Close()        // Close qMat after matmul
+	kTransposed.Close() // Close kTransposed after matmul
 	if err != nil {
-		return nil, ErrScaledDotProduct
+		vMat.Close()
+		return nil, fmt.Errorf("attention scores: %w", err)
 	}
-	defer attn.Close()
 
-	// Project output
-	attn = attn.Transpose(0, 2, 1, 3).Reshape(input.Shape()[0], input.Shape()[1], a.hiddenDim)
-	defer attn.Close()
+	// Debug: print shape after matmul
+	fmt.Printf("[DEBUG] scores shape: %v\n", scores.Shape())
 
-	out, err := a.outProj.Project(attn)
+	// Scale scores
+	scale := float32(1.0 / math.Sqrt(float64(a.headDim)))
+	scores = scores.Scale(scale)
+
+	// Apply softmax
+	probs, err := scores.Softmax(-1)
+	// scores is not used after this point, safe to close
+	scores.Close() // Close scores after softmax
 	if err != nil {
-		return nil, err
+		vMat.Close()
+		return nil, fmt.Errorf("softmax: %w", err)
 	}
-	defer out.Close()
+
+	// Add debug output before MatMul
+	fmt.Printf("[DEBUG] MatMul: probs shape: %v, vMat shape: %v\n", probs.Shape(), vMat.Shape())
+	// Apply attention to values
+	attn, err := probs.MatMul(vMat)
+	// probs and vMat are not used after this point, safe to close
+	probs.Close() // Close probs after matmul
+	vMat.Close()  // Close vMat after matmul
+	if err != nil {
+		return nil, fmt.Errorf("attention output: %w", err)
+	}
+
+	// Debug: print shape after attention matmul
+	fmt.Printf("[DEBUG] attn shape: %v\n", attn.Shape())
+
+	// Transpose back
+	attn = transposeBack(attn)
+	fmt.Printf("[DEBUG] attn transposed back: %v\n", attn.Shape())
+
+	// Project to output dimension
+	output, err := a.oProj.Project(attn)
+	// attn is not used after this point, safe to close
+	attn.Close() // Close attn after projection
+	if err != nil {
+		return nil, fmt.Errorf("output projection: %w", err)
+	}
 
 	// Add residual connection
-	if len(x.Shape()) == 2 {
-		// For 2D input, take first sequence position
-		res := tensor.NewTensor(input.Shape()[0], a.hiddenDim)
-		for b := 0; b < input.Shape()[0]; b++ {
-			for d := 0; d < a.hiddenDim; d++ {
-				val := out.Get(b, 0, d) + x.Get(b, d)
-				// Clamp to int8 range
-				if val > 127 {
-					val = 127
-				} else if val < -128 {
-					val = -128
-				}
-				res.Set(int8(val), b, d)
-			}
-		}
-		return res, nil
-	}
+	result := output.Add(x)
+	// output is not used after this point, safe to close
+	output.Close()
 
-	// For 3D input, add residual connection
-	res := tensor.NewTensor(input.Shape()[0], input.Shape()[1], a.hiddenDim)
-	for b := 0; b < input.Shape()[0]; b++ {
-		for s := 0; s < input.Shape()[1]; s++ {
-			for d := 0; d < a.hiddenDim; d++ {
-				val := out.Get(b, s, d) + x.Get(b, s, d)
-				// Clamp to int8 range
-				if val > 127 {
-					val = 127
-				} else if val < -128 {
-					val = -128
-				}
-				res.Set(int8(val), b, s, d)
-			}
-		}
-	}
-	return res, nil
+	return result, nil
 }
 
 // SetWeights sets the weights for the attention sublayer.
@@ -274,49 +228,46 @@ func (a *AttentionSublayer) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 //
 // Returns an error if any weight assignment fails.
 func (a *AttentionSublayer) SetWeights(queryWeights, keyWeights, valueWeights, outWeights *tensor.Tensor) error {
-	headDim := a.hiddenDim / a.numHeads
-	kvHeadDim := a.hiddenDim / a.numKVHeads
-
 	// Check for nil weights
 	if queryWeights == nil {
-		return ErrSetQueryWeights
+		return errors.ErrSetQueryWeights
 	}
 	if keyWeights == nil {
-		return ErrSetKeyWeights
+		return errors.ErrSetKeyWeights
 	}
 	if valueWeights == nil {
-		return ErrSetValueWeights
+		return errors.ErrSetValueWeights
 	}
 	if outWeights == nil {
-		return ErrSetOutputWeights
+		return errors.ErrSetOutputWeights
 	}
 
 	// Check shapes
-	if len(queryWeights.Shape()) != 2 || queryWeights.Shape()[0] != a.hiddenDim || queryWeights.Shape()[1] != a.numHeads*headDim {
-		return ErrSetQueryWeights
+	if len(queryWeights.Shape()) != 2 || queryWeights.Shape()[0] != a.hiddenDim || queryWeights.Shape()[1] != a.numHeads*a.headDim {
+		return errors.ErrSetQueryWeights
 	}
-	if len(keyWeights.Shape()) != 2 || keyWeights.Shape()[0] != a.hiddenDim || keyWeights.Shape()[1] != a.numKVHeads*kvHeadDim {
-		return ErrSetKeyWeights
+	if len(keyWeights.Shape()) != 2 || keyWeights.Shape()[0] != a.hiddenDim || keyWeights.Shape()[1] != a.hiddenDim {
+		return errors.ErrSetKeyWeights
 	}
-	if len(valueWeights.Shape()) != 2 || valueWeights.Shape()[0] != a.hiddenDim || valueWeights.Shape()[1] != a.numKVHeads*kvHeadDim {
-		return ErrSetValueWeights
+	if len(valueWeights.Shape()) != 2 || valueWeights.Shape()[0] != a.hiddenDim || valueWeights.Shape()[1] != a.hiddenDim {
+		return errors.ErrSetValueWeights
 	}
-	if len(outWeights.Shape()) != 2 || outWeights.Shape()[0] != a.numHeads*headDim || outWeights.Shape()[1] != a.hiddenDim {
-		return ErrSetOutputWeights
+	if len(outWeights.Shape()) != 2 || outWeights.Shape()[0] != a.numHeads*a.headDim || outWeights.Shape()[1] != a.hiddenDim {
+		return errors.ErrSetOutputWeights
 	}
 
 	// Set weights
 	if err := a.qProj.SetWeights(queryWeights); err != nil {
-		return ErrSetQueryWeights
+		return errors.ErrSetQueryWeights
 	}
 	if err := a.kProj.SetWeights(keyWeights); err != nil {
-		return ErrSetKeyWeights
+		return errors.ErrSetKeyWeights
 	}
 	if err := a.vProj.SetWeights(valueWeights); err != nil {
-		return ErrSetValueWeights
+		return errors.ErrSetValueWeights
 	}
-	if err := a.outProj.SetWeights(outWeights); err != nil {
-		return ErrSetOutputWeights
+	if err := a.oProj.SetWeights(outWeights); err != nil {
+		return errors.ErrSetOutputWeights
 	}
 	return nil
 }
@@ -329,7 +280,7 @@ func (a *AttentionSublayer) SetWeights(queryWeights, keyWeights, valueWeights, o
 // Returns an error if the gamma tensor is invalid.
 func (a *AttentionSublayer) SetGamma(gamma *tensor.Tensor) error {
 	if gamma == nil {
-		return ErrSetGamma
+		return errors.ErrSetGamma
 	}
 	return a.preNorm.SetGamma(gamma)
 }
@@ -362,7 +313,55 @@ func (a *AttentionSublayer) Close() {
 	if a.vProj != nil {
 		a.vProj.Close()
 	}
-	if a.outProj != nil {
-		a.outProj.Close()
+	if a.oProj != nil {
+		a.oProj.Close()
+	}
+	a.closed = true
+}
+
+// Helper functions for safe transpose
+func transposeForAttention(t *tensor.Tensor) *tensor.Tensor {
+	shape := t.Shape()
+	switch len(shape) {
+	case 2:
+		// For 2D tensors, reshape to [batch, 1, hidden_dim]
+		return t.Reshape(shape[0], 1, shape[1]).(*tensor.Tensor)
+	case 3:
+		// For 3D tensors, reshape to [batch, seq_len, num_heads, head_dim]
+		return t.Reshape(shape[0], shape[1], shape[2]/64, 64).(*tensor.Tensor)
+	case 4:
+		return t.Transpose(0, 2, 1, 3)
+	default:
+		panic(fmt.Sprintf("transposeForAttention: unsupported tensor rank %d, shape %v", len(shape), shape))
+	}
+}
+
+func transposeForAttentionK(t *tensor.Tensor) *tensor.Tensor {
+	shape := t.Shape()
+	switch len(shape) {
+	case 2:
+		// For 2D tensors, reshape to [batch, 1, hidden_dim]
+		return t.Reshape(shape[0], 1, shape[1]).(*tensor.Tensor)
+	case 3:
+		// For 3D tensors, reshape to [batch, seq_len, num_heads, head_dim]
+		return t.Reshape(shape[0], shape[1], shape[2]/64, 64).(*tensor.Tensor)
+	case 4:
+		return t.Transpose(0, 2, 3, 1)
+	default:
+		panic(fmt.Sprintf("transposeForAttentionK: unsupported tensor rank %d, shape %v", len(shape), shape))
+	}
+}
+
+func transposeBack(t *tensor.Tensor) *tensor.Tensor {
+	shape := t.Shape()
+	switch len(shape) {
+	case 3:
+		// For 3D tensors, reshape to [batch, hidden_dim]
+		return t.Reshape(shape[0], shape[2]).(*tensor.Tensor)
+	case 4:
+		// For 4D tensors, reshape to [batch, seq_len, hidden_dim]
+		return t.Reshape(shape[0], shape[1], shape[2]*shape[3]).(*tensor.Tensor)
+	default:
+		panic(fmt.Sprintf("transposeBack: unsupported tensor rank %d, shape %v", len(shape), shape))
 	}
 }

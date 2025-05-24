@@ -98,14 +98,22 @@ func (l *LMHead) Forward(input *tensor.Tensor) (*tensor.Tensor, error) {
 	defer flatInput.Close()
 
 	// Apply linear transformation
-	output, err = tensor.BitLinear(flatInput, l.weights)
+	outputIface, err := tensor.BitLinear(flatInput, l.weights)
 	if err != nil {
 		return nil, err
+	}
+	output, ok := outputIface.(*tensor.Tensor)
+	if !ok {
+		panic("expected *tensor.Tensor from BitLinear")
 	}
 	defer output.Close()
 
 	// Reshape back to [batch_size, seq_len, vocab_size]
-	reshaped = output.Reshape(batchSize, seqLen, l.vocabSize)
+	reshapedIface := output.Reshape(batchSize, seqLen, l.vocabSize)
+	reshaped, ok = reshapedIface.(*tensor.Tensor)
+	if !ok {
+		panic("expected *tensor.Tensor from Reshape for output")
+	}
 	return reshaped, err
 }
 

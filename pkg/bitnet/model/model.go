@@ -7,6 +7,7 @@ package model
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"math"
@@ -44,6 +45,8 @@ var (
 	ErrFFNForward              = errors.New("bitnet: FFN forward pass failed")
 	ErrFinalNormGamma          = errors.New("bitnet: failed to set final norm gamma")
 	ErrFinalNormForward        = errors.New("bitnet: final norm forward pass failed")
+	ErrFSNotSet                = errors.New("bitnet: fs not set")
+	ErrPathEmpty               = errors.New("bitnet: path is empty")
 )
 
 // Model represents a BitNet model instance. It manages the model's configuration,
@@ -62,6 +65,11 @@ type Model struct {
 	attnSublayers []*bitnetmath.AttentionSublayer
 	ffnSublayers  []*bitnetmath.FFNSublayer
 	finalNorm     *bitnetmath.LayerNorm
+
+	// Memory pools for frequently allocated objects
+	tensorOps        *bitnetmath.TensorOps
+	hiddenStatesPool sync.Pool
+	logitsPool       sync.Pool
 }
 
 // Config represents the model configuration parameters.
@@ -97,16 +105,34 @@ func NewConfig() *Config {
 	}
 }
 
-// NewModel creates a new Model instance with the given configuration and filesystem.
-// If config is nil, a default configuration is used.
+// NewModel creates a new BitNet model instance with the given configuration.
 func NewModel(config *Config, fs fs.FS) *Model {
 	if config == nil {
 		config = NewConfig()
 	}
+
+	// Initialize memory pools
+	tensorOps := bitnetmath.NewTensorOps(config.MaxSeqLength, config.HiddenSize)
+
+	hiddenStatesPool := sync.Pool{
+		New: func() interface{} {
+			return make([][]float32, config.MaxSeqLength)
+		},
+	}
+
+	logitsPool := sync.Pool{
+		New: func() interface{} {
+			return make([]float32, config.VocabSize)
+		},
+	}
+
 	return &Model{
-		config: config,
-		fs:     fs,
-		done:   make(chan struct{}),
+		config:           config,
+		fs:               fs,
+		done:             make(chan struct{}),
+		tensorOps:        tensorOps,
+		hiddenStatesPool: hiddenStatesPool,
+		logitsPool:       logitsPool,
 	}
 }
 
@@ -340,72 +366,88 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 
 // forward performs a single forward pass through the model and returns the logits
 func (m *Model) forward(tokens []int) ([]float32, error) {
-	// Acquire mutex to prevent concurrent forward() calls
-	m.forwardMu.Lock()
-	defer m.forwardMu.Unlock()
-
-	if m.weights == nil {
-		return nil, ErrWeightsNotLoaded
-	}
-
-	if m.tokenizer == nil {
-		return nil, ErrTokenizerNotLoaded
-	}
-
-	// Check sequence length
-	if len(tokens) > m.config.MaxSeqLength {
-		return nil, ErrSequenceTooLong
-	}
-
-	// Convert tokens to hidden states using embedding layer
+	// Get embeddings for tokens
 	hiddenStates, err := m.embedTokens(tokens)
 	if err != nil {
 		return nil, err
 	}
 
-	// Convert hidden states to tensor
-	hiddenStatesTensor := tensor.NewTensor(1, len(tokens), m.config.HiddenSize)
-	for i := 0; i < len(tokens); i++ {
-		for j := 0; j < m.config.HiddenSize; j++ {
-			hiddenStatesTensor.Set(int8(hiddenStates[i][j]), 0, i, j)
-		}
+	// Reshape and copy hidden states to tensor
+	hiddenStatesTensor := m.tensorOps.ReshapeAndCopy(hiddenStates, 1, len(tokens), m.config.HiddenSize)
+	if hiddenStatesTensor == nil {
+		return nil, fmt.Errorf("failed to create hidden states tensor")
 	}
+	fmt.Printf("[DEBUG] hiddenStatesTensor created with shape: %v\n", hiddenStatesTensor.Shape())
+
+	// Keep track of tensors to close
+	var tensorsToClose []*tensor.Tensor
+	defer func() {
+		for _, t := range tensorsToClose {
+			if t != nil {
+				fmt.Printf("[DEBUG] closing tensor with shape: %v\n", t.Shape())
+				t.Close()
+			}
+		}
+	}()
+
+	currentTensor := hiddenStatesTensor
 
 	// Process through transformer blocks
 	for i := 0; i < m.config.NumLayers; i++ {
-		// Apply attention
-		hiddenStatesTensor, err = m.attnSublayers[i].Forward(hiddenStatesTensor)
+		fmt.Printf("[DEBUG] Processing transformer block %d\n", i)
+		nextTensor, err := m.attnSublayers[i].Forward(currentTensor.(*tensor.Tensor))
 		if err != nil {
-			hiddenStatesTensor.Close()
-			return nil, ErrAttentionForward
+			return nil, fmt.Errorf("attention forward pass failed: %w", err)
 		}
+		if currentTensor != hiddenStatesTensor {
+			tensorsToClose = append(tensorsToClose, currentTensor.(*tensor.Tensor))
+		}
+		currentTensor = nextTensor
+		fmt.Printf("[DEBUG] After attention, currentTensor shape: %v\n", currentTensor.Shape())
 
-		// Apply FFN
-		hiddenStatesTensor, err = m.ffnSublayers[i].Forward(hiddenStatesTensor)
+		nextTensor, err = m.ffnSublayers[i].Forward(currentTensor.(*tensor.Tensor))
 		if err != nil {
-			hiddenStatesTensor.Close()
-			return nil, ErrFFNForward
+			return nil, fmt.Errorf("ffn forward pass failed: %w", err)
 		}
+		if currentTensor != hiddenStatesTensor {
+			tensorsToClose = append(tensorsToClose, currentTensor.(*tensor.Tensor))
+		}
+		currentTensor = nextTensor
+		fmt.Printf("[DEBUG] After FFN, currentTensor shape: %v\n", currentTensor.Shape())
 	}
 
-	// Apply final normalization
-	hiddenStatesTensor, err = m.finalNorm.Forward(hiddenStatesTensor)
+	nextTensor, err := m.finalNorm.Forward(currentTensor.(*tensor.Tensor))
 	if err != nil {
+		return nil, fmt.Errorf("final norm forward pass failed: %w", err)
+	}
+	if currentTensor != hiddenStatesTensor {
+		tensorsToClose = append(tensorsToClose, currentTensor.(*tensor.Tensor))
+	}
+	currentTensor = nextTensor
+	fmt.Printf("[DEBUG] After final norm, currentTensor shape: %v\n", currentTensor.Shape())
+
+	// Get logits from pool
+	logits := m.logitsPool.Get().([]float32)
+	defer m.logitsPool.Put(logits)
+
+	// Get last hidden state and project to vocabulary size
+	lastHiddenState := m.tensorOps.GetLastHiddenState(currentTensor, len(tokens), m.config.HiddenSize)
+	if lastHiddenState == nil {
+		return nil, fmt.Errorf("failed to get last hidden state")
+	}
+	copy(logits, lastHiddenState)
+
+	// Create a copy of logits to return
+	result := make([]float32, len(logits))
+	copy(result, logits)
+
+	// Close hiddenStatesTensor after all operations are complete
+	if hiddenStatesTensor != nil {
+		fmt.Printf("[DEBUG] closing hiddenStatesTensor with shape: %v\n", hiddenStatesTensor.Shape())
 		hiddenStatesTensor.Close()
-		return nil, ErrFinalNormForward
 	}
 
-	// Convert last hidden state to float32 slice
-	lastHiddenState := make([]float32, m.config.HiddenSize)
-	for i := 0; i < m.config.HiddenSize; i++ {
-		lastHiddenState[i] = float32(hiddenStatesTensor.Get(0, len(tokens)-1, i))
-	}
-
-	// Close the tensor after we're done using it
-	hiddenStatesTensor.Close()
-
-	// Project to vocabulary size and return logits
-	return m.projectToVocab(lastHiddenState), nil
+	return m.projectToVocab(result), nil
 }
 
 // softmax applies the softmax function to the input logits
@@ -578,6 +620,12 @@ func (m *Model) Close() {
 		m.finalNorm = nil
 	}
 
+	// Close tensor operations
+	if m.tensorOps != nil {
+		m.tensorOps.Close()
+		m.tensorOps = nil
+	}
+
 	// Clear weights
 	if m.weights != nil {
 		// Clear token embeddings
@@ -726,7 +774,6 @@ func (m *Model) setAttentionWeights(attn *bitnetmath.AttentionSublayer, block *T
 
 	// Convert attention norm to float32 and create tensor
 	attnGammaTensor := tensor.NewTensor(h)
-	defer attnGammaTensor.Close()
 	for i := 0; i < h; i++ {
 		attnGammaTensor.Set(block.AttnNorm[i], i)
 	}
@@ -781,7 +828,6 @@ func (m *Model) setFinalNormWeights(norm *bitnetmath.LayerNorm) error {
 
 	// Set final norm gamma
 	finalNormGammaTensor := tensor.NewTensor(m.config.HiddenSize)
-	defer finalNormGammaTensor.Close()
 	finalNormGammaData := convertInt8ToFloat32(finalNormTensor.Data())
 	for i := 0; i < m.config.HiddenSize; i++ {
 		finalNormGammaTensor.Set(int8(finalNormGammaData[i]), i)
@@ -790,5 +836,26 @@ func (m *Model) setFinalNormWeights(norm *bitnetmath.LayerNorm) error {
 		return ErrFinalNormGamma
 	}
 
+	return nil
+}
+
+// InitTokenizer initializes the tokenizer with the given path
+func (m *Model) InitTokenizer(path string) error {
+	if m.fs == nil {
+		loggers.Printf(loggers.Debug, "filesystem not set")
+		return ErrFSNotSet
+	}
+	if path == "" {
+		loggers.Printf(loggers.Debug, "path is empty")
+		return ErrPathEmpty
+	}
+
+	tokenizer, err := model.NewTokenizer(m.fs, path)
+	if err != nil {
+		loggers.Printf(loggers.Debug, "failed to initialize tokenizer: %v", err)
+		return ErrTokenizerInit
+	}
+
+	m.tokenizer = tokenizer
 	return nil
 }

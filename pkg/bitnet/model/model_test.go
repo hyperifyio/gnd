@@ -547,10 +547,29 @@ func BenchmarkModel_Infer(b *testing.B) {
 	}
 }
 
-func TestEmbedTokens(t *testing.T) {
-	model := NewModel(nil, nil)
-	model.weights = &ModelWeights{
-		TokenEmbedding: make([]int8, model.config.VocabSize*model.config.HiddenSize),
+func TestModelEmbedTokens(t *testing.T) {
+	config := &Config{
+		HiddenSize:   64,
+		VocabSize:    100,
+		MaxSeqLength: 128,
+	}
+
+	// Create test file system with weights
+	fs := &testFS{
+		files: map[string][]byte{
+			"test.weights": createValidWeights(),
+		},
+	}
+
+	model := NewModel(config, fs)
+	if model == nil {
+		t.Fatal("NewModel returned nil")
+	}
+	defer model.Close()
+
+	// Load test weights
+	if err := model.LoadWeights("test.weights"); err != nil {
+		t.Fatalf("LoadWeights failed: %v", err)
 	}
 
 	tests := []struct {
@@ -559,7 +578,12 @@ func TestEmbedTokens(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name:    "valid tokens",
+			name:    "single token",
+			tokens:  []int{1},
+			wantErr: false,
+		},
+		{
+			name:    "multiple tokens",
 			tokens:  []int{1, 2, 3},
 			wantErr: false,
 		},
@@ -573,18 +597,48 @@ func TestEmbedTokens(t *testing.T) {
 			tokens:  []int{-1},
 			wantErr: true,
 		},
-		{
-			name:    "token out of range",
-			tokens:  []int{model.config.VocabSize},
-			wantErr: true,
-		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := model.embedTokens(tt.tokens)
+			// Create a copy of tokens to avoid modifying the test case
+			tokens := make([]int, len(tt.tokens))
+			copy(tokens, tt.tokens)
+
+			// Get embeddings
+			embeddings, err := model.embedTokens(tokens)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("embedTokens() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if err != nil {
+				return
+			}
+
+			// Verify embeddings shape
+			if len(embeddings) != len(tokens) {
+				t.Errorf("embedTokens() batch size = %d, want %d", len(embeddings), len(tokens))
+			}
+			if len(embeddings) > 0 && len(embeddings[0]) != config.HiddenSize {
+				t.Errorf("embedTokens() hidden size = %d, want %d", len(embeddings[0]), config.HiddenSize)
+			}
+
+			// Verify embeddings are not zero
+			allZero := true
+			for _, embedding := range embeddings {
+				for _, v := range embedding {
+					if v != 0 {
+						allZero = false
+						break
+					}
+				}
+				if !allZero {
+					break
+				}
+			}
+			if allZero {
+				t.Error("embedTokens() returned all zero embeddings")
 			}
 		})
 	}

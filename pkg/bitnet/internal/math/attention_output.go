@@ -91,7 +91,12 @@ func (out *AttentionOutputProjection) Project(input *tensor.Tensor) (*tensor.Ten
 			flatInput.Set(data[i], 0, i)
 		}
 	} else {
-		flatInput = input.Reshape(flatSize, out.numHeads*headDim)
+		flatInputIface := input.Reshape(flatSize, out.numHeads*headDim)
+		var ok bool
+		flatInput, ok = flatInputIface.(*tensor.Tensor)
+		if !ok {
+			panic("AttentionOutputProjection: expected *tensor.Tensor from Reshape")
+		}
 		defer flatInput.Close()
 	}
 
@@ -115,18 +120,18 @@ func (out *AttentionOutputProjection) Project(input *tensor.Tensor) (*tensor.Ten
 		return reshaped, nil
 	}
 
-	reshaped := output.Reshape(batchSize, seqLen, out.hiddenDim)
+	reshapedIface := output.Reshape(batchSize, seqLen, out.hiddenDim)
+	reshaped, ok := reshapedIface.(*tensor.Tensor)
+	if !ok {
+		panic("AttentionOutputProjection: expected *tensor.Tensor from Reshape")
+	}
 	loggers.Printf(loggers.Debug, "AttentionOutputProjection output shape: %v", reshaped.Shape())
 	return reshaped, nil
 }
 
 // SetWeights sets the output projection weights.
-//
-// Parameters:
-//   - weights: Output projection weights [hidden_dim, hidden_dim]
-//
-// Returns an error if the weights tensor has incorrect dimensions.
-// The weights must match the layer's hidden dimension for both input and output.
+// AttentionOutputProjection takes ownership of the weights tensor and will close it when Close is called.
+// The caller must not close the tensor after passing it to SetWeights.
 func (out *AttentionOutputProjection) SetWeights(weights *tensor.Tensor) error {
 	if out.outProj == nil {
 		panic("projection is closed")
@@ -136,6 +141,9 @@ func (out *AttentionOutputProjection) SetWeights(weights *tensor.Tensor) error {
 	}
 	if len(weights.Shape()) != 2 || weights.Shape()[0] != out.hiddenDim || weights.Shape()[1] != out.hiddenDim {
 		panic("invalid weights shape")
+	}
+	if out.outProj != nil {
+		out.outProj.Close()
 	}
 	out.outProj = weights
 	return nil
@@ -148,4 +156,121 @@ func (out *AttentionOutputProjection) Close() {
 		out.outProj.Close()
 		out.outProj = nil
 	}
+}
+
+// AttentionOutput represents the output layer for multi-head attention.
+// This layer processes the attention outputs from all heads and combines them
+// into a single output tensor.
+type AttentionOutput struct {
+	// Hidden dimension of the model
+	hiddenDim int
+	// Number of attention heads
+	numHeads int
+	// Dimension of each attention head
+	headDim int
+	// Output tensors for each head
+	outputs []*tensor.Tensor
+}
+
+// NewAttentionOutput creates a new attention output layer.
+func NewAttentionOutput(hiddenDim, numHeads int) *AttentionOutput {
+	headDim := hiddenDim / numHeads
+	return &AttentionOutput{
+		hiddenDim: hiddenDim,
+		numHeads:  numHeads,
+		headDim:   headDim,
+		outputs:   make([]*tensor.Tensor, numHeads),
+	}
+}
+
+// Forward performs the forward pass of the attention output layer
+func (out *AttentionOutput) Forward(input tensor.TensorOperations) tensor.TensorOperations {
+	// Validate input shape
+	if input == nil {
+		panic("attention output: input tensor is nil")
+	}
+	shape := input.Shape()
+	if len(shape) != 3 {
+		panic("attention output: input must be 3D")
+	}
+	batchSize, seqLen, hiddenDim := shape[0], shape[1], shape[2]
+	if hiddenDim != out.hiddenDim {
+		panic("attention output: input hidden dimension does not match")
+	}
+
+	// Reshape input for processing
+	flatSize := batchSize * seqLen
+
+	t, ok := input.(*tensor.Tensor)
+	if !ok {
+		panic("attention output: input is not *tensor.Tensor")
+	}
+
+	reshapedIface := t.Reshape(flatSize, out.numHeads*out.headDim)
+	reshaped, ok := reshapedIface.(*tensor.Tensor)
+	if !ok {
+		panic("attention output: reshaped tensor is not *tensor.Tensor")
+	}
+
+	// Process each head
+	for h := 0; h < out.numHeads; h++ {
+		headStart := h * out.headDim
+
+		// Create a new tensor for the head
+		headTensor := tensor.NewTensor(flatSize, out.headDim)
+		defer headTensor.Close()
+
+		// Copy data for this head
+		for i := 0; i < flatSize; i++ {
+			for j := 0; j < out.headDim; j++ {
+				value := reshaped.Get(i, headStart+j)
+				headTensor.Set(value, i, j)
+			}
+		}
+
+		// Apply head-specific processing
+		headOutput := out.processHead(headTensor)
+
+		// Store in output
+		if out.outputs[h] == nil {
+			out.outputs[h] = headOutput
+		} else {
+			// Copy data from headOutput to out.outputs[h]
+			for i := 0; i < flatSize; i++ {
+				for j := 0; j < out.headDim; j++ {
+					value := headOutput.Get(i, j)
+					out.outputs[h].Set(value, i, j)
+				}
+			}
+			headOutput.Close()
+		}
+	}
+
+	// Combine head outputs
+	combined := out.combineHeads(batchSize, seqLen)
+
+	// Reshape to original dimensions
+	return combined.Reshape(batchSize, seqLen, out.hiddenDim)
+}
+
+// processHead processes a single attention head's output
+func (out *AttentionOutput) processHead(headSlice *tensor.Tensor) *tensor.Tensor {
+	// TODO: Implement head-specific processing
+	return headSlice
+}
+
+// combineHeads combines the outputs from all attention heads
+func (out *AttentionOutput) combineHeads(batchSize, seqLen int) *tensor.Tensor {
+	// TODO: Implement head combination
+	return tensor.NewTensor(batchSize, seqLen, out.hiddenDim)
+}
+
+// Close releases all resources associated with the attention output layer
+func (out *AttentionOutput) Close() {
+	for _, t := range out.outputs {
+		if t != nil {
+			t.Close()
+		}
+	}
+	out.outputs = nil
 }

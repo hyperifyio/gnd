@@ -18,10 +18,10 @@ func TestRawTensor(t *testing.T) {
 			rows: 2,
 			cols: 2,
 			setup: func(rt *rawTensor) {
-				rt.Set(0, 0, 1)
-				rt.Set(0, 1, 2)
-				rt.Set(1, 0, 3)
-				rt.Set(1, 1, 4)
+				rt.Set(1, 0, 0)
+				rt.Set(2, 0, 1)
+				rt.Set(3, 1, 0)
+				rt.Set(4, 1, 1)
 			},
 			expected: [][]int8{
 				{1, 2},
@@ -34,10 +34,10 @@ func TestRawTensor(t *testing.T) {
 			rows: 2,
 			cols: 2,
 			setup: func(rt *rawTensor) {
-				rt.Set(0, 0, -128)
-				rt.Set(0, 1, 127)
-				rt.Set(1, 0, 0)
-				rt.Set(1, 1, 42)
+				rt.Set(-128, 0, 0)
+				rt.Set(127, 0, 1)
+				rt.Set(0, 1, 0)
+				rt.Set(42, 1, 1)
 			},
 			expected: [][]int8{
 				{-128, 127},
@@ -52,7 +52,7 @@ func TestRawTensor(t *testing.T) {
 			setup: func(rt *rawTensor) {
 				for i := 0; i < 100; i++ {
 					for j := 0; j < 100; j++ {
-						rt.Set(i, j, int8((i+j)%256-128))
+						rt.Set(int8((i+j)%256-128), i, j)
 					}
 				}
 			},
@@ -73,48 +73,35 @@ func TestRawTensor(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.wantPanic {
-				defer func() {
-					if r := recover(); r == nil {
-						t.Error("expected panic")
-					}
-				}()
+			defer func() {
+				if r := recover(); r == nil && tt.wantPanic {
+					t.Error("expected panic")
+				} else if r != nil && !tt.wantPanic {
+					t.Errorf("unexpected panic: %v", r)
+				}
+			}()
+
+			rt := newRawTensor(tt.rows, tt.cols)
+			if tt.setup != nil {
+				tt.setup(rt)
 			}
 
-			// Create raw tensor
-			rt := newRawTensor(tt.rows, tt.cols)
-
-			// Setup values
-			tt.setup(rt)
-
-			// Verify values
 			if tt.expected != nil {
 				for i := 0; i < tt.rows; i++ {
 					for j := 0; j < tt.cols; j++ {
-						got := rt.At(i, j)
+						got := rt.Get(i, j)
 						want := tt.expected[i][j]
 						if got != want {
-							t.Errorf("At(%d, %d) = %d, want %d", i, j, got, want)
-						}
-					}
-				}
-			} else if tt.name == "large matrix" {
-				// Verify pattern for large matrix
-				for i := 0; i < tt.rows; i++ {
-					for j := 0; j < tt.cols; j++ {
-						got := rt.At(i, j)
-						want := int8((i+j)%256 - 128)
-						if got != want {
-							t.Errorf("At(%d, %d) = %d, want %d", i, j, got, want)
+							t.Errorf("rt.Get(%d, %d) = %d, want %d", i, j, got, want)
 						}
 					}
 				}
 			}
 
 			// Verify Shape
-			rows, cols := rt.Shape()
-			if rows != tt.rows || cols != tt.cols {
-				t.Errorf("Shape() = (%d, %d), want (%d, %d)", rows, cols, tt.rows, tt.cols)
+			shape := rt.Shape()
+			if len(shape) != 2 || shape[0] != tt.rows || shape[1] != tt.cols {
+				t.Errorf("Shape() = %v, want [%d, %d]", shape, tt.rows, tt.cols)
 			}
 
 			// Verify Data
@@ -185,18 +172,18 @@ func TestNewRawTensorFrom(t *testing.T) {
 			// Verify values
 			for i := 0; i < len(tt.expected); i++ {
 				for j := 0; j < len(tt.expected[i]); j++ {
-					got := rt.At(i, j)
+					got := rt.Get(i, j)
 					want := tt.expected[i][j]
 					if got != want {
-						t.Errorf("At(%d, %d) = %d, want %d", i, j, got, want)
+						t.Errorf("Get(%d, %d) = %d, want %d", i, j, got, want)
 					}
 				}
 			}
 
 			// Verify shape
-			rows, cols := rt.Shape()
-			if rows != len(tt.expected) || cols != len(tt.expected[0]) {
-				t.Errorf("Shape() = (%d, %d), want (%d, %d)", rows, cols, len(tt.expected), len(tt.expected[0]))
+			shape := rt.Shape()
+			if len(shape) != 2 || shape[0] != len(tt.expected) || shape[1] != len(tt.expected[0]) {
+				t.Errorf("Shape() = %v, want [%d, %d]", shape, len(tt.expected), len(tt.expected[0]))
 			}
 		})
 	}
@@ -272,14 +259,14 @@ func BenchmarkRawTensor(b *testing.B) {
 			// Benchmark Set operations
 			b.Run("Set", func(b *testing.B) {
 				for i := 0; i < b.N; i++ {
-					rt.Set(i%size.rows, i%size.cols, int8(i%256-128))
+					rt.Set(int8(i%256-128), i%size.rows, i%size.cols)
 				}
 			})
 
 			// Benchmark Get operations
 			b.Run("Get", func(b *testing.B) {
 				for i := 0; i < b.N; i++ {
-					_ = rt.At(i%size.rows, i%size.cols)
+					_ = rt.Get(i%size.rows, i%size.cols)
 				}
 			})
 
@@ -293,7 +280,7 @@ func BenchmarkRawTensor(b *testing.B) {
 			// Benchmark Shape access
 			b.Run("Shape", func(b *testing.B) {
 				for i := 0; i < b.N; i++ {
-					_, _ = rt.Shape()
+					_ = rt.Shape()
 				}
 			})
 		})

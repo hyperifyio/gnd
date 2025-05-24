@@ -6,10 +6,13 @@
 package tensor
 
 import (
+	"fmt"
+	"math"
 	"runtime"
 	"sync"
 	"sync/atomic"
 
+	"github.com/hyperifyio/gnd/pkg/bitnet/errors"
 	"github.com/hyperifyio/gnd/pkg/loggers"
 )
 
@@ -27,7 +30,7 @@ type TensorType interface {
 	Set(value int8, indices ...int)
 	Shape() []int
 	Data() []int8
-	Close()
+	Close() error
 }
 
 // ParallelProcessor defines operations that can be executed in parallel
@@ -161,21 +164,8 @@ func (t *Tensor) setRaw(value int8, indices ...int) {
 	t.data[index] = value // No clamping
 }
 
-// Shape returns a copy of the tensor's dimensions.
-// Panics if the tensor is closed.
-func (t *Tensor) Shape() []int {
-	if atomic.LoadUint32(&t.closed) == 1 {
-		panic("tensor: Shape called on closed tensor")
-	}
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-
-	shape := make([]int, len(t.shape))
-	copy(shape, t.shape)
-	return shape
-}
-
-// Data returns a copy of the underlying data array.
+// Data returns a reference to the underlying data array.
+// The caller must not modify the returned slice.
 // Panics if the tensor is closed.
 func (t *Tensor) Data() []int8 {
 	if atomic.LoadUint32(&t.closed) == 1 {
@@ -183,10 +173,19 @@ func (t *Tensor) Data() []int8 {
 	}
 	t.mu.RLock()
 	defer t.mu.RUnlock()
+	return t.data
+}
 
-	data := make([]int8, len(t.data))
-	copy(data, t.data)
-	return data
+// Shape returns a reference to the tensor's dimensions.
+// The caller must not modify the returned slice.
+// Panics if the tensor is closed.
+func (t *Tensor) Shape() []int {
+	if atomic.LoadUint32(&t.closed) == 1 {
+		panic("tensor: Shape called on closed tensor")
+	}
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.shape
 }
 
 // ParallelForEach processes each element in parallel using the provided function.
@@ -244,15 +243,23 @@ func (t *Tensor) ParallelForEach(fn func(indices []int, value int8)) {
 
 // Close releases all resources associated with the tensor.
 // After calling Close, the tensor cannot be used anymore.
-func (t *Tensor) Close() {
-	if !atomic.CompareAndSwapUint32(&t.closed, 0, 1) {
-		return
+func (t *Tensor) Close() error {
+	if t == nil {
+		return errors.ErrNilTensor
 	}
-	// No lock: just clear fields
-	t.data = nil
-	t.shape = nil
-	t.stride = nil
-	runtime.GC()
+	if atomic.CompareAndSwapUint32(&t.closed, 0, 1) {
+		// Store shape for debug logging before clearing fields
+		shape := make([]int, len(t.shape))
+		copy(shape, t.shape)
+		fmt.Printf("[DEBUG] Closing tensor with shape: %v\n", shape)
+
+		// Clear fields
+		t.data = nil
+		t.shape = nil
+		t.stride = nil
+		runtime.GC()
+	}
+	return nil
 }
 
 // calculateIndex converts multi-dimensional indices to a linear index.
@@ -285,22 +292,42 @@ func (t *Tensor) calculateIndices(index int) []int {
 	return indices
 }
 
-// Reshape creates a new tensor with the same data but different dimensions.
+// equalShape checks if two shapes are equal
+func equalShape(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// Reshape creates a new tensor with the same data but different shape.
 // The total number of elements must remain the same.
-// Returns nil if the new shape is invalid.
-func (t *Tensor) Reshape(shape ...int) *Tensor {
+// Panics if the tensor is closed or if the new shape is invalid.
+func (t *Tensor) Reshape(shape ...int) TensorOperations {
+	if t == nil {
+		return nil
+	}
+	if atomic.LoadUint32(&t.closed) == 1 {
+		return nil
+	}
+
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
-	if t.closed == 1 {
-		panic("tensor: Reshape called on closed tensor")
-	}
+	// Store current shape for debug logging
+	currentShape := make([]int, len(t.shape))
+	copy(currentShape, t.shape)
+	fmt.Printf("[DEBUG] Reshape: t shape: %v, new dims: %v\n", currentShape, shape)
 
 	// Calculate total size of new shape
 	newSize := 1
 	for _, dim := range shape {
 		if dim <= 0 {
-			loggers.Printf(loggers.Debug, "Invalid shape dimension encountered: %v", shape)
 			panic("tensor: invalid shape dimension")
 		}
 		newSize *= dim
@@ -308,56 +335,23 @@ func (t *Tensor) Reshape(shape ...int) *Tensor {
 
 	// Verify total size matches
 	if newSize != len(t.data) {
-		panic("tensor: total size must match")
+		panic(fmt.Sprintf("tensor: cannot reshape tensor of size %d to shape %v", len(t.data), shape))
 	}
 
-	// Debug output for current shape, stride, and data length
-	loggers.Printf(loggers.Debug, "Current shape: %v, stride: %v, data length: %d", t.shape, t.stride, len(t.data))
-	loggers.Printf(loggers.Debug, "Target shape: %v, product: %d", shape, newSize)
-
-	// Check if the data is contiguous (C-order: stride[i] == product(shape[i+1:]))
-	isContiguous := true
-	expectedStride := 1
-	for i := len(t.shape) - 1; i >= 0; i-- {
-		if t.stride[i] != expectedStride {
-			isContiguous = false
-			break
-		}
-		expectedStride *= t.shape[i]
-	}
-
-	// If not contiguous, copy data into a new contiguous tensor
-	if !isContiguous {
-		contiguousData := make([]int8, len(t.data))
-		for i := 0; i < len(t.data); i++ {
-			indices := t.calculateIndices(i)
-			contiguousData[i] = t.data[t.calculateIndex(indices)]
-		}
-		t.data = contiguousData
-		t.stride = make([]int, len(t.shape))
-		for i := 0; i < len(t.shape); i++ {
-			t.stride[i] = 1
-		}
-	}
-
-	// Create new tensor with same data but new shape
-	newTensor := &Tensor{
-		data:   make([]int8, len(t.data)),
-		shape:  shape,
-		stride: make([]int, len(shape)),
-	}
-
-	// Copy data
-	copy(newTensor.data, t.data)
-
-	// Calculate new strides
+	// Calculate new stride
+	newStride := make([]int, len(shape))
 	stride := 1
 	for i := len(shape) - 1; i >= 0; i-- {
-		newTensor.stride[i] = stride
+		newStride[i] = stride
 		stride *= shape[i]
 	}
 
-	return newTensor
+	// Create new tensor with same data
+	return &Tensor{
+		data:   t.data,
+		shape:  shape,
+		stride: newStride,
+	}
 }
 
 // NewTensorFromData creates a new tensor from existing data.
@@ -400,68 +394,49 @@ func NewTensorFromData(data []int8, rows int) *Tensor {
 	return t
 }
 
-// Transpose creates a new tensor with dimensions reordered according to the order parameter.
+// Transpose creates a new tensor with transposed dimensions.
 // The order parameter specifies the new order of dimensions.
-// Returns nil if the order is invalid.
+// Panics if the tensor is closed or if the order is invalid.
 func (t *Tensor) Transpose(order ...int) *Tensor {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-
-	if t.closed == 1 {
-		panic("tensor: Transpose called on closed tensor")
+	if t == nil {
+		return nil
 	}
-
-	if len(order) != len(t.shape) {
-		panic("tensor: order length must match tensor rank")
+	if atomic.LoadUint32(&t.closed) == 1 {
+		return nil
 	}
+	fmt.Printf("[DEBUG] Transpose: t shape: %v, dims: %v\n", t.Shape(), order)
 
 	// Validate order
-	used := make([]bool, len(order))
-	for _, o := range order {
-		if o < 0 || o >= len(order) {
-			panic("tensor: invalid dimension in order")
-		}
-		if used[o] {
-			panic("tensor: duplicate dimension in order")
-		}
-		used[o] = true
+	if len(order) != len(t.shape) {
+		panic("tensor: invalid transpose order")
 	}
 
-	// Create new tensor with permuted shape
+	// Check for duplicate dimensions
+	seen := make(map[int]bool)
+	for _, dim := range order {
+		if dim < 0 || dim >= len(t.shape) {
+			panic("tensor: invalid dimension in transpose order")
+		}
+		if seen[dim] {
+			panic("tensor: duplicate dimension in transpose order")
+		}
+		seen[dim] = true
+	}
+
+	// Create new shape and stride
 	newShape := make([]int, len(order))
-	for i, o := range order {
-		newShape[i] = t.shape[o]
+	newStride := make([]int, len(order))
+	for i, dim := range order {
+		newShape[i] = t.shape[dim]
+		newStride[i] = t.stride[dim]
 	}
 
-	// Create new tensor
-	result := &Tensor{
-		data:   make([]int8, len(t.data)),
+	// Create new tensor with same data
+	return &Tensor{
+		data:   t.data,
 		shape:  newShape,
-		stride: make([]int, len(order)),
+		stride: newStride,
 	}
-
-	// Calculate new strides
-	stride := 1
-	for i := len(order) - 1; i >= 0; i-- {
-		result.stride[i] = stride
-		stride *= newShape[i]
-	}
-
-	// Copy data with permutation
-	for i := 0; i < len(t.data); i++ {
-		oldIndices := t.calculateIndices(i)
-		newIndices := make([]int, len(order))
-		for j, o := range order {
-			newIndices[j] = oldIndices[o]
-		}
-		newIndex := 0
-		for j, idx := range newIndices {
-			newIndex += idx * result.stride[j]
-		}
-		result.data[newIndex] = t.data[i]
-	}
-
-	return result
 }
 
 // Repeat creates a new tensor by repeating the tensor along the specified dimension.
@@ -521,53 +496,54 @@ func (t *Tensor) Repeat(dim int, count int) *Tensor {
 
 // Add performs element-wise addition of two tensors.
 // The tensors must have the same shape.
-// Returns nil if the shapes don't match.
+// Returns a new tensor with the result.
 func (t *Tensor) Add(other *Tensor) *Tensor {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-
-	if t.closed == 1 {
+	if atomic.LoadUint32(&t.closed) == 1 {
 		panic("tensor: Add called on closed tensor")
 	}
-
-	if other == nil {
-		panic("tensor: cannot add nil tensor")
+	if atomic.LoadUint32(&other.closed) == 1 {
+		panic("tensor: Add called with closed tensor")
 	}
 
-	if other.closed == 1 {
-		panic("tensor: cannot add closed tensor")
-	}
+	t.mu.RLock()
+	other.mu.RLock()
+	defer t.mu.RUnlock()
+	defer other.mu.RUnlock()
 
-	// Validate shapes match
-	if len(t.shape) != len(other.shape) {
-		panic("tensor: shapes must match for addition")
-	}
-	for i := range t.shape {
-		if t.shape[i] != other.shape[i] {
-			panic("tensor: shapes must match for addition")
-		}
+	// Verify shapes match
+	if !equalShape(t.shape, other.shape) {
+		panic("tensor: cannot add tensors with different shapes")
 	}
 
 	// Create result tensor
-	result := &Tensor{
-		data:   make([]int8, len(t.data)),
-		shape:  t.shape,
-		stride: t.stride,
-	}
+	result := NewTensor(t.shape...)
 
-	// Add elements
-	for i := 0; i < len(t.data); i++ {
-		// Convert to int32 to handle overflow during addition
-		sum := int32(t.data[i]) + int32(other.data[i])
-		// Clamp to int8 range (-128 to 127)
-		if sum > 127 {
-			result.data[i] = 127
-		} else if sum < -128 {
-			result.data[i] = -128
-		} else {
-			result.data[i] = int8(sum)
-		}
+	// Add elements in parallel
+	numWorkers := runtime.NumCPU()
+	chunkSize := (len(t.data) + numWorkers - 1) / numWorkers
+
+	var wg sync.WaitGroup
+	for i := 0; i < len(t.data); i += chunkSize {
+		wg.Add(1)
+		go func(start int) {
+			defer wg.Done()
+			end := start + chunkSize
+			if end > len(t.data) {
+				end = len(t.data)
+			}
+			for j := start; j < end; j++ {
+				sum := int32(t.data[j]) + int32(other.data[j])
+				if sum > 127 {
+					result.data[j] = 127
+				} else if sum < -128 {
+					result.data[j] = -128
+				} else {
+					result.data[j] = int8(sum)
+				}
+			}
+		}(i)
 	}
+	wg.Wait()
 
 	return result
 }
@@ -601,7 +577,268 @@ func (t *Tensor) SetTernary(value int8, indices ...int) {
 	t.data[index] = value
 }
 
-// Verify interface implementation
+// MatMul performs matrix multiplication between two tensors.
+// The last dimension of the first tensor must match the second-to-last
+// dimension of the second tensor.
+// Returns a new tensor with the result.
+func (t *Tensor) MatMul(other *Tensor) (*Tensor, error) {
+	if t == nil || other == nil {
+		return nil, errors.ErrNilTensor
+	}
+	if atomic.LoadUint32(&t.closed) == 1 || atomic.LoadUint32(&other.closed) == 1 {
+		return nil, errors.ErrTensorClosed
+	}
+	// Add debug output for shape and stride
+	fmt.Printf("[DEBUG] MatMul: t shape: %v, t stride: %v, other shape: %v, other stride: %v\n", t.Shape(), t.stride, other.Shape(), other.stride)
+
+	t.mu.RLock()
+	other.mu.RLock()
+	defer t.mu.RUnlock()
+	defer other.mu.RUnlock()
+
+	// Get shapes
+	tShape := t.shape
+	oShape := other.shape
+
+	// Validate shapes
+	if len(tShape) < 2 || len(oShape) < 2 {
+		return nil, errors.ErrInvalidShape
+	}
+	if tShape[len(tShape)-1] != oShape[len(oShape)-2] {
+		return nil, errors.ErrInvalidShape
+	}
+
+	// Compute broadcasted batch shape
+	batchShape := broadcastShapes(tShape[:len(tShape)-2], oShape[:len(oShape)-2])
+	if batchShape == nil {
+		return nil, errors.ErrInvalidShape
+	}
+
+	// Output shape: batchShape + [tShape[-2], oShape[-1]]
+	outShape := append(batchShape, tShape[len(tShape)-2], oShape[len(oShape)-1])
+
+	// Create result tensor
+	result := NewTensor(outShape...)
+
+	// Calculate strides for broadcasting
+	tBatchStride := make([]int, len(batchShape))
+	oBatchStride := make([]int, len(batchShape))
+
+	// Initialize strides for the last two dimensions
+	tBatchStride[len(batchShape)-1] = tShape[len(tShape)-2] * tShape[len(tShape)-1]
+	oBatchStride[len(batchShape)-1] = oShape[len(oShape)-2] * oShape[len(oShape)-1]
+
+	// Calculate remaining strides
+	for i := len(batchShape) - 2; i >= 0; i-- {
+		tBatchStride[i] = tBatchStride[i+1] * batchShape[i+1]
+		oBatchStride[i] = oBatchStride[i+1] * batchShape[i+1]
+	}
+
+	// Add debug output for result shape
+	fmt.Printf("[DEBUG] MatMul: result shape: %v\n", result.Shape())
+
+	// Perform matrix multiplication in parallel
+	numWorkers := runtime.NumCPU()
+	chunkSize := (len(result.data) + numWorkers - 1) / numWorkers
+
+	var wg sync.WaitGroup
+	for i := 0; i < len(result.data); i += chunkSize {
+		wg.Add(1)
+		go func(start int) {
+			defer wg.Done()
+			end := start + chunkSize
+			if end > len(result.data) {
+				end = len(result.data)
+			}
+			for j := start; j < end; j++ {
+				indices := result.calculateIndices(j)
+				var sum int32
+
+				// Calculate batch offsets
+				tBatchOffset := 0
+				oBatchOffset := 0
+				for k := 0; k < len(batchShape); k++ {
+					idx := indices[k]
+					if k < len(tShape)-2 {
+						tBatchOffset += idx * tBatchStride[k]
+					}
+					if k < len(oShape)-2 {
+						oBatchOffset += idx * oBatchStride[k]
+					}
+				}
+
+				// Add debug output for indices and offsets
+				if j == start {
+					fmt.Printf("[DEBUG] MatMul: indices=%v, tBatchOffset=%d, oBatchOffset=%d\n", indices, tBatchOffset, oBatchOffset)
+				}
+
+				// Perform matrix multiplication for this batch
+				for k := 0; k < tShape[len(tShape)-1]; k++ {
+					tIdx := tBatchOffset + indices[len(batchShape)]*tShape[len(tShape)-1] + k
+					oIdx := oBatchOffset + k*oShape[len(oShape)-1] + indices[len(batchShape)+1]
+					if tIdx < 0 || tIdx >= len(t.data) || oIdx < 0 || oIdx >= len(other.data) {
+						fmt.Printf("[ERROR] MatMul: tIdx=%d, oIdx=%d, t.data len=%d, other.data len=%d\n", tIdx, oIdx, len(t.data), len(other.data))
+						continue
+					}
+					sum += int32(t.data[tIdx]) * int32(other.data[oIdx])
+				}
+
+				// Clamp result to int8 range
+				if sum > 127 {
+					result.data[j] = 127
+				} else if sum < -128 {
+					result.data[j] = -128
+				} else {
+					result.data[j] = int8(sum)
+				}
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	return result, nil
+}
+
+// broadcastShapes computes the broadcasted shape for two input shapes, or returns nil if not broadcastable.
+func broadcastShapes(a, b []int) []int {
+	// Right-align shapes
+	n := maxInt(len(a), len(b))
+	out := make([]int, n)
+	for i := 0; i < n; i++ {
+		var ad, bd int
+		if i < len(a) {
+			ad = a[len(a)-1-i]
+		} else {
+			ad = 1
+		}
+		if i < len(b) {
+			bd = b[len(b)-1-i]
+		} else {
+			bd = 1
+		}
+		if ad != bd && ad != 1 && bd != 1 {
+			return nil
+		}
+		if ad > bd {
+			out[n-1-i] = ad
+		} else {
+			out[n-1-i] = bd
+		}
+	}
+	return out
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+// Softmax applies the softmax function along the specified axis.
+// Returns a new tensor with the result.
+func (t *Tensor) Softmax(axis int) (*Tensor, error) {
+	if atomic.LoadUint32(&t.closed) == 1 {
+		panic("tensor: Softmax called on closed tensor")
+	}
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	// Support negative axis (e.g., -1 means last axis)
+	if axis < 0 {
+		axis += len(t.shape)
+	}
+	// Validate axis
+	if axis < 0 || axis >= len(t.shape) {
+		return nil, errors.ErrInvalidAxis
+	}
+
+	// Create result tensor
+	result := NewTensor(t.shape...)
+
+	// Calculate softmax in parallel
+	numWorkers := runtime.NumCPU()
+	chunkSize := (len(t.data) + numWorkers - 1) / numWorkers
+
+	var wg sync.WaitGroup
+	for i := 0; i < len(t.data); i += chunkSize {
+		wg.Add(1)
+		go func(start int) {
+			defer wg.Done()
+			end := start + chunkSize
+			if end > len(t.data) {
+				end = len(t.data)
+			}
+			for j := start; j < end; j++ {
+				indices := t.calculateIndices(j)
+				var maxVal float32 = float32(t.data[j])
+				var sum float32 = 0
+				for k := 0; k < t.shape[axis]; k++ {
+					indices[axis] = k
+					val := float32(t.data[t.calculateIndex(indices)])
+					if val > maxVal {
+						maxVal = val
+					}
+				}
+				for k := 0; k < t.shape[axis]; k++ {
+					indices[axis] = k
+					val := float32(t.data[t.calculateIndex(indices)])
+					sum += float32(math.Exp(float64(val - maxVal)))
+				}
+				indices[axis] = j % t.shape[axis]
+				val := float32(t.data[t.calculateIndex(indices)])
+				result.data[j] = int8(float32(math.Exp(float64(val-maxVal))) / sum * 127)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	return result, nil
+}
+
+// Scale multiplies all values in the tensor by the given scale factor.
+// Returns a new tensor with the result.
+func (t *Tensor) Scale(scale float32) *Tensor {
+	if atomic.LoadUint32(&t.closed) == 1 {
+		panic("tensor: Scale called on closed tensor")
+	}
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	// Create result tensor
+	result := NewTensor(t.shape...)
+
+	// Scale values in parallel
+	numWorkers := runtime.NumCPU()
+	chunkSize := (len(t.data) + numWorkers - 1) / numWorkers
+
+	var wg sync.WaitGroup
+	for i := 0; i < len(t.data); i += chunkSize {
+		wg.Add(1)
+		go func(start int) {
+			defer wg.Done()
+			end := start + chunkSize
+			if end > len(t.data) {
+				end = len(t.data)
+			}
+			for j := start; j < end; j++ {
+				scaled := float32(t.data[j]) * scale
+				if scaled > 127 {
+					result.data[j] = 127
+				} else if scaled < -128 {
+					result.data[j] = -128
+				} else {
+					result.data[j] = int8(scaled)
+				}
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	return result
+}
+
+// Verify interface implementations
 var (
 	_ TensorType        = (*Tensor)(nil)
 	_ ParallelProcessor = (*Tensor)(nil)

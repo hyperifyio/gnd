@@ -63,31 +63,41 @@ func alignedAlloc[T any](size int) []T {
 //   - Loop unrolling for faster matrix multiplication
 //   - Reuse of work buffers to reduce allocations
 //   - Branchless clamping of output values
-func BitLinear(input, weights *Tensor) (*Tensor, error) {
+func BitLinear(input TensorReader, weights TensorReader) (TensorOperations, error) {
+	// Convert to concrete types for validation
+	t, ok := input.(*Tensor)
+	if !ok {
+		return nil, ErrInvalidShape
+	}
+	w, ok := weights.(*Tensor)
+	if !ok {
+		return nil, ErrInvalidShape
+	}
+
 	// Lock both tensors for the duration of the operation
-	input.mu.RLock()
-	weights.mu.RLock()
-	defer input.mu.RUnlock()
-	defer weights.mu.RUnlock()
+	t.mu.RLock()
+	w.mu.RLock()
+	defer t.mu.RUnlock()
+	defer w.mu.RUnlock()
 
-	if atomic.LoadUint32(&input.closed) == 1 || atomic.LoadUint32(&weights.closed) == 1 {
-		panic(ErrTensorClosed)
+	if atomic.LoadUint32(&t.closed) == 1 || atomic.LoadUint32(&w.closed) == 1 {
+		return nil, ErrTensorClosed
 	}
 
-	if len(input.shape) != 2 || len(weights.shape) != 2 {
-		panic(ErrInvalidShape)
+	if len(t.shape) != 2 || len(w.shape) != 2 {
+		return nil, ErrInvalidShape
 	}
-	if input.shape[1] != weights.shape[1] {
-		panic(ErrDimensionMismatch)
+	if t.shape[1] != w.shape[1] {
+		return nil, ErrDimensionMismatch
 	}
 
-	batchSize := input.shape[0]
-	inFeatures := input.shape[1]
-	outFeatures := weights.shape[0]
+	batchSize := t.shape[0]
+	inFeatures := t.shape[1]
+	outFeatures := w.shape[0]
 
 	// Debug output for shapes
-	loggers.Printf(loggers.Debug, "BitLinear input shape: %v", input.shape)
-	loggers.Printf(loggers.Debug, "BitLinear weights shape: %v", weights.shape)
+	loggers.Printf(loggers.Debug, "BitLinear input shape: %v", t.shape)
+	loggers.Printf(loggers.Debug, "BitLinear weights shape: %v", w.shape)
 	loggers.Printf(loggers.Debug, "BitLinear output shape: [%d %d]", batchSize, outFeatures)
 	loggers.Printf(loggers.Debug, "BitLinear batchSize: %d, inFeatures: %d, outFeatures: %d", batchSize, inFeatures, outFeatures)
 
@@ -114,78 +124,59 @@ func BitLinear(input, weights *Tensor) (*Tensor, error) {
 	wg.Add(numCPU)
 
 	// Launch worker goroutines
-	for cpu := 0; cpu < numCPU; cpu++ {
-		go func(cpu int) {
+	for i := 0; i < numCPU; i++ {
+		go func(start int) {
 			defer wg.Done()
-
-			start := cpu * chunkSize
 			end := start + chunkSize
 			if end > batchSize {
 				end = batchSize
 			}
-			loggers.Printf(loggers.Debug, "BitLinear goroutine %d: start=%d, end=%d", cpu, start, end)
 
-			// Get a buffer from the pool
+			// Get work buffer from pool
 			buf := bufferPool.Get().(*workBuffer)
 			defer bufferPool.Put(buf)
 
-			// Resize buffer if needed
+			// Ensure buffer is large enough
 			if cap(buf.sums) < outFeatures {
-				buf.sums = alignedAlloc[int32](outFeatures)
-			} else {
-				buf.sums = buf.sums[:outFeatures]
+				buf.sums = make([]int32, outFeatures)
 			}
+			buf.sums = buf.sums[:outFeatures]
 
 			// Process each batch element
 			for b := start; b < end; b++ {
-				// Reset sums for this batch element
-				for o := range buf.sums {
-					buf.sums[o] = 0
+				// Clear sums for this batch element
+				for j := range buf.sums {
+					buf.sums[j] = 0
 				}
 
-				// Process each output feature
-				for o := 0; o < outFeatures; o++ {
-					// Compute dot product with loop unrolling
-					f := 0
-					// Process 4 elements at a time
-					for ; f+3 < inFeatures; f += 4 {
-						// Get input activations (8-bit)
-						act0 := int32(input.data[b*inFeatures+f])
-						act1 := int32(input.data[b*inFeatures+f+1])
-						act2 := int32(input.data[b*inFeatures+f+2])
-						act3 := int32(input.data[b*inFeatures+f+3])
-						// Get weights (1.58-bit)
-						w0 := int32(weights.data[o*inFeatures+f])
-						w1 := int32(weights.data[o*inFeatures+f+1])
-						w2 := int32(weights.data[o*inFeatures+f+2])
-						w3 := int32(weights.data[o*inFeatures+f+3])
-						// Multiply and accumulate
-						buf.sums[o] += act0*w0 + act1*w1 + act2*w2 + act3*w3
-					}
-					// Process remaining elements
-					for ; f < inFeatures; f++ {
-						act := int32(input.data[b*inFeatures+f])
-						w := int32(weights.data[o*inFeatures+f])
-						buf.sums[o] += act * w
+				// Compute matrix multiplication
+				for i := 0; i < inFeatures; i++ {
+					inputVal := int32(t.data[b*inFeatures+i])
+					for j := 0; j < outFeatures; j++ {
+						buf.sums[j] += inputVal * int32(w.data[j*inFeatures+i])
 					}
 				}
 
-				// Clamp and prepare results
-				results := make([]int8, outFeatures)
-				for o := 0; o < outFeatures; o++ {
-					sum := buf.sums[o]
-					// Branchless clamping using min/max
-					sum = min(max(sum, -128), 127)
-					results[o] = int8(sum)
+				// Convert sums to int8 with clamping
+				outputVals := make([]int8, outFeatures)
+				for j := range buf.sums {
+					sum := buf.sums[j]
+					if sum > 127 {
+						outputVals[j] = 127
+					} else if sum < -128 {
+						outputVals[j] = -128
+					} else {
+						outputVals[j] = int8(sum)
+					}
 				}
 
-				// Send results through channel
+				// Send result
 				resultChan <- result{
 					batchIdx: b,
-					values:   results,
+					values:   outputVals,
 				}
 			}
-		}(cpu)
+		}(i * chunkSize)
 	}
 
 	// Close result channel when all workers are done
@@ -195,11 +186,11 @@ func BitLinear(input, weights *Tensor) (*Tensor, error) {
 	}()
 
 	// Collect results
-	for result := range resultChan {
-		if result.err != nil {
-			return nil, result.err
+	for r := range resultChan {
+		if r.err != nil {
+			return nil, r.err
 		}
-		copy(output.data[result.batchIdx*outFeatures:], result.values)
+		copy(output.data[r.batchIdx*outFeatures:], r.values)
 	}
 
 	return output, nil

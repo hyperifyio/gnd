@@ -313,6 +313,24 @@ func TestLayerNorm_Close(t *testing.T) {
 	}
 }
 
+func TestLayerNormGammaClosedPanic(t *testing.T) {
+	norm := NewLayerNorm(4)
+	gamma := tensor.NewTensor(4)
+	for i := 0; i < 4; i++ {
+		gamma.Set(1, i)
+	}
+	norm.SetGamma(gamma)
+	gamma.Close() // Close gamma before Forward
+	input := tensor.NewTensor(1, 4)
+	defer input.Close()
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("Expected panic when gamma tensor is closed, but did not panic")
+		}
+	}()
+	_, _ = norm.Forward(input)
+}
+
 // Benchmarks
 
 func BenchmarkLayerNorm_Forward_2D(b *testing.B) {

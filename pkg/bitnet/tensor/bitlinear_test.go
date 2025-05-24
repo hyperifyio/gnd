@@ -110,42 +110,34 @@ func TestBitLinearPanics(t *testing.T) {
 		name    string
 		input   *Tensor
 		weights *Tensor
+		wantErr error
 	}{
 		{
-			name:    "nil input",
-			input:   nil,
-			weights: NewTensor(2, 2),
+			name:    "1D_input",
+			input:   NewTensor(10),
+			weights: NewTensor(10, 20),
+			wantErr: ErrInvalidShape,
 		},
 		{
-			name:    "nil weights",
-			input:   NewTensor(2, 2),
-			weights: nil,
+			name:    "1D_weights",
+			input:   NewTensor(10, 20),
+			weights: NewTensor(10),
+			wantErr: ErrInvalidShape,
 		},
 		{
-			name:    "1D input",
-			input:   NewTensor(2),
-			weights: NewTensor(2, 2),
-		},
-		{
-			name:    "1D weights",
-			input:   NewTensor(2, 2),
-			weights: NewTensor(2),
-		},
-		{
-			name:    "dimension mismatch",
-			input:   NewTensor(2, 3),
-			weights: NewTensor(2, 2),
+			name:    "dimension_mismatch",
+			input:   NewTensor(10, 20),
+			weights: NewTensor(30, 40),
+			wantErr: ErrDimensionMismatch,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			defer func() {
-				if r := recover(); r == nil {
-					t.Error("expected panic")
-				}
-			}()
-			BitLinear(tt.input, tt.weights)
+			_, err := BitLinear(tt.input, tt.weights)
+			if err != tt.wantErr {
+				t.Errorf("BitLinear() error = %v, wantErr %v", err, tt.wantErr)
+			}
 		})
 	}
 }

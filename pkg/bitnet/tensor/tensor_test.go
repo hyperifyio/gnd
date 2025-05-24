@@ -1391,3 +1391,44 @@ func TestTensor_SetTernary_EdgeCases(t *testing.T) {
 		tensor.SetTernary(1, 0, 0)
 	})
 }
+
+func TestTensorLifecycle(t *testing.T) {
+	// Create a tensor
+	tensor := NewTensor(2, 3)
+
+	// Fill with some data
+	for i := 0; i < 6; i++ {
+		tensor.Set(int8(i), i/3, i%3)
+	}
+
+	// Test concurrent access
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// Read data
+			data := tensor.Data()
+			if len(data) != 6 {
+				t.Errorf("Expected data length 6, got %d", len(data))
+			}
+			// Read shape
+			shape := tensor.Shape()
+			if len(shape) != 2 || shape[0] != 2 || shape[1] != 3 {
+				t.Errorf("Expected shape [2,3], got %v", shape)
+			}
+		}()
+	}
+	wg.Wait()
+
+	// Test closing behavior
+	tensor.Close()
+
+	// Verify closed tensor behavior
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("Expected panic when accessing closed tensor")
+		}
+	}()
+	tensor.Data() // This should panic
+}

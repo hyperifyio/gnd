@@ -20,11 +20,12 @@ func newRawTensor(rows, cols int) *rawTensor {
 }
 
 // newRawTensorFrom creates a rawTensor from an existing Tensor
-func newRawTensorFrom(t *Tensor) *rawTensor {
-	if len(t.Shape()) != 2 {
+func newRawTensorFrom(t TensorReader) *rawTensor {
+	shape := t.Shape()
+	if len(shape) != 2 {
 		panic("rawTensor: input must be 2D")
 	}
-	rows, cols := t.Shape()[0], t.Shape()[1]
+	rows, cols := shape[0], shape[1]
 	rt := newRawTensor(rows, cols)
 	data := t.Data()
 	for i := 0; i < len(data); i++ {
@@ -33,14 +34,20 @@ func newRawTensorFrom(t *Tensor) *rawTensor {
 	return rt
 }
 
-// At returns the value at position (i,j)
-func (r *rawTensor) At(i, j int) int8 {
-	return r.data[i*r.cols+j]
+// Get retrieves a value from the tensor at the specified indices
+func (r *rawTensor) Get(indices ...int) int8 {
+	if len(indices) != 2 {
+		panic("rawTensor: Get requires exactly 2 indices")
+	}
+	return r.data[indices[0]*r.cols+indices[1]]
 }
 
-// Set assigns value v to position (i,j)
-func (r *rawTensor) Set(i, j int, v int8) {
-	r.data[i*r.cols+j] = v // No clamping
+// Set assigns a value to the tensor at the specified indices
+func (r *rawTensor) Set(value int8, indices ...int) {
+	if len(indices) != 2 {
+		panic("rawTensor: Set requires exactly 2 indices")
+	}
+	r.data[indices[0]*r.cols+indices[1]] = value // No clamping
 }
 
 // Data returns the underlying data slice
@@ -49,6 +56,41 @@ func (r *rawTensor) Data() []int8 {
 }
 
 // Shape returns the dimensions of the tensor
-func (r *rawTensor) Shape() (rows, cols int) {
-	return r.rows, r.cols
+func (r *rawTensor) Shape() []int {
+	return []int{r.rows, r.cols}
 }
+
+// Close is a no-op for rawTensor as it doesn't manage resources
+func (r *rawTensor) Close() error { return nil }
+
+// Reshape creates a new rawTensor with the given shape
+func (r *rawTensor) Reshape(shape ...int) TensorOperations {
+	if len(shape) != 2 {
+		panic("rawTensor: Reshape requires exactly 2 dimensions")
+	}
+	rows, cols := shape[0], shape[1]
+	if rows*cols != len(r.data) {
+		panic("rawTensor: cannot reshape tensor with different total size")
+	}
+	return &rawTensor{
+		data: r.data,
+		rows: rows,
+		cols: cols,
+	}
+}
+
+// ParallelForEach processes each element in parallel
+func (r *rawTensor) ParallelForEach(fn func(indices []int, value int8)) {
+	for i := 0; i < r.rows; i++ {
+		for j := 0; j < r.cols; j++ {
+			fn([]int{i, j}, r.data[i*r.cols+j])
+		}
+	}
+}
+
+// Verify interface implementations
+var (
+	_ TensorReader     = (*rawTensor)(nil)
+	_ TensorWriter     = (*rawTensor)(nil)
+	_ TensorOperations = (*rawTensor)(nil)
+)
