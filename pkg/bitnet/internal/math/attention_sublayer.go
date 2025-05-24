@@ -6,7 +6,6 @@ package math
 
 import (
 	"errors"
-	"fmt"
 	"math"
 
 	bitneterrors "github.com/hyperifyio/gnd/pkg/bitnet/errors"
@@ -264,7 +263,7 @@ func (a *AttentionSublayer) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 			loggers.Printf(loggers.Debug, "close vMat: %v", err)
 			return nil, ErrTransposeV
 		}
-		return nil, fmt.Errorf("transpose q: %w", err)
+		return nil, ErrTransposeQ
 	}
 	qMat = qMatOp
 
@@ -282,7 +281,7 @@ func (a *AttentionSublayer) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 			loggers.Printf(loggers.Debug, "close vMat: %v", err)
 			return nil, ErrTransposeV
 		}
-		return nil, fmt.Errorf("transpose k: %w", err)
+		return nil, ErrTransposeK
 	}
 	kMat = kMatOp
 
@@ -300,7 +299,7 @@ func (a *AttentionSublayer) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 			loggers.Printf(loggers.Debug, "close vMat: %v", err)
 			return nil, ErrTransposeV
 		}
-		return nil, fmt.Errorf("transpose v: %w", err)
+		return nil, ErrTransposeV
 	}
 	vMat = vMatOp
 
@@ -328,7 +327,7 @@ func (a *AttentionSublayer) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 	kTransposedOp, err := transposeForAttentionK(kMat)
 	if err := kMat.Close(); err != nil { // kMat is not used after this point
 		loggers.Printf(loggers.Debug, "close kMat: %v", err)
-		return nil, fmt.Errorf("close kMat: %w", err)
+		return nil, ErrCloseKMat
 	}
 	if err != nil {
 		if err := qMat.Close(); err != nil {
@@ -339,7 +338,7 @@ func (a *AttentionSublayer) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 			loggers.Printf(loggers.Debug, "close vMat: %v", err)
 			return nil, ErrTransposeV
 		}
-		return nil, fmt.Errorf("transpose k: %w", err)
+		return nil, ErrTransposeK
 	}
 	kTransposed := kTransposedOp
 
@@ -362,7 +361,7 @@ func (a *AttentionSublayer) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 	}
 	if err := kTransposed.Close(); err != nil { // kTransposed is not used after this point
 		loggers.Printf(loggers.Debug, "close kTransposed: %v", err)
-		return nil, fmt.Errorf("close kTransposed: %w", err)
+		return nil, ErrCloseKMat
 	}
 	if err != nil {
 		if err := vMat.Close(); err != nil {
@@ -465,7 +464,7 @@ func (a *AttentionSublayer) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 	output, err := a.oProj.Project(attn)
 	if err := attn.Close(); err != nil { // attn is not used after this point
 		loggers.Printf(loggers.Debug, "close attn: %v", err)
-		return nil, fmt.Errorf("close attn: %w", err)
+		return nil, ErrCloseAttn
 	}
 	if err != nil {
 		loggers.Printf(loggers.Debug, "output projection: %v", err)
@@ -517,28 +516,32 @@ func (a *AttentionSublayer) SetWeights(queryWeights, keyWeights, valueWeights, o
 	// Check shapes
 	queryShape, err := queryWeights.Shape()
 	if err != nil {
-		return fmt.Errorf("get query weights shape: %w", err)
+		loggers.Printf(loggers.Debug, "get query weights shape: %v", err)
+		return ErrGetQueryWeightsShape
 	}
 	if len(queryShape) != 2 || queryShape[0] != a.hiddenDim || queryShape[1] != a.numHeads*a.headDim {
 		return bitneterrors.ErrSetQueryWeights
 	}
 	keyShape, err := keyWeights.Shape()
 	if err != nil {
-		return fmt.Errorf("get key weights shape: %w", err)
+		loggers.Printf(loggers.Debug, "get key weights shape: %v", err)
+		return ErrGetKeyWeightsShape
 	}
 	if len(keyShape) != 2 || keyShape[0] != a.hiddenDim || keyShape[1] != a.hiddenDim {
 		return bitneterrors.ErrSetKeyWeights
 	}
 	valueShape, err := valueWeights.Shape()
 	if err != nil {
-		return fmt.Errorf("get value weights shape: %w", err)
+		loggers.Printf(loggers.Debug, "get value weights shape: %v", err)
+		return ErrGetValueWeightsShape
 	}
 	if len(valueShape) != 2 || valueShape[0] != a.hiddenDim || valueShape[1] != a.hiddenDim {
 		return bitneterrors.ErrSetValueWeights
 	}
 	outShape, err := outWeights.Shape()
 	if err != nil {
-		return fmt.Errorf("get output weights shape: %w", err)
+		loggers.Printf(loggers.Debug, "get output weights shape: %v", err)
+		return ErrGetOutputWeightsShape
 	}
 	if len(outShape) != 2 || outShape[0] != a.numHeads*a.headDim || outShape[1] != a.hiddenDim {
 		return bitneterrors.ErrSetOutputWeights

@@ -126,32 +126,49 @@ func TestFFN(t *testing.T) {
 			ffn := NewFFN(tt.hiddenDim, tt.intermediateDim)
 
 			// Create input tensor
-			input := tensor.NewTensor(len(tt.input), len(tt.input[0]), len(tt.input[0][0]))
+			input, err := tensor.NewTensor(len(tt.input), len(tt.input[0]), len(tt.input[0][0]))
+			if err != nil {
+				t.Fatalf("failed to create input tensor: %v", err)
+			}
 			for i := range tt.input {
 				for j := range tt.input[i] {
 					for k := range tt.input[i][j] {
-						input.Set(tt.input[i][j][k], i, j, k)
+						if err := input.Set(tt.input[i][j][k], i, j, k); err != nil {
+							t.Fatalf("failed to set input tensor value: %v", err)
+						}
 					}
 				}
 			}
 
 			// Create weight tensors
-			upWeights := tensor.NewTensor(len(tt.upWeights), len(tt.upWeights[0]))
+			upWeights, err := tensor.NewTensor(len(tt.upWeights), len(tt.upWeights[0]))
+			if err != nil {
+				t.Fatalf("failed to create up weights tensor: %v", err)
+			}
 			for i := range tt.upWeights {
 				for j := range tt.upWeights[i] {
-					upWeights.Set(tt.upWeights[i][j], i, j)
+					if err := upWeights.Set(tt.upWeights[i][j], i, j); err != nil {
+						t.Fatalf("failed to set up weights tensor value: %v", err)
+					}
 				}
 			}
 
-			downWeights := tensor.NewTensor(len(tt.downWeights), len(tt.downWeights[0]))
+			downWeights, err := tensor.NewTensor(len(tt.downWeights), len(tt.downWeights[0]))
+			if err != nil {
+				t.Fatalf("failed to create down weights tensor: %v", err)
+			}
 			for i := range tt.downWeights {
 				for j := range tt.downWeights[i] {
-					downWeights.Set(tt.downWeights[i][j], i, j)
+					if err := downWeights.Set(tt.downWeights[i][j], i, j); err != nil {
+						t.Fatalf("failed to set down weights tensor value: %v", err)
+					}
 				}
 			}
 
 			// Set weights
-			ffn.SetWeights(upWeights, downWeights)
+			if err := ffn.SetWeights(upWeights, downWeights); err != nil {
+				t.Fatalf("failed to set weights: %v", err)
+			}
 
 			// Forward pass
 			output, err := ffn.Forward(input)
@@ -161,24 +178,31 @@ func TestFFN(t *testing.T) {
 			}
 
 			// Verify output shape
-			if len(output.Shape()) != 3 {
-				t.Errorf("output shape = %v, want 3 dimensions", output.Shape())
+			shape, err := output.Shape()
+			if err != nil {
+				t.Fatalf("failed to get output shape: %v", err)
 			}
-			if output.Shape()[0] != len(tt.input) {
-				t.Errorf("output batch size = %d, want %d", output.Shape()[0], len(tt.input))
+			if len(shape) != 3 {
+				t.Errorf("output shape = %v, want 3 dimensions", shape)
 			}
-			if output.Shape()[1] != len(tt.input[0]) {
-				t.Errorf("output seq len = %d, want %d", output.Shape()[1], len(tt.input[0]))
+			if shape[0] != len(tt.input) {
+				t.Errorf("output batch size = %d, want %d", shape[0], len(tt.input))
 			}
-			if output.Shape()[2] != tt.hiddenDim {
-				t.Errorf("output hidden dim = %d, want %d", output.Shape()[2], tt.hiddenDim)
+			if shape[1] != len(tt.input[0]) {
+				t.Errorf("output seq len = %d, want %d", shape[1], len(tt.input[0]))
+			}
+			if shape[2] != tt.hiddenDim {
+				t.Errorf("output hidden dim = %d, want %d", shape[2], tt.hiddenDim)
 			}
 
 			// Verify output values
 			for i := range tt.expected {
 				for j := range tt.expected[i] {
 					for k := range tt.expected[i][j] {
-						got := output.Get(i, j, k)
+						got, err := output.Get(i, j, k)
+						if err != nil {
+							t.Fatalf("failed to get output value: %v", err)
+						}
 						want := tt.expected[i][j][k]
 						if got != want {
 							t.Errorf("output[%d][%d][%d] = %d, want %d", i, j, k, got, want)
@@ -282,16 +306,26 @@ func TestFFNPanics(t *testing.T) {
 			ffn := NewFFN(tt.hiddenDim, tt.intermediateDim)
 
 			if tt.panicIn == "setweights" {
-				upWeights := tensor.NewTensor(len(tt.upWeights), len(tt.upWeights[0]))
+				upWeights, err := tensor.NewTensor(len(tt.upWeights), len(tt.upWeights[0]))
+				if err != nil {
+					t.Fatalf("failed to create up weights tensor: %v", err)
+				}
 				for i := range tt.upWeights {
 					for j := range tt.upWeights[i] {
-						upWeights.Set(tt.upWeights[i][j], i, j)
+						if err := upWeights.Set(tt.upWeights[i][j], i, j); err != nil {
+							t.Fatalf("failed to set up weights tensor value: %v", err)
+						}
 					}
 				}
-				downWeights := tensor.NewTensor(len(tt.downWeights), len(tt.downWeights[0]))
+				downWeights, err := tensor.NewTensor(len(tt.downWeights), len(tt.downWeights[0]))
+				if err != nil {
+					t.Fatalf("failed to create down weights tensor: %v", err)
+				}
 				for i := range tt.downWeights {
 					for j := range tt.downWeights[i] {
-						downWeights.Set(tt.downWeights[i][j], i, j)
+						if err := downWeights.Set(tt.downWeights[i][j], i, j); err != nil {
+							t.Fatalf("failed to set down weights tensor value: %v", err)
+						}
 					}
 				}
 				defer func() {
@@ -306,24 +340,39 @@ func TestFFNPanics(t *testing.T) {
 			}
 
 			// For "forward" panic
-			input := tensor.NewTensor(len(tt.input), len(tt.input[0]), len(tt.input[0][0]))
+			input, err := tensor.NewTensor(len(tt.input), len(tt.input[0]), len(tt.input[0][0]))
+			if err != nil {
+				t.Fatalf("failed to create input tensor: %v", err)
+			}
 			for i := range tt.input {
 				for j := range tt.input[i] {
 					for k := range tt.input[i][j] {
-						input.Set(tt.input[i][j][k], i, j, k)
+						if err := input.Set(tt.input[i][j][k], i, j, k); err != nil {
+							t.Fatalf("failed to set input tensor value: %v", err)
+						}
 					}
 				}
 			}
-			upWeights := tensor.NewTensor(len(tt.upWeights), len(tt.upWeights[0]))
+			upWeights, err := tensor.NewTensor(len(tt.upWeights), len(tt.upWeights[0]))
+			if err != nil {
+				t.Fatalf("failed to create up weights tensor: %v", err)
+			}
 			for i := range tt.upWeights {
 				for j := range tt.upWeights[i] {
-					upWeights.Set(tt.upWeights[i][j], i, j)
+					if err := upWeights.Set(tt.upWeights[i][j], i, j); err != nil {
+						t.Fatalf("failed to set up weights tensor value: %v", err)
+					}
 				}
 			}
-			downWeights := tensor.NewTensor(len(tt.downWeights), len(tt.downWeights[0]))
+			downWeights, err := tensor.NewTensor(len(tt.downWeights), len(tt.downWeights[0]))
+			if err != nil {
+				t.Fatalf("failed to create down weights tensor: %v", err)
+			}
 			for i := range tt.downWeights {
 				for j := range tt.downWeights[i] {
-					downWeights.Set(tt.downWeights[i][j], i, j)
+					if err := downWeights.Set(tt.downWeights[i][j], i, j); err != nil {
+						t.Fatalf("failed to set down weights tensor value: %v", err)
+					}
 				}
 			}
 			ffn.SetWeights(upWeights, downWeights)
@@ -338,7 +387,7 @@ func TestFFNPanics(t *testing.T) {
 					case error:
 						msg = v.Error()
 					default:
-						msg = fmt.Sprintf("%v", v)
+						msg = strings.TrimSpace(fmt.Sprintf("%v", v))
 					}
 					if !strings.Contains(msg, tt.expectedPanic) {
 						t.Errorf("Forward() panicked with %T: %q, want substring %q", r, msg, tt.expectedPanic)
@@ -358,9 +407,17 @@ func TestFFN_Close(t *testing.T) {
 	require.NotNil(t, ffn)
 
 	// Set some weights
-	upWeights := tensor.NewTensor(2048, 512)
-	downWeights := tensor.NewTensor(512, 2048)
-	ffn.SetWeights(upWeights, downWeights)
+	upWeights, err := tensor.NewTensor(2048, 512)
+	if err != nil {
+		t.Fatalf("failed to create up weights tensor: %v", err)
+	}
+	downWeights, err := tensor.NewTensor(512, 2048)
+	if err != nil {
+		t.Fatalf("failed to create down weights tensor: %v", err)
+	}
+	if err := ffn.SetWeights(upWeights, downWeights); err != nil {
+		t.Fatalf("failed to set weights: %v", err)
+	}
 
 	// Close the FFN
 	ffn.Close()
@@ -373,15 +430,24 @@ func TestFFN_Close(t *testing.T) {
 		{
 			name: "Forward",
 			fn: func() {
-				input := tensor.NewTensor(32, 16, 512)
+				input, err := tensor.NewTensor(32, 16, 512)
+				if err != nil {
+					t.Fatalf("failed to create input tensor: %v", err)
+				}
 				ffn.Forward(input)
 			},
 		},
 		{
 			name: "SetWeights",
 			fn: func() {
-				upWeights := tensor.NewTensor(2048, 512)
-				downWeights := tensor.NewTensor(512, 2048)
+				upWeights, err := tensor.NewTensor(2048, 512)
+				if err != nil {
+					t.Fatalf("failed to create up weights tensor: %v", err)
+				}
+				downWeights, err := tensor.NewTensor(512, 2048)
+				if err != nil {
+					t.Fatalf("failed to create down weights tensor: %v", err)
+				}
 				ffn.SetWeights(upWeights, downWeights)
 			},
 		},
@@ -481,14 +547,21 @@ func TestFFN_applyReLU2(t *testing.T) {
 					}
 				}()
 			}
-			input := tensor.NewTensor(tt.inputShape...)
+			input, err := tensor.NewTensor(tt.inputShape...)
+			if err != nil {
+				t.Fatalf("failed to create input tensor: %v", err)
+			}
 			if input != nil {
 				for i := range tt.inputValues {
 					for j := range tt.inputValues[i] {
 						if len(tt.inputShape) == 1 {
-							input.Set(tt.inputValues[i][j], j)
+							if err := input.Set(tt.inputValues[i][j], j); err != nil {
+								t.Fatalf("failed to set input tensor value: %v", err)
+							}
 						} else if len(tt.inputShape) == 2 {
-							input.Set(tt.inputValues[i][j], i, j)
+							if err := input.Set(tt.inputValues[i][j], i, j); err != nil {
+								t.Fatalf("failed to set input tensor value: %v", err)
+							}
 						}
 					}
 				}
@@ -523,15 +596,22 @@ func TestFFN_applyReLU2(t *testing.T) {
 			}
 
 			// Verify output shape
-			if len(output.Shape()) != 2 {
-				t.Errorf("output shape = %v, want 2 dimensions", output.Shape())
+			shape, err := output.Shape()
+			if err != nil {
+				t.Fatalf("failed to get output shape: %v", err)
+			}
+			if len(shape) != 2 {
+				t.Errorf("output shape = %v, want 2 dimensions", shape)
 				return
 			}
 
 			// Verify output values
 			for i := range tt.wantValues {
 				for j := range tt.wantValues[i] {
-					got := output.Get(i, j)
+					got, err := output.Get(i, j)
+					if err != nil {
+						t.Fatalf("failed to get output value: %v", err)
+					}
 					want := tt.wantValues[i][j]
 					if got != want {
 						t.Errorf("output[%d][%d] = %d, want %d", i, j, got, want)
