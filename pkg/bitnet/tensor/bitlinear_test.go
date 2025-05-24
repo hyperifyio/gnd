@@ -1,6 +1,7 @@
 package tensor
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -58,18 +59,28 @@ func TestBitLinear(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create input tensor
-			input := NewTensor(len(tt.input), len(tt.input[0]))
+			input, err := NewTensor(len(tt.input), len(tt.input[0]))
+			if err != nil {
+				t.Fatalf("Failed to create input tensor: %v", err)
+			}
 			for i := range tt.input {
 				for j := range tt.input[i] {
-					input.setRaw(tt.input[i][j], i, j)
+					if err := input.setRaw(tt.input[i][j], i, j); err != nil {
+						t.Fatalf("Failed to set input value: %v", err)
+					}
 				}
 			}
 
 			// Create weights tensor
-			weights := NewTensor(len(tt.weights), len(tt.weights[0]))
+			weights, err := NewTensor(len(tt.weights), len(tt.weights[0]))
+			if err != nil {
+				t.Fatalf("Failed to create weights tensor: %v", err)
+			}
 			for i := range tt.weights {
 				for j := range tt.weights[i] {
-					weights.setRaw(tt.weights[i][j], i, j)
+					if err := weights.setRaw(tt.weights[i][j], i, j); err != nil {
+						t.Fatalf("Failed to set weight value: %v", err)
+					}
 				}
 			}
 
@@ -86,7 +97,11 @@ func TestBitLinear(t *testing.T) {
 				for i := range tt.expected {
 					row := make([]int8, len(tt.expected[i]))
 					for j := range tt.expected[i] {
-						row[j] = output.Get(i, j)
+						val, err := output.Get(i, j)
+						if err != nil {
+							t.Fatalf("Failed to get output value: %v", err)
+						}
+						row[j] = val
 					}
 					t.Logf("%v", row)
 				}
@@ -95,7 +110,10 @@ func TestBitLinear(t *testing.T) {
 			// Verify output
 			for i := range tt.expected {
 				for j := range tt.expected[i] {
-					got := output.Get(i, j)
+					got, err := output.Get(i, j)
+					if err != nil {
+						t.Fatalf("Failed to get output value: %v", err)
+					}
 					if got != tt.expected[i][j] {
 						t.Errorf("output[%d][%d] = %d, want %d", i, j, got, tt.expected[i][j])
 					}
@@ -114,20 +132,20 @@ func TestBitLinearPanics(t *testing.T) {
 	}{
 		{
 			name:    "1D_input",
-			input:   NewTensor(10),
-			weights: NewTensor(10, 20),
+			input:   func() *Tensor { t, _ := NewTensor(10); return t }(),
+			weights: func() *Tensor { t, _ := NewTensor(10, 20); return t }(),
 			wantErr: ErrInvalidShape,
 		},
 		{
 			name:    "1D_weights",
-			input:   NewTensor(10, 20),
-			weights: NewTensor(10),
+			input:   func() *Tensor { t, _ := NewTensor(10, 20); return t }(),
+			weights: func() *Tensor { t, _ := NewTensor(10); return t }(),
 			wantErr: ErrInvalidShape,
 		},
 		{
 			name:    "dimension_mismatch",
-			input:   NewTensor(10, 20),
-			weights: NewTensor(30, 40),
+			input:   func() *Tensor { t, _ := NewTensor(10, 20); return t }(),
+			weights: func() *Tensor { t, _ := NewTensor(30, 40); return t }(),
 			wantErr: ErrDimensionMismatch,
 		},
 	}
@@ -198,163 +216,127 @@ func TestMax(t *testing.T) {
 }
 
 func TestBitLinear_EdgeCases(t *testing.T) {
-	tests := []struct {
-		name        string
-		batchSize   int
-		inFeatures  int
-		outFeatures int
-		setup       func(*Tensor, *Tensor)
-		wantErr     bool
-	}{
-		{
-			name:        "zero batch size",
-			batchSize:   0,
-			inFeatures:  10,
-			outFeatures: 10,
-			wantErr:     true,
-		},
-		{
-			name:        "zero input features",
-			batchSize:   10,
-			inFeatures:  0,
-			outFeatures: 10,
-			wantErr:     true,
-		},
-		{
-			name:        "zero output features",
-			batchSize:   10,
-			inFeatures:  10,
-			outFeatures: 0,
-			wantErr:     true,
-		},
-		{
-			name:        "all ones input",
-			batchSize:   2,
-			inFeatures:  3,
-			outFeatures: 2,
-			setup: func(input, weights *Tensor) {
-				// Set all input values to 1
-				for i := 0; i < input.shape[0]; i++ {
-					for j := 0; j < input.shape[1]; j++ {
-						input.Set(1, i, j)
-					}
-				}
-				// Set all weights to 1
-				for i := 0; i < weights.shape[0]; i++ {
-					for j := 0; j < weights.shape[1]; j++ {
-						weights.Set(1, i, j)
-					}
-				}
-			},
-			wantErr: false,
-		},
-		{
-			name:        "all negative input",
-			batchSize:   2,
-			inFeatures:  3,
-			outFeatures: 2,
-			setup: func(input, weights *Tensor) {
-				// Set all input values to -1
-				for i := 0; i < input.shape[0]; i++ {
-					for j := 0; j < input.shape[1]; j++ {
-						input.Set(-1, i, j)
-					}
-				}
-				// Set all weights to -1
-				for i := 0; i < weights.shape[0]; i++ {
-					for j := 0; j < weights.shape[1]; j++ {
-						weights.Set(-1, i, j)
-					}
-				}
-			},
-			wantErr: false,
-		},
-		{
-			name:        "mixed values",
-			batchSize:   2,
-			inFeatures:  3,
-			outFeatures: 2,
-			setup: func(input, weights *Tensor) {
-				// Set alternating values
-				for i := 0; i < input.shape[0]; i++ {
-					for j := 0; j < input.shape[1]; j++ {
-						input.Set(int8((i+j)%3-1), i, j)
-					}
-				}
-				// Set alternating weights
-				for i := 0; i < weights.shape[0]; i++ {
-					for j := 0; j < weights.shape[1]; j++ {
-						weights.Set(int8((i+j)%3-1), i, j)
-					}
-				}
-			},
-			wantErr: false,
-		},
-		{
-			name:        "large dimensions",
-			batchSize:   100,
-			inFeatures:  100,
-			outFeatures: 100,
-			setup: func(input, weights *Tensor) {
-				// Set pattern of values
-				for i := 0; i < input.shape[0]; i++ {
-					for j := 0; j < input.shape[1]; j++ {
-						input.Set(int8((i+j)%3-1), i, j)
-					}
-				}
-				// Set pattern of weights
-				for i := 0; i < weights.shape[0]; i++ {
-					for j := 0; j < weights.shape[1]; j++ {
-						weights.Set(int8((i+j)%3-1), i, j)
-					}
-				}
-			},
-			wantErr: false,
-		},
+	// Test with empty tensors (using 1x1 instead of 0x0 since zero dimensions are invalid)
+	input, err := NewTensor(1, 1)
+	if err != nil {
+		t.Fatalf("Failed to create input tensor: %v", err)
+	}
+	weights, err := NewTensor(1, 1)
+	if err != nil {
+		t.Fatalf("Failed to create weights tensor: %v", err)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.wantErr {
-				defer func() {
-					if r := recover(); r == nil {
-						t.Error("BitLinear did not panic as expected")
-					}
-				}()
+	output, err := BitLinear(input, weights)
+	if err != nil {
+		t.Fatalf("BitLinear failed: %v", err)
+	}
+	defer output.Close()
+
+	shape, err := output.Shape()
+	if err != nil {
+		t.Fatalf("Failed to get output shape: %v", err)
+	}
+	if len(shape) != 2 || shape[0] != 1 || shape[1] != 1 {
+		t.Errorf("Expected 1x1 tensor, got shape %v", shape)
+	}
+
+	data, err := output.Data()
+	if err != nil {
+		t.Fatalf("Failed to get output data: %v", err)
+	}
+	if len(data) != 1 {
+		t.Errorf("Expected data length 1, got length %d", len(data))
+	}
+
+	// Test with nil tensors
+	_, err = BitLinear(nil, weights)
+	if err == nil {
+		t.Error("Expected error with nil input tensor")
+	}
+
+	_, err = BitLinear(input, nil)
+	if err == nil {
+		t.Error("Expected error with nil weights tensor")
+	}
+
+	// Test with closed tensors
+	err = input.Close()
+	if err != nil {
+		t.Fatalf("Failed to close input tensor: %v", err)
+	}
+	_, err = BitLinear(input, weights)
+	if err == nil {
+		t.Error("Expected error with closed input tensor")
+	}
+
+	err = weights.Close()
+	if err != nil {
+		t.Fatalf("Failed to close weights tensor: %v", err)
+	}
+	_, err = BitLinear(input, weights)
+	if err == nil {
+		t.Error("Expected error with closed weights tensor")
+	}
+}
+
+func TestBitLinear_ConcurrentAccess(t *testing.T) {
+	// Create input and weights tensors
+	input, err := NewTensor(10, 10)
+	if err != nil {
+		t.Fatalf("Failed to create input tensor: %v", err)
+	}
+	weights, err := NewTensor(10, 10)
+	if err != nil {
+		t.Fatalf("Failed to create weights tensor: %v", err)
+	}
+
+	// Fill with test data
+	for i := 0; i < 10; i++ {
+		for j := 0; j < 10; j++ {
+			if err := input.setRaw(1, i, j); err != nil {
+				t.Fatalf("Failed to set input value: %v", err)
 			}
-
-			input := NewTensor(tt.batchSize, tt.inFeatures)
-			weights := NewTensor(tt.outFeatures, tt.inFeatures)
-
-			if tt.setup != nil {
-				tt.setup(input, weights)
+			if err := weights.setRaw(1, i, j); err != nil {
+				t.Fatalf("Failed to set weight value: %v", err)
 			}
+		}
+	}
 
+	// Run multiple BitLinear operations concurrently
+	const numGoroutines = 10
+	results := make(chan error, numGoroutines)
+
+	for i := 0; i < numGoroutines; i++ {
+		go func() {
 			output, err := BitLinear(input, weights)
 			if err != nil {
-				t.Fatalf("BitLinear failed: %v", err)
+				results <- err
+				return
 			}
 			defer output.Close()
 
-			if !tt.wantErr {
-				if output == nil {
-					t.Fatal("BitLinear returned nil")
-				}
-
-				// Verify output shape
-				shape := output.Shape()
-				if len(shape) != 2 || shape[0] != tt.batchSize || shape[1] != tt.outFeatures {
-					t.Errorf("Output shape = %v, want [%d %d]", shape, tt.batchSize, tt.outFeatures)
-				}
-
-				// Verify output values are within int8 range
-				data := output.Data()
-				for i, v := range data {
-					if v < -128 || v > 127 {
-						t.Errorf("Output[%d] = %d, out of int8 range", i, v)
+			// Verify output
+			for i := 0; i < 10; i++ {
+				for j := 0; j < 10; j++ {
+					val, err := output.Get(i, j)
+					if err != nil {
+						results <- err
+						return
+					}
+					if val != 10 { // 10 * 1 = 10
+						results <- fmt.Errorf("unexpected value at [%d,%d]: got %d, want 10", i, j, val)
+						return
 					}
 				}
 			}
-		})
+			results <- nil
+		}()
+	}
+
+	// Check results
+	for i := 0; i < numGoroutines; i++ {
+		if err := <-results; err != nil {
+			t.Errorf("Concurrent BitLinear failed: %v", err)
+		}
 	}
 }

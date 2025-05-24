@@ -7,6 +7,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func equalShape(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func TestAttentionSublayer(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -565,49 +577,6 @@ func TestAttentionSublayer_Forward(t *testing.T) {
 			// Verify output shape matches input shape
 			if !equalShape(output.Shape(), tt.input.Shape()) {
 				t.Errorf("Output shape = %v, want %v", output.Shape(), tt.input.Shape())
-			}
-		})
-	}
-}
-
-func TestEqualShape(t *testing.T) {
-	tests := []struct {
-		name   string
-		shape1 []int
-		shape2 []int
-		want   bool
-	}{
-		{
-			name:   "equal shapes",
-			shape1: []int{2, 3, 4},
-			shape2: []int{2, 3, 4},
-			want:   true,
-		},
-		{
-			name:   "different lengths",
-			shape1: []int{2, 3, 4},
-			shape2: []int{2, 3},
-			want:   false,
-		},
-		{
-			name:   "different values",
-			shape1: []int{2, 3, 4},
-			shape2: []int{2, 3, 5},
-			want:   false,
-		},
-		{
-			name:   "empty shapes",
-			shape1: []int{},
-			shape2: []int{},
-			want:   true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := equalShape(tt.shape1, tt.shape2)
-			if got != tt.want {
-				t.Errorf("equalShape() = %v, want %v", got, tt.want)
 			}
 		})
 	}

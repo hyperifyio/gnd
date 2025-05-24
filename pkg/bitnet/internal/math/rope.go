@@ -1,7 +1,14 @@
 package math
 
 import (
+	"errors"
 	"math"
+)
+
+var (
+	ErrRoPEInvalidParams    = errors.New("rope: invalid parameters")
+	ErrRoPEInvalidPosition  = errors.New("rope: position exceeds maximum sequence length")
+	ErrRoPEInvalidDimension = errors.New("rope: vector dimension does not match RoPE dimension")
 )
 
 // RoPE implements Rotary Positional Encoding for attention mechanisms
@@ -17,13 +24,13 @@ type RoPE struct {
 }
 
 // NewRoPE creates a new RoPE instance with the given parameters
-func NewRoPE(base float64, maxSeqLen, dim int) *RoPE {
+func NewRoPE(base float64, maxSeqLen, dim int) (*RoPE, error) {
 	// Validate input parameters
 	if maxSeqLen <= 0 {
-		panic("maxSeqLen must be positive")
+		return nil, ErrRoPEInvalidParams
 	}
 	if dim <= 0 {
-		panic("dim must be positive")
+		return nil, ErrRoPEInvalidParams
 	}
 
 	rope := &RoPE{
@@ -43,16 +50,16 @@ func NewRoPE(base float64, maxSeqLen, dim int) *RoPE {
 		}
 	}
 
-	return rope
+	return rope, nil
 }
 
 // ApplyRoPE applies rotary positional encoding to a query or key vector
-func (r *RoPE) ApplyRoPE(vector []float32, position int) []float32 {
+func (r *RoPE) ApplyRoPE(vector []float32, position int) ([]float32, error) {
 	if position >= r.maxSeqLen {
-		panic("position exceeds maximum sequence length")
+		return nil, ErrRoPEInvalidPosition
 	}
 	if len(vector) != r.dim {
-		panic("vector dimension does not match RoPE dimension")
+		return nil, ErrRoPEInvalidDimension
 	}
 
 	result := make([]float32, r.dim)
@@ -75,21 +82,25 @@ func (r *RoPE) ApplyRoPE(vector []float32, position int) []float32 {
 		result[i+1] = vector[i]*sin + vector[i+1]*cos
 	}
 
-	return result
+	return result, nil
 }
 
 // ApplyRoPEBatch applies rotary positional encoding to a batch of vectors
-func (r *RoPE) ApplyRoPEBatch(vectors [][]float32, startPos int) [][]float32 {
+func (r *RoPE) ApplyRoPEBatch(vectors [][]float32, startPos int) ([][]float32, error) {
 	if startPos < 0 || startPos+len(vectors) > r.maxSeqLen {
-		panic("startPos or batch size exceeds maximum sequence length")
+		return nil, ErrRoPEInvalidPosition
 	}
 
 	result := make([][]float32, len(vectors))
 	for i, vector := range vectors {
 		if len(vector) != r.dim {
-			panic("vector dimension does not match RoPE dimension")
+			return nil, ErrRoPEInvalidDimension
 		}
-		result[i] = r.ApplyRoPE(vector, startPos+i)
+		encoded, err := r.ApplyRoPE(vector, startPos+i)
+		if err != nil {
+			return nil, err
+		}
+		result[i] = encoded
 	}
-	return result
+	return result, nil
 }

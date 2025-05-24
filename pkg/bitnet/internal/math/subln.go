@@ -1,9 +1,15 @@
 package math
 
 import (
+	"errors"
 	"math"
 	"runtime"
 	"sync"
+)
+
+var (
+	ErrSubLNGammaMismatch = errors.New("subln: gamma dimension mismatch")
+	ErrSubLNClosed        = errors.New("subln: operation called on closed layer")
 )
 
 // SubLN implements Sub-Layer Normalization for BitNet
@@ -14,10 +20,15 @@ type SubLN struct {
 	epsilon float32
 	// Learnable scale parameter (gamma)
 	gamma []float32
+	// Flag indicating if the layer has been closed
+	closed bool
 }
 
 // NewSubLN creates a new SubLN instance
-func NewSubLN(hiddenSize int, epsilon float32) *SubLN {
+func NewSubLN(hiddenSize int, epsilon float32) (*SubLN, error) {
+	if hiddenSize <= 0 {
+		return nil, ErrSubLNGammaMismatch
+	}
 	// Initialize gamma with ones
 	gamma := make([]float32, hiddenSize)
 	for i := range gamma {
@@ -27,28 +38,25 @@ func NewSubLN(hiddenSize int, epsilon float32) *SubLN {
 	return &SubLN{
 		epsilon: epsilon,
 		gamma:   gamma,
-	}
+	}, nil
 }
 
 // Normalize applies Sub-Layer Normalization to a batch of hidden states
 // input: [batch_size, hidden_size] float32 matrix
 // Returns: normalized and scaled hidden states
-func (s *SubLN) Normalize(input [][]float32) [][]float32 {
-	if s == nil || s.gamma == nil {
-		// If the SubLN has been closed or is nil, return a copy of the input
-		output := make([][]float32, len(input))
-		for i := range output {
-			output[i] = make([]float32, len(input[i]))
-			copy(output[i], input[i])
-		}
-		return output
+func (s *SubLN) Normalize(input [][]float32) ([][]float32, error) {
+	if s == nil || s.closed {
+		return nil, ErrSubLNClosed
+	}
+	if s.gamma == nil {
+		return nil, ErrSubLNClosed
 	}
 
 	if len(input) == 0 {
-		return input
+		return input, nil
 	}
 	if len(input[0]) == 0 {
-		return input
+		return input, nil
 	}
 
 	batchSize := len(input)
@@ -104,31 +112,42 @@ func (s *SubLN) Normalize(input [][]float32) [][]float32 {
 	}
 
 	wg.Wait()
-	return output
+	return output, nil
 }
 
 // SetGamma sets the learnable scale parameter
-func (s *SubLN) SetGamma(gamma []float32) {
+func (s *SubLN) SetGamma(gamma []float32) error {
+	if s == nil || s.closed {
+		return ErrSubLNClosed
+	}
 	if len(gamma) != len(s.gamma) {
-		panic("gamma dimension mismatch")
+		return ErrSubLNGammaMismatch
 	}
 	copy(s.gamma, gamma)
+	return nil
 }
 
 // GetGamma returns the current scale parameter
-func (s *SubLN) GetGamma() []float32 {
+func (s *SubLN) GetGamma() ([]float32, error) {
+	if s == nil || s.closed {
+		return nil, ErrSubLNClosed
+	}
 	gamma := make([]float32, len(s.gamma))
 	copy(gamma, s.gamma)
-	return gamma
+	return gamma, nil
 }
 
 // Close releases all resources associated with the SubLN.
 // This includes cleaning up memory and setting fields to nil.
 // After Close is called, the SubLN instance should not be used.
-func (s *SubLN) Close() {
+func (s *SubLN) Close() error {
 	if s == nil {
-		return
+		return nil
 	}
-	s.gamma = nil
-	s.epsilon = 0
+	if !s.closed {
+		s.gamma = nil
+		s.epsilon = 0
+		s.closed = true
+	}
+	return nil
 }

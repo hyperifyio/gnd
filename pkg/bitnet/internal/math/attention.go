@@ -51,14 +51,27 @@ var (
 // with final results clamped to int8 range [-128, 127].
 func ScaledDotProductAttention(q, k, v *tensor.Tensor) (*tensor.Tensor, error) {
 	// Validate input shapes
-	if len(q.Shape()) != 4 || len(k.Shape()) != 4 || len(v.Shape()) != 4 {
+	qShape, err := q.Shape()
+	if err != nil {
+		return nil, err
+	}
+	kShape, err := k.Shape()
+	if err != nil {
+		return nil, err
+	}
+	vShape, err := v.Shape()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(qShape) != 4 || len(kShape) != 4 || len(vShape) != 4 {
 		return nil, ErrInputTensorsMustBe4D
 	}
 
-	batchSize := q.Shape()[0]
-	numHeads := q.Shape()[1]
-	seqLen := q.Shape()[2]
-	headDim := q.Shape()[3]
+	batchSize := qShape[0]
+	numHeads := qShape[1]
+	seqLen := qShape[2]
+	headDim := qShape[3]
 
 	// Validate head dimension
 	if headDim < 8 || headDim > 256 {
@@ -67,13 +80,16 @@ func ScaledDotProductAttention(q, k, v *tensor.Tensor) (*tensor.Tensor, error) {
 	}
 
 	// Validate sequence lengths
-	if k.Shape()[2] != seqLen || v.Shape()[2] != seqLen {
-		tensor.DebugLog("mismatched sequence lengths: q=%d, k=%d, v=%d", seqLen, k.Shape()[2], v.Shape()[2])
+	if kShape[2] != seqLen || vShape[2] != seqLen {
+		tensor.DebugLog("mismatched sequence lengths: q=%d, k=%d, v=%d", seqLen, kShape[2], vShape[2])
 		return nil, ErrMismatchedSeqLengths
 	}
 
 	// Create output tensor
-	output := tensor.NewTensor(batchSize, numHeads, seqLen, headDim)
+	output, err := tensor.NewTensor(batchSize, numHeads, seqLen, headDim)
+	if err != nil {
+		return nil, err
+	}
 
 	// Process in parallel chunks with a reasonable chunk size
 	var wg sync.WaitGroup
@@ -104,9 +120,17 @@ func ScaledDotProductAttention(q, k, v *tensor.Tensor) (*tensor.Tensor, error) {
 						for s2 := 0; s2 < seqLen; s2++ {
 							score := float32(0)
 							for d := 0; d < headDim; d++ {
-								qVal := float32(q.Get(b, h, s1, d))
-								kVal := float32(k.Get(b, h, s2, d))
-								score += qVal * kVal
+								qVal, err := q.Get(b, h, s1, d)
+								if err != nil {
+									errChan <- err
+									return
+								}
+								kVal, err := k.Get(b, h, s2, d)
+								if err != nil {
+									errChan <- err
+									return
+								}
+								score += float32(qVal) * float32(kVal)
 							}
 							// Scale by 1/sqrt(head_dim)
 							score /= float32(math.Sqrt(float64(headDim)))
@@ -142,7 +166,12 @@ func ScaledDotProductAttention(q, k, v *tensor.Tensor) (*tensor.Tensor, error) {
 						for d := 0; d < headDim; d++ {
 							var val float32
 							for s2 := 0; s2 < seqLen; s2++ {
-								val += scores[s1*seqLen+s2] * float32(v.Get(b, h, s2, d))
+								vVal, err := v.Get(b, h, s2, d)
+								if err != nil {
+									errChan <- err
+									return
+								}
+								val += scores[s1*seqLen+s2] * float32(vVal)
 							}
 							// Clamp to int8 range, saturating for large values
 							if val >= 127 {

@@ -13,6 +13,10 @@ import (
 var (
 	// ErrLMHeadPanic is returned when a panic occurs in the LMHead.Forward method
 	ErrLMHeadPanic = errors.New("lmhead: panic in forward pass")
+	// ErrLMHeadClosed is returned when operations are performed on a closed LMHead
+	ErrLMHeadClosed = errors.New("lmhead: operation called on closed layer")
+	// ErrLMHeadInvalidParams is returned when invalid parameters are provided to NewLMHead
+	ErrLMHeadInvalidParams = errors.New("lmhead: invalid parameters")
 )
 
 // LMHead represents the final output layer of the BitNet model.
@@ -43,17 +47,17 @@ type LMHead struct {
 //
 // The layer is initialized with nil weights, which must be set
 // using SetWeights before use.
-func NewLMHead(hiddenDim, vocabSize int) *LMHead {
+func NewLMHead(hiddenDim, vocabSize int) (*LMHead, error) {
 	if hiddenDim <= 0 {
-		panic("hiddenDim must be positive")
+		return nil, ErrLMHeadInvalidParams
 	}
 	if vocabSize <= 0 {
-		panic("vocabSize must be positive")
+		return nil, ErrLMHeadInvalidParams
 	}
 	return &LMHead{
 		hiddenDim: hiddenDim,
 		vocabSize: vocabSize,
-	}
+	}, nil
 }
 
 // Forward performs the forward pass through the LM Head layer.
@@ -67,7 +71,7 @@ func NewLMHead(hiddenDim, vocabSize int) *LMHead {
 // Returns a 3D tensor with shape [batch_size, seq_len, vocab_size].
 func (l *LMHead) Forward(input *tensor.Tensor) (*tensor.Tensor, error) {
 	if l.closed {
-		panic("LMHead has been closed")
+		return nil, ErrLMHeadClosed
 	}
 	if l.weights == nil {
 		return nil, ErrWeightsNotSet
@@ -98,22 +102,14 @@ func (l *LMHead) Forward(input *tensor.Tensor) (*tensor.Tensor, error) {
 	defer flatInput.Close()
 
 	// Apply linear transformation
-	outputIface, err := tensor.BitLinear(flatInput, l.weights)
+	output, err = tensor.BitLinear(flatInput, l.weights)
 	if err != nil {
 		return nil, err
-	}
-	output, ok := outputIface.(*tensor.Tensor)
-	if !ok {
-		panic("expected *tensor.Tensor from BitLinear")
 	}
 	defer output.Close()
 
 	// Reshape back to [batch_size, seq_len, vocab_size]
-	reshapedIface := output.Reshape(batchSize, seqLen, l.vocabSize)
-	reshaped, ok = reshapedIface.(*tensor.Tensor)
-	if !ok {
-		panic("expected *tensor.Tensor from Reshape for output")
-	}
+	reshaped = output.Reshape(batchSize, seqLen, l.vocabSize)
 	return reshaped, err
 }
 
@@ -125,7 +121,7 @@ func (l *LMHead) Forward(input *tensor.Tensor) (*tensor.Tensor, error) {
 // Returns an error if the weights tensor has incorrect shape.
 func (l *LMHead) SetWeights(weights *tensor.Tensor) error {
 	if l.closed {
-		panic("LMHead has been closed")
+		return ErrLMHeadClosed
 	}
 	if weights == nil {
 		return ErrWeightsNotSet
@@ -140,19 +136,22 @@ func (l *LMHead) SetWeights(weights *tensor.Tensor) error {
 // GetWeights returns the current weights.
 //
 // Returns the weight tensor with shape [vocab_size, hidden_dim].
-func (l *LMHead) GetWeights() *tensor.Tensor {
+func (l *LMHead) GetWeights() (*tensor.Tensor, error) {
 	if l.closed {
-		panic("LMHead has been closed")
+		return nil, ErrLMHeadClosed
 	}
-	return l.weights
+	return l.weights, nil
 }
 
 // Close releases all resources associated with the layer.
-func (l *LMHead) Close() {
+func (l *LMHead) Close() error {
 	if !l.closed {
 		if l.weights != nil {
-			l.weights.Close()
+			if err := l.weights.Close(); err != nil {
+				return err
+			}
 		}
 		l.closed = true
 	}
+	return nil
 }

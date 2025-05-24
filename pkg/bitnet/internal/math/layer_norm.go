@@ -22,16 +22,19 @@ type LayerNorm struct {
 }
 
 // NewLayerNorm creates a new layer normalization component.
-func NewLayerNorm(hiddenDim int) *LayerNorm {
+func NewLayerNorm(hiddenDim int) (*LayerNorm, error) {
+	if hiddenDim <= 0 {
+		return nil, fmt.Errorf("layer_norm: invalid hidden dimension %d", hiddenDim)
+	}
 	return &LayerNorm{
 		hiddenDim: hiddenDim,
 		epsilon:   1e-5,
-	}
+	}, nil
 }
 
 // Forward applies layer normalization to the input tensor.
 // Returns a normalized tensor with the same shape as input.
-func (l *LayerNorm) Forward(x tensor.TensorReader) (*tensor.Tensor, error) {
+func (l *LayerNorm) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 	if l.closed {
 		return nil, errors.ErrLayerClosed
 	}
@@ -118,7 +121,7 @@ func (l *LayerNorm) Forward(x tensor.TensorReader) (*tensor.Tensor, error) {
 // SetGamma sets the scale parameter for layer normalization.
 // LayerNorm takes ownership of the gamma tensor and will close it when LayerNorm is closed.
 // The caller must not close the tensor after passing it to SetGamma.
-func (l *LayerNorm) SetGamma(gamma tensor.TensorOperations) error {
+func (l *LayerNorm) SetGamma(gamma *tensor.Tensor) error {
 	if l.closed {
 		return errors.ErrLayerClosed
 	}
@@ -127,14 +130,8 @@ func (l *LayerNorm) SetGamma(gamma tensor.TensorOperations) error {
 		return errors.ErrNilTensor
 	}
 
-	// Convert to concrete type
-	g, ok := gamma.(*tensor.Tensor)
-	if !ok {
-		return errors.ErrInvalidShape
-	}
-
 	// Validate shape
-	shape := g.Shape()
+	shape := gamma.Shape()
 	if len(shape) != 1 || shape[0] != l.hiddenDim {
 		return fmt.Errorf("tensor: invalid gamma shape, got %v, want [%d]", shape, l.hiddenDim)
 	}
@@ -142,26 +139,29 @@ func (l *LayerNorm) SetGamma(gamma tensor.TensorOperations) error {
 	if l.gamma != nil {
 		l.gamma.Close()
 	}
-	l.gamma = g
+	l.gamma = gamma
 	return nil
 }
 
 // GetGamma returns the gamma parameter.
 // The returned tensor is owned by LayerNorm and should not be closed by the caller.
-func (l *LayerNorm) GetGamma() tensor.TensorReader {
+func (l *LayerNorm) GetGamma() (*tensor.Tensor, error) {
 	if l.closed {
-		panic("layer is closed")
+		return nil, errors.ErrLayerClosed
 	}
-	return l.gamma
+	return l.gamma, nil
 }
 
 // Close releases all resources associated with the layer normalization.
 // This includes closing all tensors and cleaning up memory.
-func (l *LayerNorm) Close() {
+func (l *LayerNorm) Close() error {
 	if !l.closed {
 		if l.gamma != nil {
-			l.gamma.Close()
+			if err := l.gamma.Close(); err != nil {
+				return err
+			}
 		}
 		l.closed = true
 	}
+	return nil
 }

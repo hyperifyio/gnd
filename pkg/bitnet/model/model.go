@@ -395,33 +395,33 @@ func (m *Model) forward(tokens []int) ([]float32, error) {
 	// Process through transformer blocks
 	for i := 0; i < m.config.NumLayers; i++ {
 		fmt.Printf("[DEBUG] Processing transformer block %d\n", i)
-		nextTensor, err := m.attnSublayers[i].Forward(currentTensor.(*tensor.Tensor))
+		nextTensor, err := m.attnSublayers[i].Forward(currentTensor)
 		if err != nil {
 			return nil, fmt.Errorf("attention forward pass failed: %w", err)
 		}
 		if currentTensor != hiddenStatesTensor {
-			tensorsToClose = append(tensorsToClose, currentTensor.(*tensor.Tensor))
+			tensorsToClose = append(tensorsToClose, currentTensor)
 		}
 		currentTensor = nextTensor
 		fmt.Printf("[DEBUG] After attention, currentTensor shape: %v\n", currentTensor.Shape())
 
-		nextTensor, err = m.ffnSublayers[i].Forward(currentTensor.(*tensor.Tensor))
+		nextTensor, err = m.ffnSublayers[i].Forward(currentTensor)
 		if err != nil {
 			return nil, fmt.Errorf("ffn forward pass failed: %w", err)
 		}
 		if currentTensor != hiddenStatesTensor {
-			tensorsToClose = append(tensorsToClose, currentTensor.(*tensor.Tensor))
+			tensorsToClose = append(tensorsToClose, currentTensor)
 		}
 		currentTensor = nextTensor
 		fmt.Printf("[DEBUG] After FFN, currentTensor shape: %v\n", currentTensor.Shape())
 	}
 
-	nextTensor, err := m.finalNorm.Forward(currentTensor.(*tensor.Tensor))
+	nextTensor, err := m.finalNorm.Forward(currentTensor)
 	if err != nil {
 		return nil, fmt.Errorf("final norm forward pass failed: %w", err)
 	}
 	if currentTensor != hiddenStatesTensor {
-		tensorsToClose = append(tensorsToClose, currentTensor.(*tensor.Tensor))
+		tensorsToClose = append(tensorsToClose, currentTensor)
 	}
 	currentTensor = nextTensor
 	fmt.Printf("[DEBUG] After final norm, currentTensor shape: %v\n", currentTensor.Shape())

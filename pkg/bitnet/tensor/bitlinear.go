@@ -6,12 +6,17 @@
 package tensor
 
 import (
+	"errors"
 	"runtime"
 	"sync"
 	"sync/atomic"
 	"unsafe"
 
 	"github.com/hyperifyio/gnd/pkg/loggers"
+)
+
+var (
+	ErrNilTensor = errors.New("tensor: nil tensor")
 )
 
 // workBuffer represents a pre-allocated buffer for computations.
@@ -63,41 +68,35 @@ func alignedAlloc[T any](size int) []T {
 //   - Loop unrolling for faster matrix multiplication
 //   - Reuse of work buffers to reduce allocations
 //   - Branchless clamping of output values
-func BitLinear(input TensorReader, weights TensorReader) (TensorOperations, error) {
-	// Convert to concrete types for validation
-	t, ok := input.(*Tensor)
-	if !ok {
-		return nil, ErrInvalidShape
-	}
-	w, ok := weights.(*Tensor)
-	if !ok {
-		return nil, ErrInvalidShape
+func BitLinear(input, weights *Tensor) (*Tensor, error) {
+	if input == nil || weights == nil {
+		return nil, ErrNilTensor
 	}
 
 	// Lock both tensors for the duration of the operation
-	t.mu.RLock()
-	w.mu.RLock()
-	defer t.mu.RUnlock()
-	defer w.mu.RUnlock()
+	input.mu.RLock()
+	weights.mu.RLock()
+	defer input.mu.RUnlock()
+	defer weights.mu.RUnlock()
 
-	if atomic.LoadUint32(&t.closed) == 1 || atomic.LoadUint32(&w.closed) == 1 {
+	if atomic.LoadUint32(&input.closed) == 1 || atomic.LoadUint32(&weights.closed) == 1 {
 		return nil, ErrTensorClosed
 	}
 
-	if len(t.shape) != 2 || len(w.shape) != 2 {
+	if len(input.shape) != 2 || len(weights.shape) != 2 {
 		return nil, ErrInvalidShape
 	}
-	if t.shape[1] != w.shape[1] {
+	if input.shape[1] != weights.shape[1] {
 		return nil, ErrDimensionMismatch
 	}
 
-	batchSize := t.shape[0]
-	inFeatures := t.shape[1]
-	outFeatures := w.shape[0]
+	batchSize := input.shape[0]
+	inFeatures := input.shape[1]
+	outFeatures := weights.shape[0]
 
 	// Debug output for shapes
-	loggers.Printf(loggers.Debug, "BitLinear input shape: %v", t.shape)
-	loggers.Printf(loggers.Debug, "BitLinear weights shape: %v", w.shape)
+	loggers.Printf(loggers.Debug, "BitLinear input shape: %v", input.shape)
+	loggers.Printf(loggers.Debug, "BitLinear weights shape: %v", weights.shape)
 	loggers.Printf(loggers.Debug, "BitLinear output shape: [%d %d]", batchSize, outFeatures)
 	loggers.Printf(loggers.Debug, "BitLinear batchSize: %d, inFeatures: %d, outFeatures: %d", batchSize, inFeatures, outFeatures)
 
@@ -151,9 +150,9 @@ func BitLinear(input TensorReader, weights TensorReader) (TensorOperations, erro
 
 				// Compute matrix multiplication
 				for i := 0; i < inFeatures; i++ {
-					inputVal := int32(t.data[b*inFeatures+i])
+					inputVal := int32(input.data[b*inFeatures+i])
 					for j := 0; j < outFeatures; j++ {
-						buf.sums[j] += inputVal * int32(w.data[j*inFeatures+i])
+						buf.sums[j] += inputVal * int32(weights.data[j*inFeatures+i])
 					}
 				}
 

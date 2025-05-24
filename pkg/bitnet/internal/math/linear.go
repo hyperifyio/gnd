@@ -5,7 +5,13 @@
 package math
 
 import (
+	"errors"
+
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
+)
+
+var (
+	ErrLinearClosed = errors.New("linear: operation called on closed layer")
 )
 
 // Linear represents a linear transformation layer.
@@ -28,19 +34,13 @@ func NewLinear(inDim, outDim int) *Linear {
 // Forward applies the linear transformation to the input tensor.
 // Returns a tensor with the same shape as input but with out_dim as the last dimension.
 // The implementation handles both single-token and multi-token cases efficiently.
-func (l *Linear) Forward(x tensor.TensorReader) (*tensor.Tensor, error) {
+func (l *Linear) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 	if l.closed {
-		panic("Linear layer has been closed")
-	}
-
-	// Convert to concrete type for validation
-	t, ok := x.(*tensor.Tensor)
-	if !ok {
-		return nil, ErrLinearInputShape
+		return nil, ErrLinearClosed
 	}
 
 	// Validate input shape
-	if err := ValidateShape(t, 2, 3); err != nil {
+	if err := ValidateShape(x, 2, 3); err != nil {
 		tensor.DebugLog("input shape validation failed: %v", err)
 		return nil, ErrLinearInputShape
 	}
@@ -118,9 +118,9 @@ func (l *Linear) Forward(x tensor.TensorReader) (*tensor.Tensor, error) {
 // SetWeights sets the weight matrix for the linear transformation.
 // Linear takes ownership of the weights tensor and will close it when Linear is closed.
 // The caller must not close the tensor after passing it to SetWeights.
-func (l *Linear) SetWeights(weights tensor.TensorOperations) error {
+func (l *Linear) SetWeights(weights *tensor.Tensor) error {
 	if l.closed {
-		panic("Linear layer has been closed")
+		return ErrLinearClosed
 	}
 	if weights == nil {
 		return ErrLinearWeightsShape
@@ -132,7 +132,7 @@ func (l *Linear) SetWeights(weights tensor.TensorOperations) error {
 	if l.weights != nil {
 		l.weights.Close()
 	}
-	l.weights = weights.(*tensor.Tensor)
+	l.weights = weights
 	return nil
 }
 
@@ -140,20 +140,23 @@ func (l *Linear) SetWeights(weights tensor.TensorOperations) error {
 //
 // Returns the weight tensor with shape [out_dim, in_dim].
 // This is the matrix used for the linear transformation.
-func (l *Linear) GetWeights() tensor.TensorReader {
+func (l *Linear) GetWeights() (*tensor.Tensor, error) {
 	if l.closed {
-		panic("Linear layer has been closed")
+		return nil, ErrLinearClosed
 	}
-	return l.weights
+	return l.weights, nil
 }
 
 // Close releases all resources associated with the linear layer.
 // This includes closing all tensors and cleaning up memory.
-func (l *Linear) Close() {
+func (l *Linear) Close() error {
 	if !l.closed {
 		if l.weights != nil {
-			l.weights.Close()
+			if err := l.weights.Close(); err != nil {
+				return err
+			}
 		}
 		l.closed = true
 	}
+	return nil
 }

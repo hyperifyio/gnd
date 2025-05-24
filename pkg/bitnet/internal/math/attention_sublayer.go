@@ -68,16 +68,25 @@ func NewAttentionSublayer(hiddenDim, numHeads, numKVHeads int) (*AttentionSublay
 	headDim := hiddenDim / numHeads
 	kvHeadDim := hiddenDim / numKVHeads
 
+	preNorm, err := NewLayerNorm(hiddenDim)
+	if err != nil {
+		return nil, err
+	}
+	qProj := NewLinear(hiddenDim, numHeads*headDim)
+	kProj := NewLinear(hiddenDim, numKVHeads*kvHeadDim)
+	vProj := NewLinear(hiddenDim, numKVHeads*kvHeadDim)
+	oProj := NewAttentionOutputProjection(hiddenDim, numHeads)
+
 	return &AttentionSublayer{
 		hiddenDim:  hiddenDim,
 		numHeads:   numHeads,
 		numKVHeads: numKVHeads,
 		headDim:    headDim,
-		preNorm:    NewLayerNorm(hiddenDim),
-		qProj:      NewLinear(hiddenDim, numHeads*headDim),
-		kProj:      NewLinear(hiddenDim, numKVHeads*kvHeadDim),
-		vProj:      NewLinear(hiddenDim, numKVHeads*kvHeadDim),
-		oProj:      NewAttentionOutputProjection(hiddenDim, numHeads),
+		preNorm:    preNorm,
+		qProj:      qProj,
+		kProj:      kProj,
+		vProj:      vProj,
+		oProj:      oProj,
 	}, nil
 }
 
@@ -99,9 +108,15 @@ func (a *AttentionSublayer) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 	if a.closed {
 		return nil, errors.ErrLayerClosed
 	}
+	if x == nil {
+		return nil, errors.ErrNilTensor
+	}
 
 	// Get input shape
-	shape := x.Shape()
+	shape, err := x.Shape()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get input shape: %w", err)
+	}
 	if len(shape) < 2 {
 		return nil, errors.ErrInvalidShape
 	}
@@ -122,49 +137,131 @@ func (a *AttentionSublayer) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 	// Project to Q, K, V (do not close normed until all projections are done)
 	qMat, err := a.qProj.Forward(normed)
 	if err != nil {
-		normed.Close()
+		if err := normed.Close(); err != nil {
+			return nil, fmt.Errorf("close normed: %w", err)
+		}
 		return nil, fmt.Errorf("q projection: %w", err)
 	}
 	kMat, err := a.kProj.Forward(normed)
 	if err != nil {
-		normed.Close()
-		qMat.Close()
+		if err := normed.Close(); err != nil {
+			return nil, fmt.Errorf("close normed: %w", err)
+		}
+		if err := qMat.Close(); err != nil {
+			return nil, fmt.Errorf("close qMat: %w", err)
+		}
 		return nil, fmt.Errorf("k projection: %w", err)
 	}
 	vMat, err := a.vProj.Forward(normed)
-	normed.Close() // Now safe to close
+	if err := normed.Close(); err != nil { // Now safe to close
+		return nil, fmt.Errorf("close normed: %w", err)
+	}
 	if err != nil {
-		qMat.Close()
-		kMat.Close()
+		if err := qMat.Close(); err != nil {
+			return nil, fmt.Errorf("close qMat: %w", err)
+		}
+		if err := kMat.Close(); err != nil {
+			return nil, fmt.Errorf("close kMat: %w", err)
+		}
 		return nil, fmt.Errorf("v projection: %w", err)
 	}
 
 	// Debug: print shapes after projection
-	fmt.Printf("[DEBUG] Q shape: %v\n", qMat.Shape())
-	fmt.Printf("[DEBUG] K shape: %v\n", kMat.Shape())
-	fmt.Printf("[DEBUG] V shape: %v\n", vMat.Shape())
+	qShape, err := qMat.Shape()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get Q shape: %w", err)
+	}
+	kShape, err := kMat.Shape()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get K shape: %w", err)
+	}
+	vShape, err := vMat.Shape()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get V shape: %w", err)
+	}
+	fmt.Printf("[DEBUG] Q shape: %v\n", qShape)
+	fmt.Printf("[DEBUG] K shape: %v\n", kShape)
+	fmt.Printf("[DEBUG] V shape: %v\n", vShape)
 
 	// Reshape for attention
-	qMat = transposeForAttention(qMat)
-	kMat = transposeForAttention(kMat)
-	vMat = transposeForAttention(vMat)
+	qMatOp, err := transposeForAttention(qMat)
+	if err != nil {
+		if err := qMat.Close(); err != nil {
+			return nil, fmt.Errorf("close qMat: %w", err)
+		}
+		if err := kMat.Close(); err != nil {
+			return nil, fmt.Errorf("close kMat: %w", err)
+		}
+		if err := vMat.Close(); err != nil {
+			return nil, fmt.Errorf("close vMat: %w", err)
+		}
+		return nil, fmt.Errorf("transpose q: %w", err)
+	}
+	qMat = qMatOp
+
+	kMatOp, err := transposeForAttention(kMat)
+	if err != nil {
+		if err := qMat.Close(); err != nil {
+			return nil, fmt.Errorf("close qMat: %w", err)
+		}
+		if err := kMat.Close(); err != nil {
+			return nil, fmt.Errorf("close kMat: %w", err)
+		}
+		if err := vMat.Close(); err != nil {
+			return nil, fmt.Errorf("close vMat: %w", err)
+		}
+		return nil, fmt.Errorf("transpose k: %w", err)
+	}
+	kMat = kMatOp
+
+	vMatOp, err := transposeForAttention(vMat)
+	if err != nil {
+		if err := qMat.Close(); err != nil {
+			return nil, fmt.Errorf("close qMat: %w", err)
+		}
+		if err := kMat.Close(); err != nil {
+			return nil, fmt.Errorf("close kMat: %w", err)
+		}
+		if err := vMat.Close(); err != nil {
+			return nil, fmt.Errorf("close vMat: %w", err)
+		}
+		return nil, fmt.Errorf("transpose v: %w", err)
+	}
+	vMat = vMatOp
+
 	fmt.Printf("[DEBUG] Q reshaped: %v\n", qMat.Shape())
 	fmt.Printf("[DEBUG] K reshaped: %v\n", kMat.Shape())
 	fmt.Printf("[DEBUG] V reshaped: %v\n", vMat.Shape())
 
 	// Compute attention scores
-	kTransposed := transposeForAttentionK(kMat)
-	// kMat is not used after this point, safe to close
-	kMat.Close() // Close kMat after transpose
+	kTransposedOp, err := transposeForAttentionK(kMat)
+	if err := kMat.Close(); err != nil { // kMat is not used after this point
+		return nil, fmt.Errorf("close kMat: %w", err)
+	}
+	if err != nil {
+		if err := qMat.Close(); err != nil {
+			return nil, fmt.Errorf("close qMat: %w", err)
+		}
+		if err := vMat.Close(); err != nil {
+			return nil, fmt.Errorf("close vMat: %w", err)
+		}
+		return nil, fmt.Errorf("transpose k: %w", err)
+	}
+	kTransposed := kTransposedOp
 
 	// Add debug output before MatMul
 	fmt.Printf("[DEBUG] MatMul: qMat shape: %v, kTransposed shape: %v\n", qMat.Shape(), kTransposed.Shape())
 	scores, err := qMat.MatMul(kTransposed)
-	// qMat and kTransposed are not used after this point, safe to close
-	qMat.Close()        // Close qMat after matmul
-	kTransposed.Close() // Close kTransposed after matmul
+	if err := qMat.Close(); err != nil { // qMat is not used after this point
+		return nil, fmt.Errorf("close qMat: %w", err)
+	}
+	if err := kTransposed.Close(); err != nil { // kTransposed is not used after this point
+		return nil, fmt.Errorf("close kTransposed: %w", err)
+	}
 	if err != nil {
-		vMat.Close()
+		if err := vMat.Close(); err != nil {
+			return nil, fmt.Errorf("close vMat: %w", err)
+		}
 		return nil, fmt.Errorf("attention scores: %w", err)
 	}
 
@@ -173,14 +270,23 @@ func (a *AttentionSublayer) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 
 	// Scale scores
 	scale := float32(1.0 / math.Sqrt(float64(a.headDim)))
-	scores = scores.Scale(scale)
+	scaled, err := scores.Scale(scale)
+	if err != nil {
+		if err := scores.Close(); err != nil {
+			return nil, fmt.Errorf("close scores: %w", err)
+		}
+		return nil, fmt.Errorf("scale: %w", err)
+	}
 
 	// Apply softmax
-	probs, err := scores.Softmax(-1)
-	// scores is not used after this point, safe to close
-	scores.Close() // Close scores after softmax
+	probs, err := scaled.Softmax(-1)
+	if err := scaled.Close(); err != nil { // scaled is not used after this point
+		return nil, fmt.Errorf("close scaled: %w", err)
+	}
 	if err != nil {
-		vMat.Close()
+		if err := vMat.Close(); err != nil {
+			return nil, fmt.Errorf("close vMat: %w", err)
+		}
 		return nil, fmt.Errorf("softmax: %w", err)
 	}
 
@@ -188,9 +294,12 @@ func (a *AttentionSublayer) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 	fmt.Printf("[DEBUG] MatMul: probs shape: %v, vMat shape: %v\n", probs.Shape(), vMat.Shape())
 	// Apply attention to values
 	attn, err := probs.MatMul(vMat)
-	// probs and vMat are not used after this point, safe to close
-	probs.Close() // Close probs after matmul
-	vMat.Close()  // Close vMat after matmul
+	if err := probs.Close(); err != nil { // probs is not used after this point
+		return nil, fmt.Errorf("close probs: %w", err)
+	}
+	if err := vMat.Close(); err != nil { // vMat is not used after this point
+		return nil, fmt.Errorf("close vMat: %w", err)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("attention output: %w", err)
 	}
@@ -199,21 +308,30 @@ func (a *AttentionSublayer) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 	fmt.Printf("[DEBUG] attn shape: %v\n", attn.Shape())
 
 	// Transpose back
-	attn = transposeBack(attn)
+	attnOp, err := transposeBack(attn)
+	if err != nil {
+		if err := attn.Close(); err != nil {
+			return nil, fmt.Errorf("close attn: %w", err)
+		}
+		return nil, fmt.Errorf("transpose back: %w", err)
+	}
+	attn = attnOp
 	fmt.Printf("[DEBUG] attn transposed back: %v\n", attn.Shape())
 
 	// Project to output dimension
 	output, err := a.oProj.Project(attn)
-	// attn is not used after this point, safe to close
-	attn.Close() // Close attn after projection
+	if err := attn.Close(); err != nil { // attn is not used after this point
+		return nil, fmt.Errorf("close attn: %w", err)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("output projection: %w", err)
 	}
 
 	// Add residual connection
 	result := output.Add(x)
-	// output is not used after this point, safe to close
-	output.Close()
+	if err := output.Close(); err != nil { // output is not used after this point
+		return nil, fmt.Errorf("close output: %w", err)
+	}
 
 	return result, nil
 }
@@ -243,16 +361,20 @@ func (a *AttentionSublayer) SetWeights(queryWeights, keyWeights, valueWeights, o
 	}
 
 	// Check shapes
-	if len(queryWeights.Shape()) != 2 || queryWeights.Shape()[0] != a.hiddenDim || queryWeights.Shape()[1] != a.numHeads*a.headDim {
+	queryShape := queryWeights.Shape()
+	if len(queryShape) != 2 || queryShape[0] != a.hiddenDim || queryShape[1] != a.numHeads*a.headDim {
 		return errors.ErrSetQueryWeights
 	}
-	if len(keyWeights.Shape()) != 2 || keyWeights.Shape()[0] != a.hiddenDim || keyWeights.Shape()[1] != a.hiddenDim {
+	keyShape := keyWeights.Shape()
+	if len(keyShape) != 2 || keyShape[0] != a.hiddenDim || keyShape[1] != a.hiddenDim {
 		return errors.ErrSetKeyWeights
 	}
-	if len(valueWeights.Shape()) != 2 || valueWeights.Shape()[0] != a.hiddenDim || valueWeights.Shape()[1] != a.hiddenDim {
+	valueShape := valueWeights.Shape()
+	if len(valueShape) != 2 || valueShape[0] != a.hiddenDim || valueShape[1] != a.hiddenDim {
 		return errors.ErrSetValueWeights
 	}
-	if len(outWeights.Shape()) != 2 || outWeights.Shape()[0] != a.numHeads*a.headDim || outWeights.Shape()[1] != a.hiddenDim {
+	outShape := outWeights.Shape()
+	if len(outShape) != 2 || outShape[0] != a.numHeads*a.headDim || outShape[1] != a.hiddenDim {
 		return errors.ErrSetOutputWeights
 	}
 
@@ -285,22 +407,10 @@ func (a *AttentionSublayer) SetGamma(gamma *tensor.Tensor) error {
 	return a.preNorm.SetGamma(gamma)
 }
 
-// Helper function for shape comparison
-func equalShape(a, b []int) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
 // Close releases all resources associated with the attention sublayer.
 // This includes closing all tensors and cleaning up memory.
-func (a *AttentionSublayer) Close() {
+func (a *AttentionSublayer) Close() error {
+	var lastErr error
 	if a.preNorm != nil {
 		a.preNorm.Close()
 	}
@@ -314,54 +424,100 @@ func (a *AttentionSublayer) Close() {
 		a.vProj.Close()
 	}
 	if a.oProj != nil {
-		a.oProj.Close()
+		if err := a.oProj.Close(); err != nil {
+			lastErr = err
+		}
 	}
 	a.closed = true
+	return lastErr
 }
 
-// Helper functions for safe transpose
-func transposeForAttention(t *tensor.Tensor) *tensor.Tensor {
-	shape := t.Shape()
-	switch len(shape) {
-	case 2:
-		// For 2D tensors, reshape to [batch, 1, hidden_dim]
-		return t.Reshape(shape[0], 1, shape[1]).(*tensor.Tensor)
-	case 3:
-		// For 3D tensors, reshape to [batch, seq_len, num_heads, head_dim]
-		return t.Reshape(shape[0], shape[1], shape[2]/64, 64).(*tensor.Tensor)
-	case 4:
-		return t.Transpose(0, 2, 1, 3)
-	default:
-		panic(fmt.Sprintf("transposeForAttention: unsupported tensor rank %d, shape %v", len(shape), shape))
+// transposeForAttention reshapes a tensor for attention computation.
+func transposeForAttention(t *tensor.Tensor) (*tensor.Tensor, error) {
+	if t == nil {
+		return nil, fmt.Errorf("nil tensor")
 	}
-}
 
-func transposeForAttentionK(t *tensor.Tensor) *tensor.Tensor {
 	shape := t.Shape()
-	switch len(shape) {
-	case 2:
-		// For 2D tensors, reshape to [batch, 1, hidden_dim]
-		return t.Reshape(shape[0], 1, shape[1]).(*tensor.Tensor)
-	case 3:
-		// For 3D tensors, reshape to [batch, seq_len, num_heads, head_dim]
-		return t.Reshape(shape[0], shape[1], shape[2]/64, 64).(*tensor.Tensor)
-	case 4:
-		return t.Transpose(0, 2, 3, 1)
-	default:
-		panic(fmt.Sprintf("transposeForAttentionK: unsupported tensor rank %d, shape %v", len(shape), shape))
+	if len(shape) != 3 {
+		return nil, fmt.Errorf("invalid input shape: expected 3 dimensions, got %d", len(shape))
 	}
+
+	// Reshape to [batch_size, 1, seq_len]
+	reshaped1 := t.Reshape(shape[0], 1, shape[1])
+	if reshaped1 == nil {
+		return nil, fmt.Errorf("failed to reshape tensor")
+	}
+
+	// Reshape to [batch_size, seq_len, head_dim, 64]
+	reshaped2 := reshaped1.Reshape(shape[0], shape[1], shape[2]/64, 64)
+	if reshaped2 == nil {
+		return nil, fmt.Errorf("failed to reshape tensor")
+	}
+
+	return reshaped2, nil
 }
 
-func transposeBack(t *tensor.Tensor) *tensor.Tensor {
+// transposeForAttentionK reshapes a tensor for key attention computation.
+func transposeForAttentionK(t *tensor.Tensor) (*tensor.Tensor, error) {
+	if t == nil {
+		return nil, fmt.Errorf("nil tensor")
+	}
+
+	shape := t.Shape()
+	if len(shape) != 3 {
+		return nil, fmt.Errorf("invalid input shape: expected 3 dimensions, got %d", len(shape))
+	}
+
+	// Reshape to [batch_size, 1, seq_len]
+	reshaped1 := t.Reshape(shape[0], 1, shape[1])
+	if reshaped1 == nil {
+		return nil, fmt.Errorf("failed to reshape tensor")
+	}
+
+	// Reshape to [batch_size, seq_len, head_dim, 64]
+	reshaped2 := reshaped1.Reshape(shape[0], shape[1], shape[2]/64, 64)
+	if reshaped2 == nil {
+		return nil, fmt.Errorf("failed to reshape tensor")
+	}
+
+	return reshaped2, nil
+}
+
+// transposeForAttentionV reshapes a tensor for value attention computation.
+func transposeForAttentionV(t *tensor.Tensor) (*tensor.Tensor, error) {
+	if t == nil {
+		return nil, fmt.Errorf("nil tensor")
+	}
+
+	shape := t.Shape()
+	if len(shape) != 4 {
+		return nil, fmt.Errorf("invalid input shape: expected 4 dimensions, got %d", len(shape))
+	}
+
+	// Reshape to [batch_size, seq_len * head_dim]
+	reshaped1 := t.Reshape(shape[0], shape[1]*shape[2])
+	if reshaped1 == nil {
+		return nil, fmt.Errorf("failed to reshape tensor")
+	}
+
+	// Reshape to [batch_size, seq_len, head_dim]
+	reshaped2 := reshaped1.Reshape(shape[0], shape[1], shape[2]*shape[3])
+	if reshaped2 == nil {
+		return nil, fmt.Errorf("failed to reshape tensor")
+	}
+
+	return reshaped2, nil
+}
+
+func transposeBack(t *tensor.Tensor) (*tensor.Tensor, error) {
 	shape := t.Shape()
 	switch len(shape) {
 	case 3:
-		// For 3D tensors, reshape to [batch, hidden_dim]
-		return t.Reshape(shape[0], shape[2]).(*tensor.Tensor)
+		return t.Reshape(shape[0], shape[1]*shape[2]), nil
 	case 4:
-		// For 4D tensors, reshape to [batch, seq_len, hidden_dim]
-		return t.Reshape(shape[0], shape[1], shape[2]*shape[3]).(*tensor.Tensor)
+		return t.Reshape(shape[0], shape[1], shape[2]*shape[3]), nil
 	default:
-		panic(fmt.Sprintf("transposeBack: unsupported tensor rank %d, shape %v", len(shape), shape))
+		return nil, errors.ErrInvalidShape
 	}
 }

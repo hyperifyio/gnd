@@ -24,7 +24,7 @@ func NewTensorOps(maxSeqLength, hiddenSize int) *TensorOps {
 }
 
 // ReshapeAndCopy creates a new tensor with the given shape and copies data from a float32 slice
-func (t *TensorOps) ReshapeAndCopy(data [][]float32, batchSize, seqLength, hiddenSize int) tensor.TensorOperations {
+func (t *TensorOps) ReshapeAndCopy(data [][]float32, batchSize, seqLength, hiddenSize int) *tensor.Tensor {
 	newTensor := tensor.NewTensor(batchSize, seqLength, hiddenSize)
 	// Copy data into tensor
 	for i := 0; i < seqLength; i++ {
@@ -42,7 +42,7 @@ func (t *TensorOps) ReshapeAndCopy(data [][]float32, batchSize, seqLength, hidde
 }
 
 // GetLastHiddenState extracts the last hidden state from a tensor
-func (t *TensorOps) GetLastHiddenState(tensor tensor.TensorReader, seqLength, hiddenSize int) []float32 {
+func (t *TensorOps) GetLastHiddenState(tensor *tensor.Tensor, seqLength, hiddenSize int) []float32 {
 	lastHiddenState := make([]float32, hiddenSize)
 	for i := 0; i < hiddenSize; i++ {
 		lastHiddenState[i] = float32(tensor.Get(0, seqLength-1, i))
@@ -51,12 +51,12 @@ func (t *TensorOps) GetLastHiddenState(tensor tensor.TensorReader, seqLength, hi
 }
 
 // GetTensorFromPool gets a tensor from the pool
-func (t *TensorOps) GetTensorFromPool() tensor.TensorOperations {
-	return t.tensorPool.Get().(tensor.TensorOperations)
+func (t *TensorOps) GetTensorFromPool() *tensor.Tensor {
+	return t.tensorPool.Get().(*tensor.Tensor)
 }
 
 // PutTensorToPool returns a tensor to the pool
-func (t *TensorOps) PutTensorToPool(tensor tensor.TensorOperations) {
+func (t *TensorOps) PutTensorToPool(tensor *tensor.Tensor) {
 	t.tensorPool.Put(tensor)
 }
 

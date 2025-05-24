@@ -5,10 +5,16 @@
 package math
 
 import (
+	"errors"
 	"runtime"
 	"sync"
 
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
+)
+
+var (
+	ErrFFNClosed           = errors.New("ffn: operation called on closed FFN")
+	ErrInvalidWeightsShape = errors.New("ffn: invalid weights shape")
 )
 
 // FFN represents a two-layer feed-forward network with ReLU² activation.
@@ -74,7 +80,7 @@ func NewFFN(hiddenDim, intermediateDim int) *FFN {
 // ternary weights and includes parallel processing for the activation.
 func (f *FFN) Forward(input *tensor.Tensor) (*tensor.Tensor, error) {
 	if f.closed {
-		panic("FFN has been closed")
+		return nil, ErrFFNClosed
 	}
 	if len(input.Shape()) != 3 {
 		return nil, ErrInvalidInputShape
@@ -88,16 +94,11 @@ func (f *FFN) Forward(input *tensor.Tensor) (*tensor.Tensor, error) {
 	defer flatInput.Close()
 
 	// Apply first linear transformation
-	intermediateIface, err := tensor.BitLinear(flatInput, f.upProj)
+	intermediate, err := tensor.BitLinear(flatInput, f.upProj)
 	if err != nil {
 		return nil, err
 	}
-	defer intermediateIface.Close()
-
-	intermediate, ok := intermediateIface.(*tensor.Tensor)
-	if !ok {
-		panic("expected *tensor.Tensor from Forward for intermediate")
-	}
+	defer intermediate.Close()
 
 	// Apply ReLU² activation
 	activated, err := f.applyReLU2(intermediate)
@@ -114,11 +115,7 @@ func (f *FFN) Forward(input *tensor.Tensor) (*tensor.Tensor, error) {
 	defer output.Close()
 
 	// Reshape back to [batch_size, seq_len, hidden_dim]
-	reshapedIface := output.Reshape(batchSize, seqLen, f.hiddenDim)
-	reshaped, ok := reshapedIface.(*tensor.Tensor)
-	if !ok {
-		panic("expected *tensor.Tensor from Reshape for output")
-	}
+	reshaped := output.Reshape(batchSize, seqLen, f.hiddenDim)
 	return reshaped, nil
 }
 
@@ -214,15 +211,15 @@ func (f *FFN) applyReLU2(input *tensor.Tensor) (*tensor.Tensor, error) {
 // SetWeights sets the feed-forward network weights.
 // FFN takes ownership of the tensors and will close them when FFN is closed.
 // The caller must not close the tensors after passing them to SetWeights.
-func (f *FFN) SetWeights(upWeights, downWeights *tensor.Tensor) {
+func (f *FFN) SetWeights(upWeights, downWeights *tensor.Tensor) error {
 	if f.closed {
-		panic("FFN has been closed")
+		return ErrFFNClosed
 	}
 	if upWeights.Shape()[0] != f.intermediateDim || upWeights.Shape()[1] != f.hiddenDim {
-		panic("invalid up-projection weights shape")
+		return ErrInvalidWeightsShape
 	}
 	if downWeights.Shape()[0] != f.hiddenDim || downWeights.Shape()[1] != f.intermediateDim {
-		panic("invalid down-projection weights shape")
+		return ErrInvalidWeightsShape
 	}
 
 	// Close existing weights if they exist
@@ -236,21 +233,27 @@ func (f *FFN) SetWeights(upWeights, downWeights *tensor.Tensor) {
 	// Set new weights
 	f.upProj = upWeights
 	f.downProj = downWeights
+	return nil
 }
 
 // Close releases all resources associated with the FFN.
 // After Close is called, the FFN instance should not be used.
-func (f *FFN) Close() {
+func (f *FFN) Close() error {
 	if f.closed {
-		return
+		return nil
 	}
 	if f.upProj != nil {
-		f.upProj.Close()
+		if err := f.upProj.Close(); err != nil {
+			return err
+		}
 		f.upProj = nil
 	}
 	if f.downProj != nil {
-		f.downProj.Close()
+		if err := f.downProj.Close(); err != nil {
+			return err
+		}
 		f.downProj = nil
 	}
 	f.closed = true
+	return nil
 }
