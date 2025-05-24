@@ -120,6 +120,15 @@ func (l *LayerNorm) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 		output = tensor.NewTensor(batchSize, seqLen, hiddenDim)
 	}
 
+	// Make a copy of input data to avoid race conditions
+	inputData := x.Data()
+	inputShape := x.Shape()
+
+	// Copy gamma data to a local slice to avoid race with Close
+	l.mu.RLock()
+	gammaData := l.gamma.Data()
+	l.mu.RUnlock()
+
 	// Process in parallel chunks with a reasonable chunk size
 	var wg sync.WaitGroup
 	numCPU := runtime.NumCPU()
@@ -147,10 +156,10 @@ func (l *LayerNorm) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 					var sum float32
 					for d := 0; d < hiddenDim; d++ {
 						var val float32
-						if len(x.Shape()) == 2 {
-							val = float32(x.Get(b, d))
+						if len(inputShape) == 2 {
+							val = float32(inputData[b*hiddenDim+d])
 						} else {
-							val = float32(x.Get(b, s, d))
+							val = float32(inputData[b*seqLen*hiddenDim+s*hiddenDim+d])
 						}
 						sum += val
 					}
@@ -160,10 +169,10 @@ func (l *LayerNorm) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 					var sumSq float32
 					for d := 0; d < hiddenDim; d++ {
 						var val float32
-						if len(x.Shape()) == 2 {
-							val = float32(x.Get(b, d))
+						if len(inputShape) == 2 {
+							val = float32(inputData[b*hiddenDim+d])
 						} else {
-							val = float32(x.Get(b, s, d))
+							val = float32(inputData[b*seqLen*hiddenDim+s*hiddenDim+d])
 						}
 						diff := val - mean
 						sumSq += diff * diff
@@ -174,19 +183,17 @@ func (l *LayerNorm) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 					stdDev := float32(math.Sqrt(float64(variance + l.epsilon)))
 					for d := 0; d < hiddenDim; d++ {
 						var val float32
-						if len(x.Shape()) == 2 {
-							val = float32(x.Get(b, d))
+						if len(inputShape) == 2 {
+							val = float32(inputData[b*hiddenDim+d])
 						} else {
-							val = float32(x.Get(b, s, d))
+							val = float32(inputData[b*seqLen*hiddenDim+s*hiddenDim+d])
 						}
 
 						// Normalize: (x - mean) / sqrt(variance + epsilon)
 						normalized := (val - mean) / stdDev
 
 						// Scale with gamma (with read lock)
-						l.mu.RLock()
-						gammaVal := l.gamma.Get(d)
-						l.mu.RUnlock()
+						gammaVal := gammaData[d]
 						scaled := normalized * float32(gammaVal)
 
 						// Clamp to int8 range
@@ -197,7 +204,7 @@ func (l *LayerNorm) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 						}
 
 						// Store as int8
-						if len(x.Shape()) == 2 {
+						if len(inputShape) == 2 {
 							output.Set(int8(scaled), b, d)
 						} else {
 							output.Set(int8(scaled), b, s, d)

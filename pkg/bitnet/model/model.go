@@ -9,10 +9,13 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"math"
 	"runtime"
 	"sync"
 
+	bitnetmath "github.com/hyperifyio/gnd/pkg/bitnet/internal/math"
 	"github.com/hyperifyio/gnd/pkg/bitnet/internal/model"
+	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
 	"github.com/hyperifyio/gnd/pkg/loggers"
 )
 
@@ -53,6 +56,12 @@ type Model struct {
 	done      chan struct{}
 	readBuf   []byte     // Buffer for reading ternary weights
 	closeMu   sync.Mutex // Mutex to protect Close() operations
+	forwardMu sync.Mutex // Mutex to protect forward() operations
+
+	// Reusable sublayers
+	attnSublayers []*bitnetmath.AttentionSublayer
+	ffnSublayers  []*bitnetmath.FFNSublayer
+	finalNorm     *bitnetmath.LayerNorm
 }
 
 // Config represents the model configuration parameters.
@@ -244,29 +253,212 @@ func (m *Model) LoadWeights(path string) error {
 	}
 	m.tokenizer = tokenizer
 
+	// Initialize reusable sublayers
+	m.attnSublayers = make([]*bitnetmath.AttentionSublayer, m.config.NumLayers)
+	m.ffnSublayers = make([]*bitnetmath.FFNSublayer, m.config.NumLayers)
+	m.finalNorm = bitnetmath.NewLayerNorm(m.config.HiddenSize)
+
+	// Create and initialize attention sublayers
+	for i := 0; i < m.config.NumLayers; i++ {
+		attn, err := bitnetmath.NewAttentionSublayer(m.config.HiddenSize, m.config.NumHeads, m.config.NumKVHeads)
+		if err != nil {
+			return ErrAttentionSublayer
+		}
+		m.attnSublayers[i] = attn
+
+		// Set attention weights
+		if err := m.setAttentionWeights(attn, m.weights.Blocks[i]); err != nil {
+			return err
+		}
+	}
+
+	// Create and initialize FFN sublayers
+	for i := 0; i < m.config.NumLayers; i++ {
+		ffn := bitnetmath.NewFFNSublayer(m.config.HiddenSize, m.config.IntermediateSize)
+		m.ffnSublayers[i] = ffn
+
+		// Set FFN weights
+		if err := m.setFFNWeights(ffn, m.weights.Blocks[i]); err != nil {
+			return err
+		}
+	}
+
+	// Set final norm weights
+	if err := m.setFinalNormWeights(m.finalNorm); err != nil {
+		return err
+	}
+
 	return nil
 }
 
-// Infer performs inference on the input tokens
-// input: slice of token IDs
-// Returns: slice of output token IDs
+// Infer performs inference on the input tokens and returns the predicted tokens.
+// It implements a generation loop that continues until an end-of-sequence token
+// is produced or the maximum sequence length is reached.
 func (m *Model) Infer(tokens []int) ([]int, error) {
-	if len(tokens) == 0 {
-		return nil, ErrInvalidToken
+	if m.weights == nil {
+		return nil, ErrWeightsNotLoaded
 	}
 
+	if m.tokenizer == nil {
+		return nil, ErrTokenizerNotLoaded
+	}
+
+	// Check sequence length
 	if len(tokens) > m.config.MaxSeqLength {
 		return nil, ErrSequenceTooLong
 	}
+
+	// Initialize output sequence with input tokens
+	outputTokens := make([]int, len(tokens))
+	copy(outputTokens, tokens)
+
+	// Generation loop
+	for len(outputTokens) < m.config.MaxSeqLength {
+		// Get logits from model forward pass
+		logits, err := m.forward(outputTokens)
+		if err != nil {
+			return nil, err
+		}
+
+		// Apply softmax to get probability distribution
+		probs := softmax(logits)
+
+		// Greedy decoding: select token with highest probability
+		nextToken := argmax(probs)
+
+		// Check for end-of-sequence token
+		if nextToken == m.tokenizer.SpecialTokens["</s>"] {
+			break
+		}
+
+		// Append predicted token to output sequence
+		outputTokens = append(outputTokens, nextToken)
+	}
+
+	return outputTokens, nil
+}
+
+// forward performs a single forward pass through the model and returns the logits
+func (m *Model) forward(tokens []int) ([]float32, error) {
+	// Acquire mutex to prevent concurrent forward() calls
+	m.forwardMu.Lock()
+	defer m.forwardMu.Unlock()
 
 	if m.weights == nil {
 		return nil, ErrWeightsNotLoaded
 	}
 
-	// For test compatibility: just echo the input tokens
-	outputTokens := make([]int, len(tokens))
-	copy(outputTokens, tokens)
-	return outputTokens, nil
+	if m.tokenizer == nil {
+		return nil, ErrTokenizerNotLoaded
+	}
+
+	// Check sequence length
+	if len(tokens) > m.config.MaxSeqLength {
+		return nil, ErrSequenceTooLong
+	}
+
+	// Convert tokens to hidden states using embedding layer
+	hiddenStates, err := m.embedTokens(tokens)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert hidden states to tensor
+	hiddenStatesTensor := tensor.NewTensor(1, len(tokens), m.config.HiddenSize)
+	for i := 0; i < len(tokens); i++ {
+		for j := 0; j < m.config.HiddenSize; j++ {
+			hiddenStatesTensor.Set(int8(hiddenStates[i][j]), 0, i, j)
+		}
+	}
+
+	// Process through transformer blocks
+	for i := 0; i < m.config.NumLayers; i++ {
+		// Apply attention
+		hiddenStatesTensor, err = m.attnSublayers[i].Forward(hiddenStatesTensor)
+		if err != nil {
+			hiddenStatesTensor.Close()
+			return nil, ErrAttentionForward
+		}
+
+		// Apply FFN
+		hiddenStatesTensor, err = m.ffnSublayers[i].Forward(hiddenStatesTensor)
+		if err != nil {
+			hiddenStatesTensor.Close()
+			return nil, ErrFFNForward
+		}
+	}
+
+	// Apply final normalization
+	hiddenStatesTensor, err = m.finalNorm.Forward(hiddenStatesTensor)
+	if err != nil {
+		hiddenStatesTensor.Close()
+		return nil, ErrFinalNormForward
+	}
+
+	// Convert last hidden state to float32 slice
+	lastHiddenState := make([]float32, m.config.HiddenSize)
+	for i := 0; i < m.config.HiddenSize; i++ {
+		lastHiddenState[i] = float32(hiddenStatesTensor.Get(0, len(tokens)-1, i))
+	}
+
+	// Close the tensor after we're done using it
+	hiddenStatesTensor.Close()
+
+	// Project to vocabulary size and return logits
+	return m.projectToVocab(lastHiddenState), nil
+}
+
+// softmax applies the softmax function to the input logits
+func softmax(logits []float32) []float32 {
+	// Find maximum value for numerical stability
+	maxVal := logits[0]
+	for _, v := range logits {
+		if v > maxVal {
+			maxVal = v
+		}
+	}
+
+	// Compute exp and sum
+	expSum := float32(0)
+	expVals := make([]float32, len(logits))
+	for i, v := range logits {
+		expVals[i] = float32(math.Exp(float64(v - maxVal)))
+		expSum += expVals[i]
+	}
+
+	// Normalize to get probabilities
+	probs := make([]float32, len(logits))
+	for i, v := range expVals {
+		probs[i] = v / expSum
+	}
+
+	return probs
+}
+
+// argmax returns the index of the maximum value in the slice
+func argmax(values []float32) int {
+	maxIdx := 0
+	maxVal := values[0]
+	for i, v := range values {
+		if v > maxVal {
+			maxVal = v
+			maxIdx = i
+		}
+	}
+	return maxIdx
+}
+
+// projectToVocab projects the hidden state to vocabulary size
+func (m *Model) projectToVocab(hiddenState []float32) []float32 {
+	logits := make([]float32, m.config.VocabSize)
+	for i := 0; i < m.config.VocabSize; i++ {
+		sum := float32(0)
+		for j := 0; j < m.config.HiddenSize; j++ {
+			sum += hiddenState[j] * float32(m.weights.TokenEmbedding[i*m.config.HiddenSize+j])
+		}
+		logits[i] = sum
+	}
+	return logits
 }
 
 // embedTokens converts token IDs to embeddings using the model's token embedding layer.
@@ -367,6 +559,23 @@ func (m *Model) Close() {
 		default:
 			close(m.done)
 		}
+	}
+
+	// Close all sublayers
+	for i := 0; i < m.config.NumLayers; i++ {
+		if m.attnSublayers != nil && i < len(m.attnSublayers) && m.attnSublayers[i] != nil {
+			m.attnSublayers[i].Close()
+		}
+		if m.ffnSublayers != nil && i < len(m.ffnSublayers) && m.ffnSublayers[i] != nil {
+			m.ffnSublayers[i].Close()
+		}
+	}
+	m.attnSublayers = nil
+	m.ffnSublayers = nil
+
+	if m.finalNorm != nil {
+		m.finalNorm.Close()
+		m.finalNorm = nil
 	}
 
 	// Clear weights
@@ -481,4 +690,105 @@ func convertInt8ToFloat32(values []int8) []float32 {
 		result[i] = float32(v)
 	}
 	return result
+}
+
+// setAttentionWeights sets the attention weights for a transformer block
+func (m *Model) setAttentionWeights(attn *bitnetmath.AttentionSublayer, block *TransformerBlock) error {
+	// Convert weights to tensors
+	h := m.config.HiddenSize
+	qTensor := tensor.NewTensor(h, h)
+	defer qTensor.Close()
+	kTensor := tensor.NewTensor(h, h)
+	defer kTensor.Close()
+	vTensor := tensor.NewTensor(h, h)
+	defer vTensor.Close()
+	outTensor := tensor.NewTensor(h, h)
+	defer outTensor.Close()
+
+	// Copy weights into projection matrices
+	for i := 0; i < h; i++ {
+		for j := 0; j < h; j++ {
+			// Q projection
+			qTensor.Set(block.QKVProj[i*h+j], i, j)
+			// K projection
+			kTensor.Set(block.QKVProj[h*h+i*h+j], i, j)
+			// V projection
+			vTensor.Set(block.QKVProj[2*h*h+i*h+j], i, j)
+			// Output projection
+			outTensor.Set(block.OutProj[i*h+j], i, j)
+		}
+	}
+
+	// Set attention weights
+	if err := attn.SetWeights(qTensor, kTensor, vTensor, outTensor); err != nil {
+		return ErrAttentionWeights
+	}
+
+	// Convert attention norm to float32 and create tensor
+	attnGammaTensor := tensor.NewTensor(h)
+	defer attnGammaTensor.Close()
+	for i := 0; i < h; i++ {
+		attnGammaTensor.Set(block.AttnNorm[i], i)
+	}
+	if err := attn.SetGamma(attnGammaTensor); err != nil {
+		return ErrAttentionGamma
+	}
+
+	return nil
+}
+
+// setFFNWeights sets the FFN weights for a transformer block
+func (m *Model) setFFNWeights(ffn *bitnetmath.FFNSublayer, block *TransformerBlock) error {
+	// Convert FFN weights to tensors
+	ffnUpTensor := tensor.NewTensor(m.config.IntermediateSize, m.config.HiddenSize)
+	defer ffnUpTensor.Close()
+	ffnDownTensor := tensor.NewTensor(m.config.HiddenSize, m.config.IntermediateSize)
+	defer ffnDownTensor.Close()
+
+	// Copy FFN weights
+	for i := 0; i < m.config.IntermediateSize; i++ {
+		for j := 0; j < m.config.HiddenSize; j++ {
+			ffnUpTensor.Set(block.FFNUp[i*m.config.HiddenSize+j], i, j)
+		}
+	}
+	for i := 0; i < m.config.HiddenSize; i++ {
+		for j := 0; j < m.config.IntermediateSize; j++ {
+			ffnDownTensor.Set(block.FFNDown[i*m.config.IntermediateSize+j], i, j)
+		}
+	}
+
+	// Set FFN weights
+	ffn.SetWeights(ffnUpTensor, ffnDownTensor)
+
+	// Convert FFN norm to float32
+	ffnGamma := make([]float32, m.config.HiddenSize)
+	for i := 0; i < m.config.HiddenSize; i++ {
+		ffnGamma[i] = float32(block.FFNNorm[i])
+	}
+	ffn.SetGamma(ffnGamma)
+
+	return nil
+}
+
+// setFinalNormWeights sets the final normalization weights
+func (m *Model) setFinalNormWeights(norm *bitnetmath.LayerNorm) error {
+	// Convert final norm weights to tensor
+	finalNormTensor := tensor.NewTensor(m.config.HiddenSize)
+	defer finalNormTensor.Close()
+	for i := 0; i < m.config.HiddenSize; i++ {
+		finalNormTensor.Set(m.weights.FinalNorm[i], i)
+	}
+
+	// Set final norm gamma
+	finalNormGammaTensor := tensor.NewTensor(m.config.HiddenSize)
+	defer finalNormGammaTensor.Close()
+	finalNormGammaData := convertInt8ToFloat32(finalNormTensor.Data())
+	for i := 0; i < m.config.HiddenSize; i++ {
+		finalNormGammaTensor.Set(int8(finalNormGammaData[i]), i)
+	}
+	if err := norm.SetGamma(finalNormGammaTensor); err != nil {
+		return ErrFinalNormGamma
+	}
+
+	return nil
 }

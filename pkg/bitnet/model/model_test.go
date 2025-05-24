@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	bitnetmath "github.com/hyperifyio/gnd/pkg/bitnet/internal/math"
 	"github.com/hyperifyio/gnd/pkg/bitnet/internal/model"
 	internalmodel "github.com/hyperifyio/gnd/pkg/bitnet/internal/model"
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
@@ -781,6 +782,41 @@ func TestInfer(t *testing.T) {
 			AttnNorm: make([]int8, model.config.HiddenSize),
 			FFNNorm:  make([]int8, model.config.HiddenSize),
 		}
+	}
+
+	// Initialize reusable sublayers
+	model.attnSublayers = make([]*bitnetmath.AttentionSublayer, model.config.NumLayers)
+	model.ffnSublayers = make([]*bitnetmath.FFNSublayer, model.config.NumLayers)
+	model.finalNorm = bitnetmath.NewLayerNorm(model.config.HiddenSize)
+
+	// Create and initialize attention sublayers
+	for i := 0; i < model.config.NumLayers; i++ {
+		attn, err := bitnetmath.NewAttentionSublayer(model.config.HiddenSize, model.config.NumHeads, model.config.NumKVHeads)
+		if err != nil {
+			t.Fatalf("Failed to create attention sublayer: %v", err)
+		}
+		model.attnSublayers[i] = attn
+
+		// Set attention weights
+		if err := model.setAttentionWeights(attn, model.weights.Blocks[i]); err != nil {
+			t.Fatalf("Failed to set attention weights: %v", err)
+		}
+	}
+
+	// Create and initialize FFN sublayers
+	for i := 0; i < model.config.NumLayers; i++ {
+		ffn := bitnetmath.NewFFNSublayer(model.config.HiddenSize, model.config.IntermediateSize)
+		model.ffnSublayers[i] = ffn
+
+		// Set FFN weights
+		if err := model.setFFNWeights(ffn, model.weights.Blocks[i]); err != nil {
+			t.Fatalf("Failed to set FFN weights: %v", err)
+		}
+	}
+
+	// Set final norm weights
+	if err := model.setFinalNormWeights(model.finalNorm); err != nil {
+		t.Fatalf("Failed to set final norm weights: %v", err)
 	}
 
 	// Run inference
