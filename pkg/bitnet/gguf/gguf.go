@@ -211,15 +211,16 @@ type Header struct {
 // TensorInfo represents metadata about a tensor in the GGUF file.
 // It includes the tensor's name, type, shape, and location in the file.
 type TensorInfo struct {
-	Name     string   // Name of tensor
-	Type     uint32   // Type of tensor data
-	Shape    []uint64 // Shape is tensor dimensions
-	Offset   uint64   // Offset in the file where tensor data begins, counted from the start of the tensor data, which is the region following the tensor info array.
-	N        uint64   // N is the number of tensor elements
-	RowCount uint64   // RowCount is how many rows the tensor has
-	ColCount uint64   // ColCount is how many columns one row has
-	RowSize  uint64   // RowSize is how many bytes single row contains
-	DataSize uint64   // DataSize is how many bytes tensor block contains (all rows)
+	Name      string   // Name of tensor
+	Type      uint32   // Type of tensor data
+	Shape     []uint64 // Shape is tensor dimensions
+	Offset    uint64   // Offset in the file where tensor data begins, counted from the start of the tensor data, which is the region following the tensor info array.
+	EndOffset uint64   // EndOffset is the offset where tensor data ends (and new starts), calculated from Offset to the next tensor data offset or the end of data
+	N         uint64   // N is the number of tensor elements
+	RowCount  uint64   // RowCount is how many rows the tensor has
+	ColCount  uint64   // ColCount is how many columns one row has
+	RowSize   uint64   // RowSize is how many bytes single row contains
+	DataSize  uint64   // DataSize is how many bytes tensor block contains (all rows)
 }
 
 // Model represents a loaded GGUF model.
@@ -316,6 +317,11 @@ func LoadModel(modelData []byte) (*Model, error) {
 	model.DataEnd = endPos
 	log.Printf("[DEBUG] DataEnd: %d", model.DataEnd)
 
+	// We need to set the last tensor end offset to the end of data
+	if len(model.Tensors) >= 1 {
+		model.Tensors[len(model.Tensors)-1].EndOffset = model.DataEnd - model.DataStart
+	}
+
 	// FIXME: Do this check only if we have tensor types of 36 (I2_S)
 	if q := model.quantizationVersion(); q != 2 {
 		log.Printf("[DEBUG] Invalid quantizationVersion number: %x", q)
@@ -333,9 +339,23 @@ func LoadModel(modelData []byte) (*Model, error) {
 
 		endOffset := model.DataStart + tensor.Offset + tensor.DataSize
 		if endOffset < model.DataStart || endOffset > model.DataEnd {
-			log.Printf("[DEBUG] Invalid tensor %d end offset: %d (%d + %d + %d) not between %d .. %d", idx, endOffset, model.DataStart, tensor.Offset, tensor.DataSize, model.DataStart, model.DataEnd)
+			log.Printf("[DEBUG] Invalid tensor %d offset + dataSize offset: %d (%d + %d + %d) not between %d .. %d",
+				idx, endOffset, model.DataStart, tensor.Offset, tensor.DataSize, model.DataStart, model.DataEnd)
 			return nil, ErrReadTensorOffset
 		}
+
+		endOffset2 := model.DataStart + tensor.EndOffset
+		if endOffset2 < model.DataStart || endOffset2 > model.DataEnd {
+			log.Printf("[DEBUG] Invalid tensor %d end offset: %d (%d + %d + %d) not between %d .. %d",
+				idx, endOffset2, model.DataStart, tensor.Offset, tensor.DataSize, model.DataStart, model.DataEnd)
+			return nil, ErrReadTensorOffset
+		}
+
+		if endOffset != endOffset2 {
+			log.Printf("[DEBUG] Invalid tensor %d end offsets: %d not %d", idx, endOffset, endOffset2)
+			return nil, ErrReadTensorOffset
+		}
+
 	}
 
 	return model, nil
@@ -469,6 +489,7 @@ func (m *Model) loadTensorInfoArray() error {
 	if numTensors == 0 {
 		return fmt.Errorf("gguf: tensor count is zero")
 	}
+	// FIXME: Move allocation out of this
 	m.Tensors = make([]TensorInfo, numTensors)
 	log.Printf("[DEBUG] Tensors to read: %d", numTensors)
 	if err := parseSliceOfTensorInfo(m.fileHandle, logger, m.Tensors, m.Alignment); err != nil {
@@ -482,8 +503,8 @@ func (m *Model) loadTensorInfoArray() error {
 func (m *Model) GetTensorData(tensor *TensorInfo) ([]byte, error) {
 	length := tensor.DataSize
 	offset := m.DataStart + tensor.Offset
-	log.Printf("[DEBUG] Reading tensor data (name=%s, type=%d, shape=%v, offset=%d, rowCount=%d, rowSize=%d, N=%d), model (dataStart=%d)",
-		tensor.Name, tensor.Type, tensor.Shape, tensor.Offset, tensor.RowCount, tensor.RowSize, tensor.N,
+	log.Printf("[DEBUG] Reading tensor data (name=%s, type=%d, shape=%v, offset=%d:%d, rowCount=%d, rowSize=%d, N=%d), model (dataStart=%d)",
+		tensor.Name, tensor.Type, tensor.Shape, tensor.Offset, tensor.EndOffset, tensor.RowCount, tensor.RowSize, tensor.N,
 		m.DataStart,
 	)
 	slice := sliceOfByte(m.modelData, offset, length)

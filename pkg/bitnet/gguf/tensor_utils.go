@@ -57,7 +57,7 @@ func calculateTensorRowSize(tensor *TensorInfo, n uint64) (uint64, error) {
 }
 
 // calculateTensorDataSize calculates tensor row size in bytes from column size
-func calculateTensorDataSize(tensor *TensorInfo, n uint64) (uint64, error) {
+func calculateTensorDataSize(tensor *TensorInfo, n, alignment uint64) (uint64, error) {
 	tensorType := tensor.Type
 	if n == 0 {
 		return 0, fmt.Errorf("gguf: tensor of type %d has no data", tensorType)
@@ -68,7 +68,7 @@ func calculateTensorDataSize(tensor *TensorInfo, n uint64) (uint64, error) {
 	case GGML_TYPE_F16:
 		return n * 2, nil // 2 bytes per float16
 	case GGML_TYPE_I2_S:
-		return ((n/4 + 4) / 32) * 32, nil // `n` * 2 bits + 4 bytes (float32) aligned to next 32 bytes`
+		return ((n/4 + 32) / alignment) * alignment, nil // `n` * 2 bits + 4 bytes (float32) aligned to next 32 bytes`
 	default:
 		return 0, fmt.Errorf("gguf: unsupported tensor type %d", tensorType)
 	}

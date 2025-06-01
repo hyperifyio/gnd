@@ -520,7 +520,7 @@ func parseTensorInfo(r io.Reader, logger *log.Logger, tensor *TensorInfo, alignm
 		return err
 	}
 
-	tensor.DataSize, err = calculateTensorDataSize(tensor, tensor.N)
+	tensor.DataSize, err = calculateTensorDataSize(tensor, tensor.N, alignment)
 	if err != nil {
 		return err
 	}
@@ -548,6 +548,11 @@ func parseSliceOfTensorInfo(r io.ReadSeeker, logger *log.Logger, arr []TensorInf
 
 		log.Printf("[DEBUG] Tensor %d: name=%s, type=%d, shape=%v, offset=%d, dataSize=%d, n=%d, rows=%d, cols=%d, rowSize=%d",
 			i, tensor.Name, tensor.Type, tensor.Shape, tensor.Offset, tensor.DataSize, tensor.N, tensor.RowCount, tensor.ColCount, tensor.RowSize)
+
+		if i != 0 {
+			arr[i-1].EndOffset = tensor.Offset
+		}
+
 	}
 
 	return nil
