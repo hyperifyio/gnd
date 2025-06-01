@@ -1,0 +1,92 @@
+---
+description: "Detect duplicated logic and refactor large functions into reusable, tested utility functions."
+globs: *.go, pkg/**/*.go
+alwaysApply: false
+---
+
+# Utility Extraction & Function Decomposition Rule
+
+**Purpose:** Identify repeating patterns and overly complex functions in Go 
+code, extract shared logic into small, semantic utility functions, and 
+decompose large functions for readability and maintainability. Ensure all new 
+utilities have independent unit tests.
+
+## 1. Detect Duplication & Complexity
+
+* **Search for repeated code blocks:** Use `grep`, `git diff`, or IDE "Find 
+  Duplicates" features to locate similar logic across files.
+
+* **Identify large functions:** Functions exceeding \~50 lines or containing 
+  multiple distinct responsibilities.
+
+## 2. Extract Utility Functions
+
+1. **Define a clear purpose:** Name utilities descriptively (e.g., 
+   `ParseConfigField`, `ValidateUserInput`).
+
+2. **Move shared logic:** Extract common code into a new function in an 
+   appropriate package (e.g., `internal/util`).
+
+3. **Update callers:** Replace inlined code in each original location with 
+   calls to the new utility.
+
+```go
+// Before: repeated parsing logic in multiple handlers
+field, err := strconv.Atoi(params["count"])
+if err != nil {
+    return fmt.Errorf("invalid count: %v", err)
+}
+
+// After: single utility
+field, err := util.ParseIntParam(params, "count")
+if err != nil {
+    return err
+}
+```
+
+## 3. Decompose Large Functions
+
+* **Single Responsibility:** Split functions that perform multiple tasks (e.g., 
+  parsing, validation, storage) into smaller helper or utility calls.
+
+* **Maintain clear flow:** Orchestrator functions should focus on high-level 
+  logic, delegating details to extracted utilities.
+
+## 4. Unit Test Utilities Independently
+
+* **Create dedicated `*_test.go` files** for each new utility.
+
+* **Cover edge cases and error paths** using table-driven tests.
+
+* **Use `b.ReportAllocs()`** in benchmarks for performance-sensitive utilities.
+
+```go
+func TestParseIntParam(t *testing.T) {
+    tests := []struct { key, want string; wantErr bool }{
+        {"count", "5", false},
+        {"missing", "", true},
+        {"bad", "abc", true},
+    }
+    for _, tc := range tests {
+        t.Run(tc.key, func(t *testing.T) {
+            _, err := ParseIntParam(map[string]string{tc.key: tc.want}, tc.key)
+            if (err != nil) != tc.wantErr {
+                t.Fatalf("ParseIntParam error = %v, wantErr %v", err, tc.wantErr)
+            }
+        })
+    }
+}
+```
+
+## 5. Verify and Clean Up
+
+* **Run coverage:** Ensure utilities are fully covered.
+
+* **Run linters and formatters:** Maintain code style.
+
+* **Refactor call sites:** Remove any remaining duplication and update imports.
+
+---
+
+*Apply this rule to improve code reuse, readability, and testability across Go 
+modules.*

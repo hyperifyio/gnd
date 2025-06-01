@@ -1,20 +1,56 @@
 // Package model implements the BitNet neural network model architecture.
-// It provides functionality for loading model weights, performing inference,
-// and managing the model's lifecycle. The package supports ternary quantization
-// for efficient model storage and computation.
+//
+// # BitNet Model Implementation
+//
+// This package provides the core implementation of the BitNet model, including
+// model loading, inference, and lifecycle management. It implements a quantized
+// transformer architecture optimized for efficient inference.
+//
+// Key aspects:
+//   - Ternary quantized weights (-1, 0, +1) for efficient storage and computation
+//   - Optimized transformer blocks with attention and feed-forward networks
+//   - Memory-efficient implementation with reusable sublayers and memory pools
+//   - Thread-safe operations with proper synchronization
+//   - Greedy decoding support with 4096-token context management
+//
+// Implementation Status:
+//   - Model loading and initialization (Issue #170)
+//   - Token decoding and inference loop (Issue #190)
+//   - Memory pooling for efficient resource usage
+//   - Thread-safe operations with mutex protection
+//
+// Usage:
+//   - Used for loading and running BitNet models for inference
+//   - Maintainers should not change quantization or architecture without full pipeline review
+//
+// Caveats:
+//   - Model weights must be in the correct format with valid magic number and version
+//   - Thread safety comes with performance overhead; use appropriate synchronization
+//   - Any change must be validated against end-to-end BitNet inference
+//   - Context length is limited to 4096 tokens
+//
+// For more details, see:
+//   - BitNet issue #170: Main feature implementation
+//   - BitNet issue #190: Token decoding and inference loop
+//   - Additional tasks: https://github.com/hyperifyio/gnd/issues?q=is%3Aissue+state%3Aopen+label%3Abitnet+label%3Atask
 package model
 
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"math"
 	"runtime"
 	"sync"
 
-	bitnetmath "github.com/hyperifyio/gnd/pkg/bitnet/internal/math"
-	"github.com/hyperifyio/gnd/pkg/bitnet/internal/model"
+	"github.com/hyperifyio/gnd/pkg/bitnet/math/attention_sublayer"
+	"github.com/hyperifyio/gnd/pkg/bitnet/math/ffn_sublayer"
+	"github.com/hyperifyio/gnd/pkg/bitnet/math/layer_norm"
+	"github.com/hyperifyio/gnd/pkg/bitnet/math/tensor_ops"
+	"github.com/hyperifyio/gnd/pkg/bitnet/tokenizer"
+
 	"github.com/hyperifyio/gnd/pkg/bitnet/logging"
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
 	"github.com/hyperifyio/gnd/pkg/loggers"
@@ -81,21 +117,21 @@ type Model struct {
 	config    *Config
 	fs        fs.FS
 	weights   *ModelWeights
-	tokenizer *model.Tokenizer
+	tokenizer *tokenizer.Tokenizer
 	done      chan struct{}
 	readBuf   []byte     // Buffer for reading ternary weights
 	closeMu   sync.Mutex // Mutex to protect Close() operations
 	forwardMu sync.Mutex // Mutex to protect forward() operations
 
 	// Reusable sublayers
-	attnSublayers []*bitnetmath.AttentionSublayer
-	ffnSublayers  []*bitnetmath.FFNSublayer
-	finalNorm     *bitnetmath.LayerNorm
+	attnSublayers []*attention_sublayer.AttentionSublayer
+	ffnSublayers  []*ffn_sublayer.FFNSublayer
+	finalNorm     *layer_norm.LayerNorm
 
 	// Memory pools for frequently allocated objects
-	tensorOps        *bitnetmath.TensorOps
-	hiddenStatesPool sync.Pool
-	logitsPool       sync.Pool
+	tensorOps        *tensor_ops.TensorOps
+	hiddenStatesPool *sync.Pool
+	logitsPool       *sync.Pool
 }
 
 // Config represents the model configuration parameters.
@@ -132,21 +168,24 @@ func NewConfig() *Config {
 }
 
 // NewModel creates a new BitNet model instance with the given configuration.
-func NewModel(config *Config, fs fs.FS) *Model {
+func NewModel(config *Config, fs fs.FS) (*Model, error) {
 	if config == nil {
 		config = NewConfig()
 	}
 
 	// Initialize memory pools
-	tensorOps := bitnetmath.NewTensorOps(config.MaxSeqLength, config.HiddenSize)
+	tensorOps, err := tensor_ops.NewTensorOps(config.MaxSeqLength, config.HiddenSize)
+	if err != nil {
+		return nil, err
+	}
 
-	hiddenStatesPool := sync.Pool{
+	hiddenStatesPool := &sync.Pool{
 		New: func() interface{} {
 			return make([][]float32, config.MaxSeqLength)
 		},
 	}
 
-	logitsPool := sync.Pool{
+	logitsPool := &sync.Pool{
 		New: func() interface{} {
 			return make([]float32, config.VocabSize)
 		},
@@ -159,7 +198,7 @@ func NewModel(config *Config, fs fs.FS) *Model {
 		tensorOps:        tensorOps,
 		hiddenStatesPool: hiddenStatesPool,
 		logitsPool:       logitsPool,
-	}
+	}, nil
 }
 
 // LoadWeights loads the model weights from a file.
@@ -195,12 +234,13 @@ func (m *Model) LoadWeights(path string) error {
 	}
 
 	// Verify version first
-	if binary.LittleEndian.Uint32(header[4:8]) != 1 {
-		loggers.Printf(loggers.Debug, "[DEBUG] unsupported version: %d", binary.LittleEndian.Uint32(header[4:8]))
+	ver := binary.LittleEndian.Uint32(header[4:8])
+	if ver != 2 && ver != 3 {
+		loggers.Printf(loggers.Debug, "[DEBUG] unsupported version: %d", ver)
 		return ErrUnsupportedVersion
 	}
 	// Verify magic number
-	if binary.LittleEndian.Uint32(header[0:4]) != 0x424E4554 { // "BNET"
+	if binary.LittleEndian.Uint32(header[0:4]) != 0x47475546 { // "GGUF"
 		loggers.Printf(loggers.Debug, "[DEBUG] invalid magic number: %x", header[0:4])
 		return ErrInvalidWeightsFile
 	}
@@ -298,7 +338,7 @@ func (m *Model) LoadWeights(path string) error {
 	}
 
 	// Initialize tokenizer (after all weights are loaded)
-	tokenizer, err := model.NewTokenizer(m.fs, "tokenizer")
+	tokenizer, err := tokenizer.NewTokenizer(m.fs, "tokenizer")
 	if err != nil {
 		loggers.Printf(loggers.Debug, "failed to initialize tokenizer: %v", err)
 		return ErrTokenizerInit
@@ -306,9 +346,9 @@ func (m *Model) LoadWeights(path string) error {
 	m.tokenizer = tokenizer
 
 	// Initialize reusable sublayers
-	m.attnSublayers = make([]*bitnetmath.AttentionSublayer, m.config.NumLayers)
-	m.ffnSublayers = make([]*bitnetmath.FFNSublayer, m.config.NumLayers)
-	m.finalNorm, err = bitnetmath.NewLayerNorm(m.config.HiddenSize)
+	m.attnSublayers = make([]*attention_sublayer.AttentionSublayer, m.config.NumLayers)
+	m.ffnSublayers = make([]*ffn_sublayer.FFNSublayer, m.config.NumLayers)
+	m.finalNorm, err = layer_norm.NewLayerNorm(m.config.HiddenSize)
 	if err != nil {
 		loggers.Printf(loggers.Debug, "create final norm: %v", err)
 		return ErrCreateFinalNorm
@@ -316,7 +356,7 @@ func (m *Model) LoadWeights(path string) error {
 
 	// Create and initialize attention sublayers
 	for i := 0; i < m.config.NumLayers; i++ {
-		attn, err := bitnetmath.NewAttentionSublayer(m.config.HiddenSize, m.config.NumHeads, m.config.NumKVHeads)
+		attn, err := attention_sublayer.NewAttentionSublayer(m.config.HiddenSize, m.config.NumHeads, m.config.NumKVHeads)
 		if err != nil {
 			return ErrAttentionSublayer
 		}
@@ -330,7 +370,10 @@ func (m *Model) LoadWeights(path string) error {
 
 	// Create and initialize FFN sublayers
 	for i := 0; i < m.config.NumLayers; i++ {
-		ffn := bitnetmath.NewFFNSublayer(m.config.HiddenSize, m.config.IntermediateSize)
+		ffn, err := ffn_sublayer.NewFFNSublayer(m.config.HiddenSize, m.config.IntermediateSize)
+		if err != nil {
+			return err
+		}
 		m.ffnSublayers[i] = ffn
 
 		// Set FFN weights
@@ -347,20 +390,35 @@ func (m *Model) LoadWeights(path string) error {
 	return nil
 }
 
-// Infer performs inference on the input tokens and returns the predicted tokens.
+// Decoder handles token decoding and generation for the BitNet model.
+// It manages the inference loop, token selection, and sequence generation.
+type Decoder struct {
+	model     *Model
+	maxLength int
+}
+
+// NewDecoder creates a new decoder instance for the given model.
+func NewDecoder(model *Model) *Decoder {
+	return &Decoder{
+		model:     model,
+		maxLength: model.config.MaxSeqLength,
+	}
+}
+
+// Decode performs token decoding and generation.
 // It implements a generation loop that continues until an end-of-sequence token
 // is produced or the maximum sequence length is reached.
-func (m *Model) Infer(tokens []int) ([]int, error) {
-	if m.weights == nil {
+func (d *Decoder) Decode(tokens []int) ([]int, error) {
+	if d.model.weights == nil {
 		return nil, ErrWeightsNotLoaded
 	}
 
-	if m.tokenizer == nil {
+	if d.model.tokenizer == nil {
 		return nil, ErrTokenizerNotLoaded
 	}
 
 	// Check sequence length
-	if len(tokens) > m.config.MaxSeqLength {
+	if len(tokens) > d.maxLength {
 		return nil, ErrSequenceTooLong
 	}
 
@@ -369,29 +427,83 @@ func (m *Model) Infer(tokens []int) ([]int, error) {
 	copy(outputTokens, tokens)
 
 	// Generation loop
-	for len(outputTokens) < m.config.MaxSeqLength {
+	for len(outputTokens) < d.maxLength {
 		// Get logits from model forward pass
-		logits, err := m.forward(outputTokens)
+		logits, err := d.model.forward(outputTokens)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("forward pass failed: %w", err)
 		}
 
 		// Apply softmax to get probability distribution
-		probs := softmax(logits)
+		probs := d.applySoftmax(logits)
 
 		// Greedy decoding: select token with highest probability
-		nextToken := argmax(probs)
+		nextToken := d.selectToken(probs)
 
 		// Check for end-of-sequence token
-		if nextToken == m.tokenizer.SpecialTokens["</s>"] {
+		if nextToken == d.model.tokenizer.SpecialTokens["</s>"] {
 			break
 		}
 
 		// Append predicted token to output sequence
 		outputTokens = append(outputTokens, nextToken)
+
+		// If sequence length exceeds max, drop oldest tokens
+		if len(outputTokens) > d.maxLength {
+			outputTokens = outputTokens[len(outputTokens)-d.maxLength:]
+		}
 	}
 
 	return outputTokens, nil
+}
+
+// applySoftmax applies the softmax function to the input logits.
+// It includes numerical stability improvements and proper error handling.
+func (d *Decoder) applySoftmax(logits []float32) []float32 {
+	// Find maximum value for numerical stability
+	maxVal := logits[0]
+	for _, v := range logits {
+		if v > maxVal {
+			maxVal = v
+		}
+	}
+
+	// Compute exp and sum
+	expSum := float32(0)
+	expVals := make([]float32, len(logits))
+	for i, v := range logits {
+		expVals[i] = float32(math.Exp(float64(v - maxVal)))
+		expSum += expVals[i]
+	}
+
+	// Normalize to get probabilities
+	probs := make([]float32, len(logits))
+	for i, v := range expVals {
+		probs[i] = v / expSum
+	}
+
+	return probs
+}
+
+// selectToken implements token selection strategy.
+// Currently uses greedy decoding (argmax), but can be extended to support
+// other strategies like beam search or sampling.
+func (d *Decoder) selectToken(probs []float32) int {
+	maxIdx := 0
+	maxVal := probs[0]
+	for i, v := range probs {
+		if v > maxVal {
+			maxVal = v
+			maxIdx = i
+		}
+	}
+	return maxIdx
+}
+
+// Update Infer to use the new Decoder
+func (m *Model) Infer(tokens []int) ([]int, error) {
+	decoder := NewDecoder(m)
+	return decoder.Decode(tokens)
 }
 
 // forward performs a single forward pass through the model and returns the logits
@@ -403,7 +515,10 @@ func (m *Model) forward(tokens []int) ([]float32, error) {
 	}
 
 	// Reshape and copy hidden states to tensor
-	hiddenStatesTensor := m.tensorOps.ReshapeAndCopy(hiddenStates, 1, len(tokens), m.config.HiddenSize)
+	hiddenStatesTensor, err := m.tensorOps.ReshapeAndCopy(hiddenStates, 1, len(tokens), m.config.HiddenSize)
+	if err != nil {
+		return nil, err
+	}
 	if hiddenStatesTensor == nil {
 		return nil, ErrCreateHiddenStates
 	}
@@ -495,9 +610,9 @@ func (m *Model) forward(tokens []int) ([]float32, error) {
 	defer m.logitsPool.Put(logits)
 
 	// Get last hidden state and project to vocabulary size
-	lastHiddenState := m.tensorOps.GetLastHiddenState(currentTensor, len(tokens), m.config.HiddenSize)
-	if lastHiddenState == nil {
-		return nil, ErrGetLastHiddenState
+	lastHiddenState, err := m.tensorOps.GetLastHiddenState(currentTensor, len(tokens), m.config.HiddenSize)
+	if err != nil {
+		return nil, err
 	}
 	copy(logits, lastHiddenState)
 
@@ -517,46 +632,6 @@ func (m *Model) forward(tokens []int) ([]float32, error) {
 	}
 
 	return m.projectToVocab(result), nil
-}
-
-// softmax applies the softmax function to the input logits
-func softmax(logits []float32) []float32 {
-	// Find maximum value for numerical stability
-	maxVal := logits[0]
-	for _, v := range logits {
-		if v > maxVal {
-			maxVal = v
-		}
-	}
-
-	// Compute exp and sum
-	expSum := float32(0)
-	expVals := make([]float32, len(logits))
-	for i, v := range logits {
-		expVals[i] = float32(math.Exp(float64(v - maxVal)))
-		expSum += expVals[i]
-	}
-
-	// Normalize to get probabilities
-	probs := make([]float32, len(logits))
-	for i, v := range expVals {
-		probs[i] = v / expSum
-	}
-
-	return probs
-}
-
-// argmax returns the index of the maximum value in the slice
-func argmax(values []float32) int {
-	maxIdx := 0
-	maxVal := values[0]
-	for i, v := range values {
-		if v > maxVal {
-			maxVal = v
-			maxIdx = i
-		}
-	}
-	return maxIdx
 }
 
 // projectToVocab projects the hidden state to vocabulary size
@@ -810,7 +885,7 @@ func convertInt8ToFloat32(values []int8) []float32 {
 }
 
 // setAttentionWeights sets the attention weights for a transformer block
-func (m *Model) setAttentionWeights(attn *bitnetmath.AttentionSublayer, block *TransformerBlock) error {
+func (m *Model) setAttentionWeights(attn *attention_sublayer.AttentionSublayer, block *TransformerBlock) error {
 	// Convert weights to tensors
 	h := m.config.HiddenSize
 	qTensor, err := tensor.NewTensor(h, h)
@@ -889,7 +964,7 @@ func (m *Model) setAttentionWeights(attn *bitnetmath.AttentionSublayer, block *T
 }
 
 // setFFNWeights sets the FFN weights for a transformer block
-func (m *Model) setFFNWeights(ffn *bitnetmath.FFNSublayer, block *TransformerBlock) error {
+func (m *Model) setFFNWeights(ffn *ffn_sublayer.FFNSublayer, block *TransformerBlock) error {
 	// Convert FFN weights to tensors
 	ffnUpTensor, err := tensor.NewTensor(m.config.IntermediateSize, m.config.HiddenSize)
 	if err != nil {
@@ -936,7 +1011,7 @@ func (m *Model) setFFNWeights(ffn *bitnetmath.FFNSublayer, block *TransformerBlo
 }
 
 // setFinalNormWeights sets the final normalization weights
-func (m *Model) setFinalNormWeights(norm *bitnetmath.LayerNorm) error {
+func (m *Model) setFinalNormWeights(norm *layer_norm.LayerNorm) error {
 	// Convert final norm weights to tensor
 	finalNormTensor, err := tensor.NewTensor(m.config.HiddenSize)
 	if err != nil {
@@ -987,7 +1062,7 @@ func (m *Model) InitTokenizer(path string) error {
 		return ErrPathEmpty
 	}
 
-	tokenizer, err := model.NewTokenizer(m.fs, path)
+	tokenizer, err := tokenizer.NewTokenizer(m.fs, path)
 	if err != nil {
 		loggers.Printf(loggers.Debug, "failed to initialize tokenizer: %v", err)
 		return ErrTokenizerInit

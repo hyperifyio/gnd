@@ -14,7 +14,9 @@ profiles/
 tensor.test
 
 # BitNet model files
-pkg/bitnet/internal/assets/models/
+pkg/bitnet/assets/models/
 
 math.test
 coverage.html
+
+*.txt

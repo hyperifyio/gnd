@@ -1,3 +1,26 @@
+// Package model implements comprehensive tests for the BitNet model implementation.
+//
+// # BitNet Model Test Suite
+//
+// This file provides a complete test suite for the BitNet model implementation,
+// including unit tests, benchmarks, and stress tests for all major components.
+//
+// Key aspects:
+//   - Comprehensive test coverage for model initialization, loading, and inference.
+//   - Memory leak detection and resource cleanup verification.
+//   - Concurrency and race condition testing.
+//   - Performance benchmarking for critical operations.
+//
+// Usage:
+//   - Used to validate BitNet model implementation correctness.
+//   - Maintainers should run all tests before making changes.
+//
+// Caveats:
+//   - Some stress tests are skipped by default due to long runtime.
+//   - Memory leak tests require careful interpretation of results.
+//   - Any change must pass all tests before being merged.
+//
+// For more details, see BitNet issue #190 and the BitNet project documentation.
 package model
 
 import (
@@ -7,6 +30,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"math/rand"
 	"reflect"
 	"runtime"
@@ -14,9 +38,11 @@ import (
 	"testing"
 	"time"
 
-	bitnetmath "github.com/hyperifyio/gnd/pkg/bitnet/internal/math"
-	"github.com/hyperifyio/gnd/pkg/bitnet/internal/model"
-	internalmodel "github.com/hyperifyio/gnd/pkg/bitnet/internal/model"
+	"github.com/hyperifyio/gnd/pkg/bitnet/math/attention_sublayer"
+	"github.com/hyperifyio/gnd/pkg/bitnet/math/ffn_sublayer"
+	"github.com/hyperifyio/gnd/pkg/bitnet/math/layer_norm"
+	internalmodel "github.com/hyperifyio/gnd/pkg/bitnet/tokenizer"
+
 	"github.com/hyperifyio/gnd/pkg/bitnet/tensor"
 )
 
@@ -85,7 +111,7 @@ var testDataFS = &testFS{
 			"[UNK]": 3,
 			"[PAD]": 5
 		}`),
-		"weights": createValidWeights(),
+		"model.gguf": createValidWeights(),
 	},
 }
 
@@ -150,7 +176,10 @@ func TestNewModel(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			model := NewModel(tt.config, nil)
+			model, err := NewModel(tt.config, nil)
+			if err != nil {
+				t.Fatalf("Failed to create model: %v", err)
+			}
 			if model == nil {
 				t.Fatal("NewModel() returned nil")
 			}
@@ -320,27 +349,49 @@ func TestReadTernaryWeightsEdgeCases(t *testing.T) {
 
 // createValidWeights creates a valid weights file for testing
 func createValidWeights() []byte {
-	// Create header
+	// Create a minimal GGUF file for testing
+	// GGUF header (8 bytes)
 	header := make([]byte, 8)
-	binary.LittleEndian.PutUint32(header[0:4], 0x424E4554) // "BNET"
-	binary.LittleEndian.PutUint32(header[4:8], 1)          // Version 1
+	binary.LittleEndian.PutUint32(header[0:4], 0x47475546) // "GGUF"
+	binary.LittleEndian.PutUint32(header[4:8], 2)          // Version 2
 
 	// Create token embeddings (vocab_size x hidden_size)
 	tokenEmbeddings := make([]byte, 100*64) // Smaller dimensions for testing
+	for i := range tokenEmbeddings {
+		tokenEmbeddings[i] = byte(i % 3) // Valid ternary values: 0, 1, 2
+	}
 
 	// Create transformer blocks
 	blocks := make([]byte, 0)
 	for i := 0; i < 2; i++ { // Fewer transformer blocks for testing
 		// QKV projection (hidden_size x 3*hidden_size)
 		qkv := make([]byte, 64*192)
+		for j := range qkv {
+			qkv[j] = byte(j % 3) // Valid ternary values
+		}
 		// Output projection (hidden_size x hidden_size)
 		out := make([]byte, 64*64)
+		for j := range out {
+			out[j] = byte(j % 3) // Valid ternary values
+		}
 		// Feed-forward weights (hidden_size x intermediate_size)
 		ff1 := make([]byte, 64*256)
+		for j := range ff1 {
+			ff1[j] = byte(j % 3) // Valid ternary values
+		}
 		ff2 := make([]byte, 256*64)
+		for j := range ff2 {
+			ff2[j] = byte(j % 3) // Valid ternary values
+		}
 		// Layer norms
 		ln1 := make([]byte, 64*2) // mean and variance
+		for j := range ln1 {
+			ln1[j] = byte(j % 3) // Valid ternary values
+		}
 		ln2 := make([]byte, 64*2)
+		for j := range ln2 {
+			ln2[j] = byte(j % 3) // Valid ternary values
+		}
 
 		blocks = append(blocks, qkv...)
 		blocks = append(blocks, out...)
@@ -352,6 +403,9 @@ func createValidWeights() []byte {
 
 	// Final layer norm
 	finalNorm := make([]byte, 64*2)
+	for i := range finalNorm {
+		finalNorm[i] = byte(i % 3) // Valid ternary values
+	}
 
 	// Combine all parts
 	weights := make([]byte, 0)
@@ -412,8 +466,11 @@ func TestLoadWeights(t *testing.T) {
 					"tokenizer/special_tokens.json": []byte(`{"<unk>":0}`),
 				},
 			}
-			model := NewModel(config, fs)
-			err := model.LoadWeights("test.weights")
+			model, err := NewModel(config, fs)
+			if err != nil {
+				t.Fatalf("Failed to create model: %v", err)
+			}
+			err = model.LoadWeights("test.weights")
 			if (err != nil) != tt.wantErr {
 				t.Errorf("LoadWeights() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -433,9 +490,9 @@ func TestLoadWeightsInvalidData(t *testing.T) {
 	fs := &testFS{
 		files: map[string][]byte{
 			// 8 bytes, wrong magic, valid version
-			"invalid_magic.bin": append(makeHeader(0x12345678, 1)),
+			"invalid_magic.bin": makeHeader(0x12345678, 1),
 			// 8 bytes, correct magic, wrong version
-			"invalid_version.bin": append(makeHeader(0x424E4554, 2)),
+			"invalid_version.bin": makeHeader(0x424E4554, 2),
 			// 8 bytes valid header, but not enough for first weights read (simulate truncation)
 			"truncated_weights.bin": append(makeHeader(0x424E4554, 1), 0x00),
 		},
@@ -465,8 +522,11 @@ func TestLoadWeightsInvalidData(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			model := NewModel(NewConfig(), fs)
-			err := model.LoadWeights(tt.path)
+			model, err := NewModel(NewConfig(), fs)
+			if err != nil {
+				t.Fatalf("Failed to create model: %v", err)
+			}
+			err = model.LoadWeights(tt.path)
 			if !errors.Is(err, tt.wantErr) {
 				t.Errorf("LoadWeights() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -475,7 +535,10 @@ func TestLoadWeightsInvalidData(t *testing.T) {
 }
 
 func TestClose(t *testing.T) {
-	model := NewModel(nil, testDataFS)
+	model, err := NewModel(nil, testDataFS)
+	if err != nil {
+		t.Fatalf("Failed to create model: %v", err)
+	}
 	if model == nil {
 		t.Fatal("NewModel returned nil")
 	}
@@ -498,7 +561,10 @@ func BenchmarkModel_LoadWeights(b *testing.B) {
 		},
 	}
 
-	model := NewModel(nil, fs)
+	model, err := NewModel(nil, fs)
+	if err != nil {
+		b.Fatalf("Failed to create model: %v", err)
+	}
 	if model == nil {
 		b.Fatal("NewModel returned nil")
 	}
@@ -535,7 +601,10 @@ func BenchmarkModel_ReadTernaryWeights(b *testing.B) {
 }
 
 func BenchmarkModel_Infer(b *testing.B) {
-	model := NewModel(nil, testDataFS)
+	model, err := NewModel(nil, testDataFS)
+	if err != nil {
+		b.Fatalf("Failed to create model: %v", err)
+	}
 	defer model.Close()
 
 	b.ResetTimer()
@@ -554,22 +623,51 @@ func TestModelEmbedTokens(t *testing.T) {
 		MaxSeqLength: 128,
 	}
 
-	// Create test file system with weights
+	// Create test file system with weights and tokenizer files
 	fs := &testFS{
 		files: map[string][]byte{
 			"test.weights": createValidWeights(),
+			"tokenizer/vocab.json": []byte(`{
+				"hello": 1,
+				"world": 2,
+				"[UNK]": 3,
+				"▁": 4
+			}`),
+			"tokenizer/merges.txt": []byte("he hello\nwo world\n"),
+			"tokenizer/special_tokens.json": []byte(`{
+				"[UNK]": 3,
+				"[PAD]": 5
+			}`),
 		},
 	}
 
-	model := NewModel(config, fs)
+	model, err := NewModel(config, fs)
+	if err != nil {
+		t.Fatalf("Failed to create model: %v", err)
+	}
 	if model == nil {
 		t.Fatal("NewModel returned nil")
 	}
 	defer model.Close()
 
+	// Initialize tokenizer
+	if err := model.InitTokenizer("tokenizer"); err != nil {
+		t.Fatalf("Failed to initialize tokenizer: %v", err)
+	}
+
 	// Load test weights
 	if err := model.LoadWeights("test.weights"); err != nil {
 		t.Fatalf("LoadWeights failed: %v", err)
+	}
+
+	// Initialize attention sublayers
+	model.attnSublayers = make([]*attention_sublayer.AttentionSublayer, config.NumLayers)
+	for i := 0; i < config.NumLayers; i++ {
+		attn, err := attention_sublayer.NewAttentionSublayer(config.HiddenSize, config.NumHeads, config.NumKVHeads)
+		if err != nil {
+			t.Fatalf("Failed to create attention sublayer: %v", err)
+		}
+		model.attnSublayers[i] = attn
 	}
 
 	tests := []struct {
@@ -655,7 +753,10 @@ func TestEmbedTokensMemoryUsage(t *testing.T) {
 		HiddenSize: 2048,
 		VocabSize:  32000,
 	}
-	model := NewModel(config, nil)
+	model, err := NewModel(config, nil)
+	if err != nil {
+		t.Fatalf("Failed to create model: %v", err)
+	}
 
 	// Create test weights with random ternary values
 	model.weights = &ModelWeights{
@@ -725,7 +826,10 @@ func BenchmarkEmbedTokens(b *testing.B) {
 		HiddenSize: 2048,
 		VocabSize:  32000,
 	}
-	model := NewModel(config, nil)
+	model, err := NewModel(config, nil)
+	if err != nil {
+		b.Fatalf("Failed to create model: %v", err)
+	}
 
 	// Create test weights with random ternary values
 	model.weights = &ModelWeights{
@@ -811,7 +915,10 @@ func TestInfer(t *testing.T) {
 		MaxSeqLength:     4096,
 		IntermediateSize: 1024, // Reduced from 8192
 	}
-	model := NewModel(config, testDataFS)
+	model, err := NewModel(config, testDataFS)
+	if err != nil {
+		t.Fatalf("Failed to create model: %v", err)
+	}
 	defer model.Close()
 
 	// Setup tokenizer with test data
@@ -839,13 +946,16 @@ func TestInfer(t *testing.T) {
 	}
 
 	// Initialize reusable sublayers
-	model.attnSublayers = make([]*bitnetmath.AttentionSublayer, model.config.NumLayers)
-	model.ffnSublayers = make([]*bitnetmath.FFNSublayer, model.config.NumLayers)
-	model.finalNorm = bitnetmath.NewLayerNorm(model.config.HiddenSize)
+	model.attnSublayers = make([]*attention_sublayer.AttentionSublayer, model.config.NumLayers)
+	model.ffnSublayers = make([]*ffn_sublayer.FFNSublayer, model.config.NumLayers)
+	model.finalNorm, err = layer_norm.NewLayerNorm(model.config.HiddenSize)
+	if err != nil {
+		t.Fatalf("failed to create final layer norm: %v", err)
+	}
 
 	// Create and initialize attention sublayers
 	for i := 0; i < model.config.NumLayers; i++ {
-		attn, err := bitnetmath.NewAttentionSublayer(model.config.HiddenSize, model.config.NumHeads, model.config.NumKVHeads)
+		attn, err := attention_sublayer.NewAttentionSublayer(model.config.HiddenSize, model.config.NumHeads, model.config.NumKVHeads)
 		if err != nil {
 			t.Fatalf("Failed to create attention sublayer: %v", err)
 		}
@@ -859,7 +969,10 @@ func TestInfer(t *testing.T) {
 
 	// Create and initialize FFN sublayers
 	for i := 0; i < model.config.NumLayers; i++ {
-		ffn := bitnetmath.NewFFNSublayer(model.config.HiddenSize, model.config.IntermediateSize)
+		ffn, err := ffn_sublayer.NewFFNSublayer(model.config.HiddenSize, model.config.IntermediateSize)
+		if err != nil {
+			t.Fatalf("failed to create FFN sublayer %d: %v", i, err)
+		}
 		model.ffnSublayers[i] = ffn
 
 		// Set FFN weights
@@ -895,7 +1008,10 @@ func TestInferConcurrent(t *testing.T) {
 		MaxSeqLength:     4096,
 		IntermediateSize: 1024, // Reduced from 8192
 	}
-	model := NewModel(config, testDataFS)
+	model, err := NewModel(config, testDataFS)
+	if err != nil {
+		t.Fatalf("Failed to create model: %v", err)
+	}
 	defer model.Close()
 
 	// Setup tokenizer with test data
@@ -959,7 +1075,10 @@ func TestInferStress(t *testing.T) {
 		MaxSeqLength:     4096,
 		IntermediateSize: 1024,
 	}
-	model := NewModel(config, testDataFS)
+	model, err := NewModel(config, testDataFS)
+	if err != nil {
+		t.Fatalf("Failed to create model: %v", err)
+	}
 	defer model.Close()
 
 	// Setup tokenizer with test data
@@ -1004,7 +1123,10 @@ func TestInferStress(t *testing.T) {
 func SkipModelStressTest(t *testing.T) {
 	config := NewConfig()
 	config.NumKVHeads = config.NumHeads // ensure valid grouped-query attention
-	model := NewModel(config, testDataFS)
+	model, err := NewModel(config, testDataFS)
+	if err != nil {
+		t.Fatalf("Failed to create model: %v", err)
+	}
 	defer model.Close()
 
 	// Initialize dummy weights
@@ -1045,7 +1167,13 @@ func SkipModelStressTest(t *testing.T) {
 
 func TestModelResourceCleanup(t *testing.T) {
 	// Test model cleanup with multiple close calls
-	model := NewModel(nil, testDataFS)
+	model, err := NewModel(nil, testDataFS)
+	if err != nil {
+		t.Fatalf("Failed to create model: %v", err)
+	}
+	if model == nil {
+		t.Fatal("NewModel returned nil")
+	}
 
 	// First close
 	model.Close()
@@ -1059,14 +1187,17 @@ func TestModelResourceCleanup(t *testing.T) {
 	model.Close()
 
 	// Test operations after close
-	_, err := model.Infer([]int{1, 2, 3})
+	_, err = model.Infer([]int{1, 2, 3})
 	if err == nil {
 		t.Error("expected error after Close(), got nil")
 	}
 }
 
 func BenchmarkModelConcurrentInference(b *testing.B) {
-	model := NewModel(nil, testDataFS)
+	model, err := NewModel(nil, testDataFS)
+	if err != nil {
+		b.Fatalf("Failed to create model: %v", err)
+	}
 	defer model.Close()
 
 	b.RunParallel(func(pb *testing.PB) {
@@ -1085,7 +1216,10 @@ func SkipModelMemoryLeaks(t *testing.T) {
 	runtime.ReadMemStats(&m1)
 
 	// Create and use model
-	model := NewModel(nil, testDataFS)
+	model, err := NewModel(nil, testDataFS)
+	if err != nil {
+		t.Fatalf("Failed to create model: %v", err)
+	}
 
 	// Patch: initialize dummy weights (copied from TestModelRaceConditions)
 	model.weights = &ModelWeights{
@@ -1134,11 +1268,17 @@ func TestModelTensorMemoryLeaks(t *testing.T) {
 	runtime.ReadMemStats(&m1)
 
 	// Create model and tensors
-	model := NewModel(nil, testDataFS)
+	model, err := NewModel(nil, testDataFS)
+	if err != nil {
+		t.Fatalf("Failed to create model: %v", err)
+	}
 
 	// Create and use tensors
 	for i := 0; i < 1000; i++ {
-		tensor := tensor.NewTensor(10, 10)
+		tensor, err := tensor.NewTensor(10, 10)
+		if err != nil {
+			t.Fatalf("Failed to create tensor: %v", err)
+		}
 		for j := 0; j < 10; j++ {
 			for k := 0; k < 10; k++ {
 				tensor.Set(int8(i%3-1), j, k)
@@ -1165,7 +1305,10 @@ func TestModelTensorMemoryLeaks(t *testing.T) {
 func SkipModelRaceConditions(t *testing.T) {
 	config := NewConfig()
 	config.NumKVHeads = config.NumHeads // ensure valid grouped-query attention
-	model := NewModel(config, testDataFS)
+	model, err := NewModel(config, testDataFS)
+	if err != nil {
+		t.Fatalf("Failed to create model: %v", err)
+	}
 	defer model.Close()
 
 	// Initialize dummy weights
@@ -1205,7 +1348,10 @@ func SkipModelRaceConditions(t *testing.T) {
 }
 
 func TestModelConcurrentClose(t *testing.T) {
-	model := NewModel(nil, testDataFS)
+	model, err := NewModel(nil, testDataFS)
+	if err != nil {
+		t.Fatalf("Failed to create model: %v", err)
+	}
 
 	// Test concurrent close operations
 	var wg sync.WaitGroup
@@ -1222,7 +1368,7 @@ func TestModelConcurrentClose(t *testing.T) {
 	wg.Wait()
 
 	// Verify model is closed
-	_, err := model.Infer([]int{1, 2, 3})
+	_, err = model.Infer([]int{1, 2, 3})
 	if err == nil {
 		t.Error("expected error after concurrent Close(), got nil")
 	}
@@ -1240,7 +1386,7 @@ func TestModelInfer(t *testing.T) {
 			name:  "empty input",
 			input: "",
 			setup: func(m *Model) {
-				m.tokenizer = &model.Tokenizer{}
+				m.tokenizer = &internalmodel.Tokenizer{}
 			},
 			wantErr: ErrTokenization,
 		},
@@ -1256,7 +1402,7 @@ func TestModelInfer(t *testing.T) {
 			name:  "sequence too long",
 			input: string(make([]byte, 4097)), // MaxSeqLength + 1
 			setup: func(m *Model) {
-				m.tokenizer = &model.Tokenizer{}
+				m.tokenizer = &internalmodel.Tokenizer{}
 			},
 			wantErr: ErrTokenization,
 		},
@@ -1272,7 +1418,10 @@ func TestModelInfer(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := NewModel(nil, testDataFS)
+			m, err := NewModel(nil, testDataFS)
+			if err != nil {
+				t.Fatalf("Failed to create model: %v", err)
+			}
 			if tt.setup != nil {
 				tt.setup(m)
 			}
@@ -1340,14 +1489,17 @@ func TestLoadWeightsEdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			model := NewModel(nil, testDataFS)
+			model, err := NewModel(nil, testDataFS)
+			if err != nil {
+				t.Fatalf("Failed to create model: %v", err)
+			}
 			if tt.setup != nil {
 				tt.setup(model)
 			}
 			if model == nil {
 				return
 			}
-			err := model.LoadWeights(tt.path)
+			err = model.LoadWeights(tt.path)
 			if !errors.Is(err, tt.wantErr) {
 				t.Errorf("LoadWeights() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -1388,7 +1540,10 @@ func TestClose_EdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			model := NewModel(nil, testDataFS)
+			model, err := NewModel(nil, testDataFS)
+			if err != nil {
+				t.Fatalf("Failed to create model: %v", err)
+			}
 			if tt.setup != nil {
 				tt.setup(model)
 			}
@@ -1420,6 +1575,222 @@ func TestClose_EdgeCases(t *testing.T) {
 				default:
 					t.Error("Close() did not close the done channel")
 				}
+			}
+		})
+	}
+}
+
+func TestDecoder(t *testing.T) {
+	// Create a smaller model configuration
+	config := &Config{
+		HiddenSize:       512,
+		NumHeads:         8,
+		NumKVHeads:       8,
+		NumLayers:        6,
+		VocabSize:        32000,
+		MaxSeqLength:     4096,
+		IntermediateSize: 1024,
+	}
+	model, err := NewModel(config, testDataFS)
+	if err != nil {
+		t.Fatalf("Failed to create model: %v", err)
+	}
+	defer model.Close()
+
+	// Setup tokenizer with test data
+	tokenizer, err := internalmodel.NewTokenizer(testDataFS, "tokenizer")
+	if err != nil {
+		t.Fatalf("Failed to create tokenizer: %v", err)
+	}
+	model.tokenizer = tokenizer
+
+	// Initialize dummy weights
+	model.weights = &ModelWeights{
+		TokenEmbedding: make([]int8, model.config.VocabSize*model.config.HiddenSize),
+		Blocks:         make([]*TransformerBlock, model.config.NumLayers),
+		FinalNorm:      make([]int8, model.config.HiddenSize),
+	}
+	for i := range model.weights.Blocks {
+		model.weights.Blocks[i] = &TransformerBlock{
+			QKVProj:  make([]int8, 3*model.config.HiddenSize*model.config.HiddenSize),
+			OutProj:  make([]int8, model.config.HiddenSize*model.config.HiddenSize),
+			FFNUp:    make([]int8, model.config.IntermediateSize*model.config.HiddenSize),
+			FFNDown:  make([]int8, model.config.HiddenSize*model.config.IntermediateSize),
+			AttnNorm: make([]int8, model.config.HiddenSize),
+			FFNNorm:  make([]int8, model.config.HiddenSize),
+		}
+	}
+
+	// Create decoder
+	decoder := NewDecoder(model)
+
+	// Test cases
+	testCases := []struct {
+		name     string
+		input    []int
+		expected []int
+		wantErr  bool
+	}{
+		{
+			name:     "Empty input",
+			input:    []int{},
+			expected: []int{},
+			wantErr:  false,
+		},
+		{
+			name:     "Single token",
+			input:    []int{1},
+			expected: []int{1},
+			wantErr:  false,
+		},
+		{
+			name:     "Multiple tokens",
+			input:    []int{1, 2, 3},
+			expected: []int{1, 2, 3},
+			wantErr:  false,
+		},
+		{
+			name:     "Sequence too long",
+			input:    make([]int, config.MaxSeqLength+1),
+			expected: nil,
+			wantErr:  true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			output, err := decoder.Decode(tc.input)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("Decode() error = %v, wantErr %v", err, tc.wantErr)
+				return
+			}
+			if !tc.wantErr && !reflect.DeepEqual(output, tc.expected) {
+				t.Errorf("Decode() = %v, want %v", output, tc.expected)
+			}
+		})
+	}
+}
+
+func TestDecoderSoftmax(t *testing.T) {
+	// Create a smaller model configuration
+	config := &Config{
+		HiddenSize:       512,
+		NumHeads:         8,
+		NumKVHeads:       8,
+		NumLayers:        6,
+		VocabSize:        32000,
+		MaxSeqLength:     4096,
+		IntermediateSize: 1024,
+	}
+	model, err := NewModel(config, testDataFS)
+	if err != nil {
+		t.Fatalf("Failed to create model: %v", err)
+	}
+	defer model.Close()
+
+	decoder := NewDecoder(model)
+
+	// Test cases for softmax
+	testCases := []struct {
+		name     string
+		input    []float32
+		expected []float32
+	}{
+		{
+			name:     "Single value",
+			input:    []float32{1.0},
+			expected: []float32{1.0},
+		},
+		{
+			name:     "Two equal values",
+			input:    []float32{1.0, 1.0},
+			expected: []float32{0.5, 0.5},
+		},
+		{
+			name:     "Large values",
+			input:    []float32{1000.0, 1000.0},
+			expected: []float32{0.5, 0.5},
+		},
+		{
+			name:     "Negative values",
+			input:    []float32{-1.0, -2.0},
+			expected: []float32{0.7310586, 0.2689414},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			output := decoder.applySoftmax(tc.input)
+			if len(output) != len(tc.expected) {
+				t.Errorf("applySoftmax() length = %v, want %v", len(output), len(tc.expected))
+				return
+			}
+			for i := range output {
+				if math.Abs(float64(output[i]-tc.expected[i])) > 1e-6 {
+					t.Errorf("applySoftmax()[%d] = %v, want %v", i, output[i], tc.expected[i])
+				}
+			}
+		})
+	}
+}
+
+func TestDecoderTokenSelection(t *testing.T) {
+	// Create a smaller model configuration
+	config := &Config{
+		HiddenSize:       512,
+		NumHeads:         8,
+		NumKVHeads:       8,
+		NumLayers:        6,
+		VocabSize:        32000,
+		MaxSeqLength:     4096,
+		IntermediateSize: 1024,
+	}
+	model, err := NewModel(config, testDataFS)
+	if err != nil {
+		t.Fatalf("Failed to create model: %v", err)
+	}
+	defer model.Close()
+
+	decoder := NewDecoder(model)
+
+	// Test cases for token selection
+	testCases := []struct {
+		name     string
+		input    []float32
+		expected int
+	}{
+		{
+			name:     "Single value",
+			input:    []float32{1.0},
+			expected: 0,
+		},
+		{
+			name:     "First value highest",
+			input:    []float32{0.8, 0.2, 0.3},
+			expected: 0,
+		},
+		{
+			name:     "Middle value highest",
+			input:    []float32{0.2, 0.8, 0.3},
+			expected: 1,
+		},
+		{
+			name:     "Last value highest",
+			input:    []float32{0.2, 0.3, 0.8},
+			expected: 2,
+		},
+		{
+			name:     "Equal values",
+			input:    []float32{0.5, 0.5, 0.5},
+			expected: 0,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			output := decoder.selectToken(tc.input)
+			if output != tc.expected {
+				t.Errorf("selectToken() = %v, want %v", output, tc.expected)
 			}
 		})
 	}

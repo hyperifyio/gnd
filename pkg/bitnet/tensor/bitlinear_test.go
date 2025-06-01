@@ -65,7 +65,7 @@ func TestBitLinear(t *testing.T) {
 			}
 			for i := range tt.input {
 				for j := range tt.input[i] {
-					if err := input.setRaw(tt.input[i][j], i, j); err != nil {
+					if err := input.SetRaw(tt.input[i][j], i, j); err != nil {
 						t.Fatalf("Failed to set input value: %v", err)
 					}
 				}
@@ -78,7 +78,7 @@ func TestBitLinear(t *testing.T) {
 			}
 			for i := range tt.weights {
 				for j := range tt.weights[i] {
-					if err := weights.setRaw(tt.weights[i][j], i, j); err != nil {
+					if err := weights.SetRaw(tt.weights[i][j], i, j); err != nil {
 						t.Fatalf("Failed to set weight value: %v", err)
 					}
 				}
@@ -293,10 +293,10 @@ func TestBitLinear_ConcurrentAccess(t *testing.T) {
 	// Fill with test data
 	for i := 0; i < 10; i++ {
 		for j := 0; j < 10; j++ {
-			if err := input.setRaw(1, i, j); err != nil {
+			if err := input.SetRaw(1, i, j); err != nil {
 				t.Fatalf("Failed to set input value: %v", err)
 			}
-			if err := weights.setRaw(1, i, j); err != nil {
+			if err := weights.SetRaw(1, i, j); err != nil {
 				t.Fatalf("Failed to set weight value: %v", err)
 			}
 		}

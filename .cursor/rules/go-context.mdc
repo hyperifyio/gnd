@@ -1,0 +1,11 @@
+---
+description: "Ensure that a feature branch's changes implement the intended BitNet issue"
+globs: **/*.go
+alwaysApply: false
+---
+
+**Purpose:** Ensure that a feature branch's changes strictly implement the intended BitNet issue and introduce no unrelated modifications.
+
+To learn more about current context, run this command:
+
+`./scripts/get-current-context.sh|cat`

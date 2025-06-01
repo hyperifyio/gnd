@@ -1,8 +1,39 @@
-// Package tensor implements a multi-dimensional array data structure optimized
-// for ternary values (-1, 0, +1). It provides efficient operations for tensor
-// manipulation, including reshaping, transposition, and parallel processing.
-// The package is designed for use in neural network computations with a focus
-// on memory efficiency and thread safety.
+// Package tensor implements quantized linear transformations for BitNet inference.
+//
+// # Quantized Linear Transformation for BitNet
+//
+// This file provides an optimized implementation of linear transformations using
+// 1.58-bit weights and 8-bit activations, as required by BitNet's quantized design.
+//
+// Key aspects:
+//   - Uses 1.58-bit weights (ternary values) and 8-bit activations
+//   - Highly optimized for CPU efficiency with parallel processing
+//   - Memory-aligned allocations and work buffer pooling
+//   - Not suitable for training or float32 inference
+//   - Supports batch processing for efficient inference
+//
+// Implementation Details:
+//   - Uses atomic operations and channels for thread safety
+//   - Implements parallel processing across batch elements
+//   - Uses memory-aligned allocations for better cache performance
+//   - Employs work buffer pooling to reduce allocations
+//   - Performs branchless clamping of output values
+//
+// Usage:
+//   - Used throughout BitNet for quantized linear transformations
+//   - Maintainers should not change quantization or optimization logic without full pipeline review
+//   - Input shape must be [batch_size, in_features]
+//   - Weight shape must be [out_features, in_features]
+//   - Output shape will be [batch_size, out_features]
+//
+// Caveats:
+//   - Output values are clamped to int8 range (-128 to 127)
+//   - Thread safety comes with performance overhead
+//   - Any change must be validated against end-to-end BitNet inference
+//   - Memory usage scales with batch size and feature dimensions
+//   - Requires matching input and weight dimensions
+//
+// For more details, see BitNet issue #190 and the BitNet project documentation.
 package tensor
 
 import (
@@ -16,7 +47,7 @@ import (
 )
 
 var (
-	ErrNilTensor = errors.New("tensor: nil tensor")
+	ErrNilTensor = errors.New("tensor_bitlinear: nil tensor")
 )
 
 // workBuffer represents a pre-allocated buffer for computations.

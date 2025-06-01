@@ -12,7 +12,7 @@ fi
 # Check current PR number
 PR=$(./scripts/get-current-pr-number.sh)
 
-echo '**You are a senior developer working on the BitNet issue #TASK# and PR #PR# for the HyperifyIO project.**'
+echo '**You are a senior developer working on the BitNet issue '"$TASK"' and PR '"$PR"' for the HyperifyIO project.**'
 
 # Check current task info
 echo

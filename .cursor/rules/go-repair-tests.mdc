@@ -1,0 +1,93 @@
+---
+description: "Automate the detection and stepwise resolution of failing tests in pkg/bitnet, starting from the lowest-level packages."
+globs: pkg/bitnet/**/*.go
+alwaysApply: false
+---
+
+# Failing Test Resolution Rule
+
+**Purpose:** Detect failing tests dynamically, order them by package dependency (leaf packages first), and guide Cursor through diagnosing and fixing each failure in turn.
+
+## Steps
+
+1. **Map Tests to Packages**
+
+   ```bash
+   go test -timeout 18s -json ./pkg/bitnet/... \
+     | jq -r 'select(.Action=="fail" and .Test!=null) | "\(.Package):\(.Test)"' \
+     | sort -u > tests_by_pkg.txt
+   ```
+
+   Captures all failed tests with their packages in one command.
+
+2. **Order Packages**
+
+   ```bash
+   cut -d: -f1 tests_by_pkg.txt \
+     | awk -F/ '{print NF, $0}' \
+     | sort -n \
+     | cut -d' ' -f2 \
+     | uniq > ordered_pkgs.txt
+   ```
+
+   Sorts packages by directory depth (leaf packages first).
+
+3. **Iterate and Fix**
+   For each package in `ordered_pkgs.txt`:
+
+   a. Extract its failing tests:
+
+   ```bash
+   grep "^$pkg:" tests_by_pkg.txt | cut -d: -f2 > pkg_tests.txt
+   ```
+
+   b. For each test in `pkg_tests.txt`:
+
+   ```bash
+   go test -run $test -timeout 18s -v $pkg -race
+   ```
+
+   * **Diagnose:** Identify root cause from failure output.
+   * **Check Docs:** Review comments in the related `.go` file and any linked issues (`gh issue view`).
+
+     * If test and docs mismatch, **update test** to align with documented behavior.
+     * Otherwise, **fix implementation** to satisfy both test and documentation.
+   * If unclear, skip this test and continue.
+
+   c. After fixes, rerun the test to confirm it passes.
+
+4. **Report Progress**
+   Summarize:
+
+   * [ OK ] Tests fixed per package
+   * [WARN] Tests skipped due to unclear requirements
+
+\--- **Iterate and Fix**
+For each package in `ordered_pkgs.txt`:
+
+a. Extract its failing tests:
+
+```bash
+grep "^$pkg:" tests_by_pkg.txt | cut -d: -f2 > pkg_tests.txt
+```
+
+b. For each test in `pkg_tests.txt`:
+
+```bash
+go test -run $test -timeout 18s -v $pkg -race
+```
+
+* **Diagnose:** Identify root cause from failure output.
+* **Check Docs:** Review comments in the related `.go` file and any linked issues (`gh issue view`).
+
+  * If test and docs mismatch, **update test** to align with documented behavior.
+  * Otherwise, **fix implementation** to satisfy both test and documentation.
+* If unclear, skip this test and continue.
+
+c. After fixes, rerun the test to confirm it passes.
+
+5. **Report Progress**
+   After all packages are processed, summarize:
+
+   * [ OK ] Tests fixed per package
+   * [WARN] Tests skipped due to unclear requirements

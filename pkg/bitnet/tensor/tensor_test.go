@@ -988,16 +988,16 @@ func TestTensor_Add(t *testing.T) {
 			// Fill with test data
 			for i := 0; i < len(tt.values1); i++ {
 				indices := t1.calculateIndices(i)
-				err = t1.setRaw(tt.values1[i], indices...)
+				err = t1.SetRaw(tt.values1[i], indices...)
 				if err != nil {
-					t.Fatalf("setRaw failed: %v", err)
+					t.Fatalf("SetRaw failed: %v", err)
 				}
 			}
 			for i := 0; i < len(tt.values2); i++ {
 				indices := t2.calculateIndices(i)
-				err = t2.setRaw(tt.values2[i], indices...)
+				err = t2.SetRaw(tt.values2[i], indices...)
 				if err != nil {
-					t.Fatalf("setRaw failed: %v", err)
+					t.Fatalf("SetRaw failed: %v", err)
 				}
 			}
 
@@ -1174,8 +1174,8 @@ func TestNewTensorFromData(t *testing.T) {
 
 func TestDebugLog(t *testing.T) {
 	// Test that DebugLog doesn't panic
-	DebugLog("Test debug message")
-	DebugLog("Test debug message with args: %d, %s", 42, "test")
+	logging.DebugLogf("Test debug message")
+	logging.DebugLogf("Test debug message with args: %d, %s", 42, "test")
 }
 
 func TestTensor_setRaw(t *testing.T) {
@@ -1230,9 +1230,9 @@ func TestTensor_setRaw(t *testing.T) {
 				t.Fatalf("NewTensor failed: %v", err)
 			}
 
-			err = tensor.setRaw(tt.value, tt.indices...)
+			err = tensor.SetRaw(tt.value, tt.indices...)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("setRaw() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("SetRaw() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !tt.wantErr {
@@ -1241,14 +1241,14 @@ func TestTensor_setRaw(t *testing.T) {
 					t.Fatalf("Get() failed: %v", err)
 				}
 				if got != tt.want {
-					t.Errorf("setRaw() value = %v, want %v", got, tt.want)
+					t.Errorf("SetRaw() value = %v, want %v", got, tt.want)
 				}
 			}
 		})
 	}
 
-	// Test setRaw after Close
-	t.Run("setRaw after Close", func(t *testing.T) {
+	// Test SetRaw after Close
+	t.Run("SetRaw after Close", func(t *testing.T) {
 		tensor, err := NewTensor(2, 2)
 		if err != nil {
 			t.Fatalf("NewTensor failed: %v", err)
@@ -1257,9 +1257,9 @@ func TestTensor_setRaw(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Close failed: %v", err)
 		}
-		err = tensor.setRaw(1, 0, 0)
+		err = tensor.SetRaw(1, 0, 0)
 		if err == nil {
-			t.Error("setRaw did not return error after Close")
+			t.Error("SetRaw did not return error after Close")
 		}
 	})
 }

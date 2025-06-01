@@ -1,8 +1,46 @@
 // Package tensor implements a multi-dimensional array data structure optimized
-// for ternary values (-1, 0, +1). It provides efficient operations for tensor
-// manipulation, including reshaping, transposition, and parallel processing.
-// The package is designed for use in neural network computations with a focus
-// on memory efficiency and thread safety.
+// for ternary values (-1, 0, +1) in BitNet inference.
+//
+// # Quantized Tensor Implementation for BitNet
+//
+// This file provides the core tensor data structure and operations for BitNet's
+// quantized neural network computations. It is a critical component of the
+// BitNet implementation (Issue #170) and supports the token decoding
+// functionality (Issue #190).
+//
+// Key aspects:
+//   - All tensors store ternary values (-1, 0, +1) as int8 for memory efficiency
+//   - Thread-safe operations with mutex protection and atomic flags
+//   - Optimized for CPU efficiency with parallel processing support
+//   - Memory pooling for frequently used tensor shapes
+//   - Not suitable for training or float32 inference
+//
+// Implementation Status:
+//   - Core tensor operations with ternary value support
+//   - Thread-safe operations with proper synchronization
+//   - Parallel processing support for bulk operations
+//   - Memory-efficient storage format
+//   - Support for matrix multiplication and linear transformations
+//   - Shape validation and error handling
+//
+// Usage:
+//   - Used throughout BitNet for storing and manipulating quantized weights and activations
+//   - Maintainers should not change the ternary value handling without full pipeline review
+//   - Use ParallelForEach for bulk operations to maximize CPU utilization
+//   - Use BitLinear for quantized linear transformations
+//   - Validate tensor shapes using the provided validation functions
+//
+// Caveats:
+//   - Values are automatically clamped to ternary range in Set operations
+//   - Thread safety comes with performance overhead; use ParallelForEach for bulk operations
+//   - Any change must be validated against end-to-end BitNet inference
+//   - Memory usage scales with tensor dimensions
+//   - Matrix operations require matching dimensions
+//
+// For more details, see:
+//   - BitNet issue #170: Main feature implementation
+//   - BitNet issue #190: Token decoding and inference loop
+//   - Additional tasks: https://github.com/hyperifyio/gnd/issues?q=is%3Aissue+state%3Aopen+label%3Abitnet+label%3Atask
 package tensor
 
 import (
@@ -12,8 +50,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-	bitneterrors "github.com/hyperifyio/gnd/pkg/bitnet/errors"
-	"github.com/hyperifyio/gnd/pkg/bitnet/internal/math/utils"
 	"github.com/hyperifyio/gnd/pkg/bitnet/logging"
 )
 
@@ -30,12 +66,6 @@ var (
 	ErrTensorShapeMismatch      = errors.New("tensor: cannot add tensors with different shapes")
 )
 
-// DebugLog logs debug information to stderr using the configured logger.
-// Deprecated: Use logging.DebugLogf instead.
-func DebugLog(format string, args ...interface{}) {
-	logging.DebugLogf(format, args...)
-}
-
 // Tensor represents a multi-dimensional array of ternary values (-1, 0, +1).
 // It provides thread-safe operations for tensor manipulation and supports
 // efficient parallel processing of tensor elements.
@@ -45,16 +75,6 @@ type Tensor struct {
 	stride []int        // Stride values for efficient indexing
 	mu     sync.RWMutex // Mutex for thread safety
 	closed uint32       // Atomic flag: 0=open, 1=closed
-}
-
-// tensorOp represents a tensor operation to be performed.
-// It is used internally for managing concurrent operations.
-type tensorOp struct {
-	opType   string        // "get" or "set"
-	indices  []int         // Indices for the operation
-	value    int8          // Value to set (for set operations)
-	resultCh chan int8     // Channel for operation results
-	doneCh   chan struct{} // Channel for operation completion
 }
 
 // NewTensor creates a new tensor with the given shape.
@@ -92,8 +112,8 @@ func NewTensor(shape ...int) (*Tensor, error) {
 // Get retrieves a value from the tensor at the specified indices.
 func (t *Tensor) Get(indices ...int) (int8, error) {
 	if atomic.LoadUint32(&t.closed) == 1 {
-		DebugLog("tensor: operation on closed tensor (method: Get)")
-		return 0, bitneterrors.ErrTensorClosed
+		logging.DebugLogf("tensor: operation on closed tensor (method: Get)")
+		return 0, ErrTensorClosed
 	}
 	t.mu.RLock()
 	defer t.mu.RUnlock()
@@ -117,8 +137,8 @@ func (t *Tensor) Get(indices ...int) (int8, error) {
 // The value is clamped to the ternary range [-1, 0, 1].
 func (t *Tensor) Set(value int8, indices ...int) error {
 	if atomic.LoadUint32(&t.closed) == 1 {
-		DebugLog("tensor: operation on closed tensor (method: Set)")
-		return bitneterrors.ErrTensorClosed
+		logging.DebugLogf("tensor: operation on closed tensor (method: Set)")
+		return ErrTensorClosed
 	}
 	// Clamp to ternary range
 	if value > 0 {
@@ -145,11 +165,11 @@ func (t *Tensor) Set(value int8, indices ...int) error {
 	return nil
 }
 
-// setRaw assigns a value to the tensor without clamping (for internal use only).
-func (t *Tensor) setRaw(value int8, indices ...int) error {
+// SetRaw assigns a value to the tensor without clamping (for internal use only).
+func (t *Tensor) SetRaw(value int8, indices ...int) error {
 	if atomic.LoadUint32(&t.closed) == 1 {
-		DebugLog("tensor: operation on closed tensor (method: setRaw)")
-		return bitneterrors.ErrTensorClosed
+		logging.DebugLogf("tensor: operation on closed tensor (method: SetRaw)")
+		return ErrTensorClosed
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -174,8 +194,8 @@ func (t *Tensor) setRaw(value int8, indices ...int) error {
 // The caller must not modify the returned slice.
 func (t *Tensor) Data() ([]int8, error) {
 	if atomic.LoadUint32(&t.closed) == 1 {
-		DebugLog("tensor: operation on closed tensor (method: Data)")
-		return nil, bitneterrors.ErrTensorClosed
+		logging.DebugLogf("tensor: operation on closed tensor (method: Data)")
+		return nil, ErrTensorClosed
 	}
 	t.mu.RLock()
 	defer t.mu.RUnlock()
@@ -186,8 +206,8 @@ func (t *Tensor) Data() ([]int8, error) {
 // The caller must not modify the returned slice.
 func (t *Tensor) Shape() ([]int, error) {
 	if atomic.LoadUint32(&t.closed) == 1 {
-		DebugLog("tensor: operation on closed tensor (method: Shape)")
-		return nil, bitneterrors.ErrTensorClosed
+		logging.DebugLogf("tensor: operation on closed tensor (method: Shape)")
+		return nil, ErrTensorClosed
 	}
 	t.mu.RLock()
 	defer t.mu.RUnlock()
@@ -198,8 +218,8 @@ func (t *Tensor) Shape() ([]int, error) {
 // The function is called with the indices and value for each element.
 func (t *Tensor) ParallelForEach(fn func(indices []int, value int8)) error {
 	if atomic.LoadUint32(&t.closed) == 1 {
-		DebugLog("tensor: operation on closed tensor (method: ParallelForEach)")
-		return bitneterrors.ErrTensorClosed
+		logging.DebugLogf("tensor: operation on closed tensor (method: ParallelForEach)")
+		return ErrTensorClosed
 	}
 	t.mu.RLock()
 	defer t.mu.RUnlock()
@@ -252,7 +272,7 @@ func (t *Tensor) ParallelForEach(fn func(indices []int, value int8)) error {
 // After calling Close, the tensor cannot be used anymore.
 func (t *Tensor) Close() error {
 	if t == nil {
-		return bitneterrors.ErrNilTensor
+		return ErrNilTensor
 	}
 	if atomic.CompareAndSwapUint32(&t.closed, 0, 1) {
 		// Store shape for debug logging before clearing fields
@@ -316,7 +336,7 @@ func equalShape(a, b []int) bool {
 // The total number of elements must remain the same.
 func (t *Tensor) Reshape(shape ...int) (*Tensor, error) {
 	if atomic.LoadUint32(&t.closed) == 1 {
-		return nil, bitneterrors.ErrTensorClosed
+		return nil, ErrTensorClosed
 	}
 	t.mu.RLock()
 	defer t.mu.RUnlock()
@@ -399,7 +419,7 @@ func NewTensorFromData(data []int8, rows int) (*Tensor, error) {
 // Transpose creates a new tensor with dimensions reordered according to the given order.
 func (t *Tensor) Transpose(order ...int) (*Tensor, error) {
 	if atomic.LoadUint32(&t.closed) == 1 {
-		return nil, bitneterrors.ErrTensorClosed
+		return nil, ErrTensorClosed
 	}
 	t.mu.RLock()
 	defer t.mu.RUnlock()
@@ -455,7 +475,7 @@ func (t *Tensor) Transpose(order ...int) (*Tensor, error) {
 // Repeat creates a new tensor by repeating the tensor along the specified dimension.
 func (t *Tensor) Repeat(dim int, count int) (*Tensor, error) {
 	if atomic.LoadUint32(&t.closed) == 1 {
-		return nil, bitneterrors.ErrTensorClosed
+		return nil, ErrTensorClosed
 	}
 	t.mu.RLock()
 	defer t.mu.RUnlock()
@@ -502,10 +522,10 @@ func (t *Tensor) Repeat(dim int, count int) (*Tensor, error) {
 // Add performs element-wise addition of two tensors.
 func (t *Tensor) Add(other *Tensor) (*Tensor, error) {
 	if t == nil || other == nil {
-		return nil, bitneterrors.ErrNilTensor
+		return nil, ErrNilTensor
 	}
 	if atomic.LoadUint32(&t.closed) == 1 || atomic.LoadUint32(&other.closed) == 1 {
-		return nil, bitneterrors.ErrTensorClosed
+		return nil, ErrTensorClosed
 	}
 
 	// Lock both tensors for reading
@@ -542,7 +562,7 @@ func (t *Tensor) Add(other *Tensor) (*Tensor, error) {
 // SetTernary sets a value at the specified indices, clamping to ternary range (-1, 0, +1).
 func (t *Tensor) SetTernary(value int8, indices ...int) error {
 	if atomic.LoadUint32(&t.closed) == 1 {
-		return bitneterrors.ErrTensorClosed
+		return ErrTensorClosed
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -571,258 +591,168 @@ func (t *Tensor) SetTernary(value int8, indices ...int) error {
 }
 
 // MatMul performs matrix multiplication between two tensors.
-// The last dimension of the first tensor must match the second-to-last
-// dimension of the second tensor.
-// Returns a new tensor with the result.
+// The operation is optimized for ternary values (-1, 0, +1).
 func (t *Tensor) MatMul(other *Tensor) (*Tensor, error) {
-	if t == nil || other == nil {
-		return nil, bitneterrors.ErrNilTensor
+	if atomic.LoadUint32(&t.closed) == 1 {
+		logging.DebugLogf("tensor: operation on closed tensor (method: MatMul)")
+		return nil, ErrTensorClosed
 	}
-	if atomic.LoadUint32(&t.closed) == 1 || atomic.LoadUint32(&other.closed) == 1 {
-		return nil, bitneterrors.ErrTensorClosed
+	if atomic.LoadUint32(&other.closed) == 1 {
+		logging.DebugLogf("tensor: operation on closed tensor (method: MatMul)")
+		return nil, ErrTensorClosed
 	}
 
 	t.mu.RLock()
-	other.mu.RLock()
 	defer t.mu.RUnlock()
+	other.mu.RLock()
 	defer other.mu.RUnlock()
 
 	// Get shapes
-	tShape, err := t.Shape()
-	if err != nil {
-		return nil, err
-	}
-	oShape, err := other.Shape()
-	if err != nil {
-		return nil, err
-	}
+	tShape := t.shape
+	otherShape := other.shape
 
-	// Add debug output for shape and stride
-	logging.DebugLogf("MatMul: t shape: %v, t stride: %v, other shape: %v, other stride: %v", tShape, t.stride, oShape, other.stride)
-
-	// Validate shapes
-	if len(tShape) < 2 || len(oShape) < 2 {
-		return nil, bitneterrors.ErrInvalidShape
-	}
-	if tShape[len(tShape)-1] != oShape[len(oShape)-2] {
-		return nil, bitneterrors.ErrInvalidShape
+	// Validate shapes for matrix multiplication
+	if len(tShape) < 2 || len(otherShape) < 2 {
+		return nil, ErrTensorInvalidShape
 	}
 
-	// Compute broadcasted batch shape
-	batchShape := utils.BroadcastShapes(tShape[:len(tShape)-2], oShape[:len(oShape)-2])
-	if batchShape == nil {
-		return nil, bitneterrors.ErrInvalidShape
-	}
+	// Get dimensions
+	m := tShape[0]
+	n := tShape[1]
+	p := otherShape[1]
 
-	// Output shape: batchShape + [tShape[-2], oShape[-1]]
-	outShape := append(batchShape, tShape[len(tShape)-2], oShape[len(oShape)-1])
-
-	// Create result tensor
-	result, err := NewTensor(outShape...)
+	// Create output tensor
+	result, err := NewTensor(m, p)
 	if err != nil {
 		return nil, err
 	}
 
-	// Calculate strides for broadcasting
-	tBatchStride := make([]int, len(batchShape))
-	oBatchStride := make([]int, len(batchShape))
-
-	// Initialize strides for the last two dimensions
-	tBatchStride[len(batchShape)-1] = tShape[len(tShape)-2] * tShape[len(tShape)-1]
-	oBatchStride[len(batchShape)-1] = oShape[len(oShape)-2] * oShape[len(oShape)-1]
-
-	// Calculate remaining strides
-	for i := len(batchShape) - 2; i >= 0; i-- {
-		tBatchStride[i] = tBatchStride[i+1] * batchShape[i+1]
-		oBatchStride[i] = oBatchStride[i+1] * batchShape[i+1]
-	}
-
-	// Add debug output for result shape
-	resultShape, err := result.Shape()
-	if err != nil {
-		return nil, err
-	}
-	logging.DebugLogf("MatMul: result shape: %v", resultShape)
-
-	// Perform matrix multiplication in parallel
-	numWorkers := runtime.NumCPU()
-	chunkSize := (len(result.data) + numWorkers - 1) / numWorkers
-
-	var wg sync.WaitGroup
-	for i := 0; i < len(result.data); i += chunkSize {
-		wg.Add(1)
-		go func(start int) {
-			defer wg.Done()
-			end := start + chunkSize
-			if end > len(result.data) {
-				end = len(result.data)
+	// Perform matrix multiplication
+	for i := 0; i < m; i++ {
+		for j := 0; j < p; j++ {
+			var sum int32
+			for k := 0; k < n; k++ {
+				a, err := t.Get(i, k)
+				if err != nil {
+					result.Close()
+					return nil, err
+				}
+				b, err := other.Get(k, j)
+				if err != nil {
+					result.Close()
+					return nil, err
+				}
+				sum += int32(a) * int32(b)
 			}
-			for j := start; j < end; j++ {
-				indices := result.calculateIndices(j)
-				var sum int32
-
-				// Calculate batch offsets
-				tBatchOffset := 0
-				oBatchOffset := 0
-				for k := 0; k < len(batchShape); k++ {
-					idx := indices[k]
-					if k < len(tShape)-2 {
-						tBatchOffset += idx * tBatchStride[k]
-					}
-					if k < len(oShape)-2 {
-						oBatchOffset += idx * oBatchStride[k]
-					}
-				}
-
-				// Add debug output for indices and offsets
-				if j == start {
-					logging.DebugLogf("MatMul: indices=%v, tBatchOffset=%d, oBatchOffset=%d", indices, tBatchOffset, oBatchOffset)
-				}
-
-				// Perform matrix multiplication for this batch
-				for k := 0; k < tShape[len(tShape)-1]; k++ {
-					tIdx := tBatchOffset + indices[len(batchShape)]*tShape[len(tShape)-1] + k
-					oIdx := oBatchOffset + k*oShape[len(oShape)-1] + indices[len(batchShape)+1]
-					if tIdx < 0 || tIdx >= len(t.data) || oIdx < 0 || oIdx >= len(other.data) {
-						logging.DebugLogf("MatMul: tIdx=%d, oIdx=%d, t.data len=%d, other.data len=%d", tIdx, oIdx, len(t.data), len(other.data))
-						continue
-					}
-					sum += int32(t.data[tIdx]) * int32(other.data[oIdx])
-				}
-
-				// Clamp result to int8 range
-				if sum > 127 {
-					result.data[j] = 127
-				} else if sum < -128 {
-					result.data[j] = -128
-				} else {
-					result.data[j] = int8(sum)
-				}
+			// Convert to ternary value
+			var ternary int8
+			if sum > 0 {
+				ternary = 1
+			} else if sum < 0 {
+				ternary = -1
 			}
-		}(i)
+			if err := result.Set(ternary, i, j); err != nil {
+				result.Close()
+				return nil, err
+			}
+		}
 	}
-	wg.Wait()
+
+	return result, nil
+}
+
+// Scale multiplies each element of the tensor by a scalar value.
+// The result is converted to a ternary value (-1, 0, +1).
+func (t *Tensor) Scale(scale float32) (*Tensor, error) {
+	if atomic.LoadUint32(&t.closed) == 1 {
+		logging.DebugLogf("tensor: operation on closed tensor (method: Scale)")
+		return nil, ErrTensorClosed
+	}
+
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	// Create output tensor with same shape
+	result, err := NewTensor(t.shape...)
+	if err != nil {
+		return nil, err
+	}
+
+	// Scale each element
+	for i := 0; i < len(t.data); i++ {
+		scaled := float32(t.data[i]) * scale
+		// Convert to ternary value
+		var ternary int8
+		if scaled > 0.5 {
+			ternary = 1
+		} else if scaled < -0.5 {
+			ternary = -1
+		}
+		result.data[i] = ternary
+	}
 
 	return result, nil
 }
 
 // Softmax applies the softmax function along the specified axis.
-// Returns a new tensor with the result.
+// The result is converted to ternary values (-1, 0, +1).
 func (t *Tensor) Softmax(axis int) (*Tensor, error) {
 	if atomic.LoadUint32(&t.closed) == 1 {
-		return nil, bitneterrors.ErrTensorClosed
+		logging.DebugLogf("tensor: operation on closed tensor (method: Softmax)")
+		return nil, ErrTensorClosed
 	}
+
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
-	// Support negative axis (e.g., -1 means last axis)
-	if axis < 0 {
-		axis += len(t.shape)
-	}
 	// Validate axis
 	if axis < 0 || axis >= len(t.shape) {
-		return nil, bitneterrors.ErrInvalidAxis
+		return nil, ErrTensorInvalidDimension
 	}
 
-	// Create result tensor
+	// Create output tensor with same shape
 	result, err := NewTensor(t.shape...)
 	if err != nil {
 		return nil, err
 	}
 
-	// Calculate softmax in parallel
-	numWorkers := runtime.NumCPU()
-	chunkSize := (len(t.data) + numWorkers - 1) / numWorkers
+	// Calculate softmax along the specified axis
+	axisSize := t.shape[axis]
+	axisStride := t.stride[axis]
 
-	var wg sync.WaitGroup
-	for i := 0; i < len(t.data); i += chunkSize {
-		wg.Add(1)
-		go func(start int) {
-			defer wg.Done()
-			end := start + chunkSize
-			if end > len(t.data) {
-				end = len(t.data)
+	// For each position along other dimensions
+	for i := 0; i < len(t.data); i += axisStride * axisSize {
+		// Find max value for numerical stability
+		var maxVal float32
+		for j := 0; j < axisSize; j++ {
+			val := float32(t.data[i+j*axisStride])
+			if val > maxVal {
+				maxVal = val
 			}
-			for j := start; j < end; j++ {
-				indices := t.calculateIndices(j)
-				var maxVal float32 = float32(t.data[j])
-				var sum float32 = 0
-				for k := 0; k < t.shape[axis]; k++ {
-					indices[axis] = k
-					idx, err := t.calculateIndex(indices)
-					if err != nil {
-						continue
-					}
-					val := float32(t.data[idx])
-					if val > maxVal {
-						maxVal = val
-					}
-				}
-				for k := 0; k < t.shape[axis]; k++ {
-					indices[axis] = k
-					idx, err := t.calculateIndex(indices)
-					if err != nil {
-						continue
-					}
-					val := float32(t.data[idx])
-					sum += float32(math.Exp(float64(val - maxVal)))
-				}
-				indices[axis] = j % t.shape[axis]
-				idx, err := t.calculateIndex(indices)
-				if err != nil {
-					continue
-				}
-				val := float32(t.data[idx])
-				result.data[j] = int8(float32(math.Exp(float64(val-maxVal))) / sum * 127)
+		}
+
+		// Calculate exp and sum
+		var sum float32
+		exps := make([]float32, axisSize)
+		for j := 0; j < axisSize; j++ {
+			val := float32(t.data[i+j*axisStride])
+			exp := float32(math.Exp(float64(val - maxVal)))
+			exps[j] = exp
+			sum += exp
+		}
+
+		// Normalize and convert to ternary
+		for j := 0; j < axisSize; j++ {
+			prob := exps[j] / sum
+			var ternary int8
+			if prob > 0.5 {
+				ternary = 1
+			} else if prob < 0.5 {
+				ternary = -1
 			}
-		}(i)
+			result.data[i+j*axisStride] = ternary
+		}
 	}
-	wg.Wait()
-
-	return result, nil
-}
-
-// Scale multiplies all values in the tensor by the given scale factor.
-// Returns a new tensor with the result.
-func (t *Tensor) Scale(scale float32) (*Tensor, error) {
-	if atomic.LoadUint32(&t.closed) == 1 {
-		return nil, bitneterrors.ErrTensorClosed
-	}
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-
-	// Create result tensor
-	result, err := NewTensor(t.shape...)
-	if err != nil {
-		return nil, err
-	}
-
-	// Scale values in parallel
-	numWorkers := runtime.NumCPU()
-	chunkSize := (len(t.data) + numWorkers - 1) / numWorkers
-
-	var wg sync.WaitGroup
-	for i := 0; i < len(t.data); i += chunkSize {
-		wg.Add(1)
-		go func(start int) {
-			defer wg.Done()
-			end := start + chunkSize
-			if end > len(t.data) {
-				end = len(t.data)
-			}
-			for j := start; j < end; j++ {
-				scaled := float32(t.data[j]) * scale
-				if scaled > 127 {
-					result.data[j] = 127
-				} else if scaled < -128 {
-					result.data[j] = -128
-				} else {
-					result.data[j] = int8(scaled)
-				}
-			}
-		}(i)
-	}
-	wg.Wait()
 
 	return result, nil
 }
