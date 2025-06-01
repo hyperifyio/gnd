@@ -193,10 +193,6 @@ const (
 
 	// GGML_TYPE_I2_S is 2-bit signed ternary (BitNet)
 	GGML_TYPE_I2_S = uint32(36)
-
-	// Block size constants for I2_S
-	qkI2S = 32 // elements per block
-	tsI2S = 16 // bytes per block
 )
 
 // Header represents the GGUF file header.
@@ -500,7 +496,7 @@ func (m *Model) loadTensorInfoArray() error {
 }
 
 // GetTensorData returns a slice to tensor data
-func (m *Model) GetTensorData(tensor *TensorInfo) ([]byte, error) {
+func (m *Model) GetTensorDataBytes(tensor *TensorInfo) ([]byte, error) {
 	length := tensor.DataSize
 	offset := m.DataStart + tensor.Offset
 	log.Printf("[DEBUG] Reading tensor data (name=%s, type=%d, shape=%v, offset=%d:%d, rowCount=%d, rowSize=%d, N=%d), model (dataStart=%d)",
@@ -509,6 +505,24 @@ func (m *Model) GetTensorData(tensor *TensorInfo) ([]byte, error) {
 	)
 	slice := sliceOfByte(m.modelData, offset, length)
 	return slice, nil
+}
+
+// GetTensorData returns a slice to tensor data
+func (m *Model) GetTensorData(tensor *TensorInfo) (TensorData, error) {
+	bytes, err := m.GetTensorDataBytes(tensor)
+	if err != nil {
+		return nil, err
+	}
+	switch tensor.Type {
+	case GGML_TYPE_F32:
+		return NewFloat32TensorData(bytes, tensor.N), nil
+	case GGML_TYPE_F16:
+		return NewFloat16TensorData(bytes, tensor.N), nil
+	case GGML_TYPE_I2_S:
+		return NewTernaryTensorData(bytes, tensor.N), nil
+	default:
+		return nil, fmt.Errorf("unknown tensor type: %d", tensor.Type)
+	}
 }
 
 // updateAlignment updates the model's alignment value.

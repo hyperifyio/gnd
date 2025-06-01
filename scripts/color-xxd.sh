@@ -4,11 +4,14 @@
 #   00 →blued, 01 → green, 10 → yellow, 11red
 #
 if [[ -z "$1" ]]; then
-  echo "Usage: $0 <binary-file>"
+  echo "Usage: $0 <binary-file> START_OFFSET SIZE"
   exit 1
 fi
 
-xxd -b -s 665032320 -l 4423712 "$1" \
+START_OFFSET=$2
+LENGTH=$3
+
+xxd -b -s "$START_OFFSET" -l "$LENGTH" "$1" \
 | awk '
   # ANSI‐escape definitions: change these if you want other colors
   BEGIN {
