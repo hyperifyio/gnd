@@ -1,0 +1,54 @@
+---
+description: "Run `go vet` on the BitNet packages and correct all reported issues without committing changes."
+globs: pkg/bitnet/**/*.go
+alwaysApply: false
+---
+
+# `go vet` Enforcement Rule
+
+**Purpose:** Identify and fix suspicious code patterns in Go files under `pkg/bitnet` using `go vet`, without automating commits.
+
+## Steps
+
+1. **Run the Vet Tool**
+
+   ```bash
+   go vet ./pkg/bitnet/...
+   ```
+
+   Review the output for issues such as:
+
+   * Incorrect struct tags
+   * Unhandled errors
+   * Unused variables or imports
+   * Printf-style issues
+
+2. **Review Each Finding**
+   For each reported issue (`file.go:line: description`):
+
+   * Open the file at the specified line.
+   * Understand the root cause of the warning.
+
+3. **Apply Minimal Fixes**
+
+   * Modify the code to address the vet warning.
+   * Examples:
+
+     * Remove or use unused imports/variables.
+     * Add error checks or handle returned errors.
+     * Correct struct tag formatting (e.g., `json:"name,omitempty"`).
+     * Use `fmt.Sprintf` placeholders correctly.
+
+4. **Verify Fixes Locally**
+
+   * Rerun vet to confirm the issue is resolved:
+
+     ```bash
+     go vet ./pkg/bitnet/...
+     ```
+
+## Best Practices
+
+* **Granular Edits:** Only change the lines necessary to satisfy vet.
+* **Manual Review:** Inspect diffs before staging to avoid unintended modifications.
+* **Developer Control:** After fixes, manually commit and push as desired.

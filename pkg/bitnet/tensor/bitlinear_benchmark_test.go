@@ -11,6 +11,9 @@ import (
 
 // fillRandom fills a tensor with random values
 func fillRandom(t *Tensor, min, max int8) {
+	if t == nil {
+		panic("fillRandom: tensor is nil")
+	}
 	range_ := int(int(max) - int(min) + 1)
 	if range_ <= 0 {
 		println("fillRandom: min=", min, "max=", max, "shape=", t.shape[0], t.shape[1], "range_=", range_)
@@ -25,6 +28,9 @@ func fillRandom(t *Tensor, min, max int8) {
 
 // fillTernary fills a tensor with random ternary values (-1, 0, +1)
 func fillTernary(t *Tensor) {
+	if t == nil {
+		panic("fillTernary: tensor is nil")
+	}
 	for i := 0; i < t.shape[0]; i++ {
 		for j := 0; j < t.shape[1]; j++ {
 			t.Set(int8(rand.Intn(3)-1), i, j)
@@ -46,11 +52,17 @@ func BenchmarkBitLinear(b *testing.B) {
 	for _, size := range sizes {
 		b.Run("", func(b *testing.B) {
 			// Create input tensor with random 8-bit activations
-			input := NewTensor(size.batchSize, size.inFeatures)
+			input, err := NewTensor(size.batchSize, size.inFeatures)
+			if err != nil {
+				b.Fatalf("NewTensor failed: %v", err)
+			}
 			fillRandom(input, -128, 127)
 
 			// Create weight tensor with random ternary values
-			weights := NewTensor(size.outFeatures, size.inFeatures)
+			weights, err := NewTensor(size.outFeatures, size.inFeatures)
+			if err != nil {
+				b.Fatalf("NewTensor failed: %v", err)
+			}
 			fillTernary(weights)
 
 			b.ResetTimer()
@@ -82,11 +94,17 @@ func BenchmarkModelWeightsLoading(b *testing.B) {
 	for _, size := range sizes {
 		b.Run(size.name, func(b *testing.B) {
 			// Create input tensor with random 8-bit activations
-			input := NewTensor(1, size.hiddenSize)
+			input, err := NewTensor(1, size.hiddenSize)
+			if err != nil {
+				b.Fatalf("NewTensor failed: %v", err)
+			}
 			fillRandom(input, -128, 127)
 
 			// Create weight tensor with random ternary values
-			weights := NewTensor(size.hiddenSize, size.hiddenSize)
+			weights, err := NewTensor(size.hiddenSize, size.hiddenSize)
+			if err != nil {
+				b.Fatalf("NewTensor failed: %v", err)
+			}
 			fillTernary(weights)
 
 			b.ResetTimer()
@@ -128,13 +146,19 @@ func BenchmarkTernaryWeightsReading(b *testing.B) {
 	for _, size := range sizes {
 		b.Run(size.name, func(b *testing.B) {
 			// Create weight tensor with random ternary values
-			weights := NewTensor(size.rows, size.cols)
+			weights, err := NewTensor(size.rows, size.cols)
+			if err != nil {
+				b.Fatalf("NewTensor failed: %v", err)
+			}
 			fillTernary(weights)
 
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				// Simulate reading ternary weights
-				data := weights.Data()
+				data, err := weights.Data()
+				if err != nil {
+					b.Fatalf("weights.Data failed: %v", err)
+				}
 				if len(data) != size.rows*size.cols {
 					b.Fatal("incorrect data size")
 				}
@@ -169,11 +193,17 @@ func BenchmarkBitLinearCPU(b *testing.B) {
 	for _, size := range sizes {
 		b.Run(size.name, func(b *testing.B) {
 			// Create input tensor with random 8-bit activations
-			input := NewTensor(size.batchSize, size.inFeatures)
+			input, err := NewTensor(size.batchSize, size.inFeatures)
+			if err != nil {
+				b.Fatalf("NewTensor failed: %v", err)
+			}
 			fillRandom(input, -128, 127)
 
 			// Create weight tensor with random ternary values
-			weights := NewTensor(size.outFeatures, size.inFeatures)
+			weights, err := NewTensor(size.outFeatures, size.inFeatures)
+			if err != nil {
+				b.Fatalf("NewTensor failed: %v", err)
+			}
 			fillTernary(weights)
 
 			b.ResetTimer()
@@ -207,11 +237,17 @@ func BenchmarkBitLinearMem(b *testing.B) {
 	for _, size := range sizes {
 		b.Run(size.name, func(b *testing.B) {
 			// Create input tensor with random 8-bit activations
-			input := NewTensor(size.batchSize, size.inFeatures)
+			input, err := NewTensor(size.batchSize, size.inFeatures)
+			if err != nil {
+				b.Fatalf("NewTensor failed: %v", err)
+			}
 			fillRandom(input, -128, 127)
 
 			// Create weight tensor with random ternary values
-			weights := NewTensor(size.outFeatures, size.inFeatures)
+			weights, err := NewTensor(size.outFeatures, size.inFeatures)
+			if err != nil {
+				b.Fatalf("NewTensor failed: %v", err)
+			}
 			fillTernary(weights)
 
 			b.ResetTimer()
@@ -238,11 +274,17 @@ func BenchmarkBitLinearMem(b *testing.B) {
 // BenchmarkBitLinearDetailed performs detailed profiling of specific operations
 func BenchmarkBitLinearDetailed(b *testing.B) {
 	// Create input tensor with random 8-bit activations
-	input := NewTensor(32, 1024)
+	input, err := NewTensor(32, 1024)
+	if err != nil {
+		b.Fatalf("NewTensor failed: %v", err)
+	}
 	fillRandom(input, -128, 127)
 
 	// Create weight tensor with random ternary values
-	weights := NewTensor(1024, 1024)
+	weights, err := NewTensor(1024, 1024)
+	if err != nil {
+		b.Fatalf("NewTensor failed: %v", err)
+	}
 	fillTernary(weights)
 
 	// Profile buffer pool operations
@@ -277,12 +319,16 @@ func BenchmarkBitLinearDetailed(b *testing.B) {
 		b.Run("DotProduct_"+size.name, func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
-				var sum int32
-				for f := 0; f < size.size; f++ {
-					act := input.Get(0, f%1024)
-					w := weights.Get(0, f%1024)
-					sum += int32(act) * int32(w)
+				v, err := input.Get(0, i%1024)
+				if err != nil {
+					b.Fatalf("input.Get failed: %v", err)
 				}
+				w, err := weights.Get(0, i%1024)
+				if err != nil {
+					b.Fatalf("weights.Get failed: %v", err)
+				}
+				var sum int32
+				sum += int32(v) * int32(w)
 			}
 		})
 	}

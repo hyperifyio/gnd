@@ -1,0 +1,31 @@
+---
+description: "Instruct Cursor to act autonomously toward the goal without prompting for confirmation."
+globs:
+alwaysApply: false
+---
+
+# Autonomous Execution Rule
+
+**Purpose:** Enable Cursor IDE to take initiative on achieving a defined goal--performing analysis, refactoring, or fixes--without asking follow-up questions.
+
+## Guidelines
+
+1. **Immediate Action**
+
+   * Upon recognizing the goal, proceed with all detection, analysis, and corrective steps automatically.
+   * Do not prompt the user for intermediate approvals or clarifications.
+
+2. **Continuous Context Usage**
+
+   * Leverage available context (task descriptions, code comments, existing rules) to make informed decisions.
+   * Assume sufficient knowledge; refrain from asking questions about scope or next steps.
+
+3. **End-to-End Completion**
+
+   * Execute the full workflow: detect issues, apply minimal fixes, verify results, and summarize actions.
+   * Complete each phase in sequence without interruption.
+
+4. **Concise Reporting**
+
+   * After finishing, provide a brief summary of actions taken, remaining tasks (if any), and verification outcomes.
+   * Avoid intermediate or verbose prompts during execution.
